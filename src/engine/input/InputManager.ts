@@ -16,8 +16,8 @@ export class InputManager {
   private owners = new OwnerStack('ui');
   private canvas: HTMLElement | null = null;
   private pendingLock = false;
-  /** A grant is applied only when this request is still the one the player asked for. */
-  private acceptLock = false;
+  /** One pointerlockerror from an unsupported unadjustedMovement option is not a rejection. */
+  private lockErrorsToIgnore = 0;
   /** A second Q arrived while the first Q's exit was still in flight. */
   private relockAfterToggle = false;
   private unlockIntent: 'toggle' | null = null;
@@ -57,6 +57,7 @@ export class InputManager {
     this.canvas = null;
     this.pendingLock = false;
     this.acceptLock = false;
+    this.lockErrorsToIgnore = 0;
     this.relockAfterToggle = false;
   }
 
@@ -133,17 +134,25 @@ export class InputManager {
       if (generation !== this.lockGeneration || !this.pendingLock) return;
       this.pendingLock = false;
       this.acceptLock = false;
+      this.lockErrorsToIgnore = 0;
       this.lockGeneration += 1;
       this.apply(reduceShell(this.readModel(), { type: 'pointerLockRejected' }));
     };
+    this.lockErrorsToIgnore = 1;
     const outcome = requestCanvasPointerLock(canvas);
-    if (outcome === 'event') return;
+    if (outcome === 'event') {
+      this.lockErrorsToIgnore = 0;
+      return;
+    }
     void outcome.then(
       () => {
         if (generation !== this.lockGeneration) return;
         this.pendingLock = false;
       },
-      () => fail(),
+      () => {
+        this.lockErrorsToIgnore = 0;
+        fail();
+      },
     );
   }
 
@@ -235,6 +244,7 @@ export class InputManager {
         return;
       }
       this.acceptLock = false;
+      this.lockErrorsToIgnore = 0;
       this.unlockIntent = null;
       this.apply(reduceShell(this.readModel(), { type: 'pointerLockGained' }));
       useInputStore.getState().setPointerLocked(true);
@@ -265,6 +275,7 @@ export class InputManager {
   private cancelPendingLock(): void {
     this.pendingLock = false;
     this.acceptLock = false;
+    this.lockErrorsToIgnore = 0;
     this.lockGeneration += 1;
   }
 
@@ -287,6 +298,10 @@ export class InputManager {
   }
 
   private onLockError = (): void => {
+    if (this.lockErrorsToIgnore > 0) {
+      this.lockErrorsToIgnore -= 1;
+      return;
+    }
     if (!this.pendingLock) return;
     this.pendingLock = false;
     this.acceptLock = false;

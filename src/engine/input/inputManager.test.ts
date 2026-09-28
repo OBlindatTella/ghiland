@@ -114,6 +114,32 @@ describe('pointer lock without a promise', () => {
     expect(useInputStore.getState().shellState).toBe('SCREEN');
     manager.detach();
   });
+
+  it('keeps the fallback lock when the unadjustedMovement request is rejected', async () => {
+    const dom = installDom();
+    const manager = new InputManager();
+    useInputStore.setState({ shellState: 'SCREEN', owner: 'ui', showClickToWalk: false, relockBlocked: false });
+    let calls = 0;
+    dom.requestPointerLock.mockImplementation((options?: { unadjustedMovement?: boolean }) => {
+      calls += 1;
+      if (options?.unadjustedMovement) {
+        dom.fireDoc('pointerlockerror', {});
+        return Promise.reject(new DOMException('unsupported', 'NotSupportedError'));
+      }
+      return Promise.resolve();
+    });
+    manager.attach(dom.canvas);
+    dom.fireWindow('keydown', { code: 'KeyQ', repeat: false, preventDefault() {} });
+    await Promise.resolve();
+    expect(calls).toBe(2);
+    expect(useInputStore.getState().relockBlocked).toBe(false);
+    dom.documentStub.pointerLockElement = dom.canvas;
+    dom.fireDoc('pointerlockchange', {});
+    expect(useInputStore.getState().shellState).toBe('WORLD');
+    expect(useInputStore.getState().pointerLocked).toBe(true);
+    expect(dom.exits()).toBe(0);
+    manager.detach();
+  });
 });
 
 describe('escape pairing', () => {
