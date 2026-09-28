@@ -73,7 +73,7 @@ export const seasideHouse: WorldDefinition = {
     {
       id: 'open-glass',
       between: ['interior', 'terrace'],
-      bounds: { min: [0, 0, 4.4], max: [4, 3.2, 4.6] },
+      bounds: { min: [-2, 0, 4.4], max: [2, 3.2, 4.6] },
       open: true,
     },
   ],
