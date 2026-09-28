@@ -18,6 +18,7 @@ import {
   yawFromMouse,
 } from '@/engine/player/movement';
 import { playerRef } from '@/engine/player/playerRef';
+import { CAMERA_FRAME_PRIORITY } from '@/engine/render/frameOrder';
 import { useInputStore } from '@/state/input';
 import { useSettings } from '@/state/settings';
 
@@ -125,7 +126,7 @@ export function FirstPersonController({
       yaw: yaw.current,
       pitch: pitch.current,
     };
-  });
+  }, CAMERA_FRAME_PRIORITY);
 
   return null;
 }

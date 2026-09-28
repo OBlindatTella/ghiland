@@ -1,8 +1,7 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { PerfHud } from '@/engine/perf/PerfHud';
-import { inputManager } from '@/engine/input/InputManager';
 import { Shelf } from '@/shell/launcher/Shelf';
 import { screenKeyLabel } from '@/shell/keyLabel';
 import { SettingsPanel } from '@/shell/screen/SettingsPanel';
@@ -19,7 +18,6 @@ export function ShellChrome() {
   const dim = useAppliedQuality((state) => state.dim);
   const active = useSession((state) => state.worldPhase === 'active');
   const [screenKey, setScreenKey] = useState(() => screenKeyLabel(null));
-  const press = useRef<{ x: number; y: number } | null>(null);
 
   useEffect(() => {
     document.body.dataset.shell = shell;
@@ -39,29 +37,15 @@ export function ShellChrome() {
     };
   }, []);
 
-  const catchClicks = shell !== 'WORLD';
-
   return (
     <>
       <div data-testid="shell-state" data-shell={shell} className="sr-only">
         {shell}
       </div>
-      {catchClicks ? (
+      {shell !== 'WORLD' ? (
         <div
-          className="absolute inset-0 z-10"
+          className="pointer-events-none absolute inset-0 z-10"
           style={{ background: shell === 'SCREEN' ? 'rgba(0,0,0,0.12)' : 'transparent' }}
-          onPointerDown={(event) => {
-            press.current = { x: event.clientX, y: event.clientY };
-          }}
-          onClick={(event) => {
-            const origin = press.current;
-            press.current = null;
-            if (!origin) return;
-            const dx = event.clientX - origin.x;
-            const dy = event.clientY - origin.y;
-            if (dx * dx + dy * dy > 16) return;
-            inputManager.clickEmptyWorld();
-          }}
         />
       ) : null}
       <div

@@ -42,6 +42,7 @@ These are the review items that are still different from Atlas. The others in th
 - S1-16. After a slide is blocked, velocity stays at the wish speed. Footsteps are not in this build, so a wall does not play a step. Reconcile velocity when audio reads displacement.
 - S1-17. Radius expansion is a square, the timestep is variable and clamped at 50 ms, and the sweep is X then Z. A step cannot tunnel the glass at that clamp. Rounded corners wait for stools and chairs.
 - S1-20. A keyup lost without a window blur (release while a command key is held, some OS shortcuts) can leave that key down. Blur and a hidden tab still clear the set. Not reproduced in this pass.
+- D-017 auto-pin. `setBeforeShellChange` runs before the shell store updates. Nothing is installed yet, because carried windows do not exist. Step 5 should pin there when leaving WORLD.
 - D-021. A window centre must stay at least 0.7 m from the eye, and a placement that cannot is invalid. Windows are not built yet, so there is no placement to enforce.
 
 ## Browser

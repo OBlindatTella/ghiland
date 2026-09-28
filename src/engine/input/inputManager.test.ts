@@ -7,6 +7,7 @@ type Listener = (event: Event) => void;
 function installDom() {
   const windowListeners = new Map<string, Set<Listener>>();
   const docListeners = new Map<string, Set<Listener>>();
+  const canvasListeners = new Map<string, Set<Listener>>();
   const listen = (map: Map<string, Set<Listener>>) => (type: string, fn: EventListener) => {
     let set = map.get(type);
     if (!set) {
@@ -20,10 +21,11 @@ function installDom() {
   };
   let focused = true;
   let exits = 0;
+  const requestPointerLock = vi.fn(() => undefined);
   const canvas = {
-    addEventListener: listen(new Map()),
-    removeEventListener: forget(new Map()),
-    requestPointerLock: vi.fn(() => undefined),
+    addEventListener: listen(canvasListeners),
+    removeEventListener: forget(canvasListeners),
+    requestPointerLock,
   };
   const documentStub = {
     pointerLockElement: null as unknown,
@@ -60,6 +62,10 @@ function installDom() {
       fire(docListeners, type, event);
     },
     exits: () => exits,
+    requestPointerLock,
+    fireCanvas(type: string, event: object) {
+      fire(canvasListeners, type, event);
+    },
   };
 }
 
@@ -189,6 +195,47 @@ describe('pending pointer lock', () => {
     dom.documentStub.pointerLockElement = dom.canvas;
     dom.fireDoc('pointerlockchange', {});
     expect(useInputStore.getState().shellState).toBe('WORLD');
+    manager.detach();
+  });
+});
+
+describe('shell prep for windows', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    useInputStore.getState().reset();
+  });
+
+  it('runs the pre-transition hook before the store updates', () => {
+    const dom = installDom();
+    const manager = new InputManager();
+    manager.attach(dom.canvas);
+    const during: string[] = [];
+    manager.setBeforeShellChange((from, to) => {
+      during.push(`${from}:${useInputStore.getState().shellState}:${to}`);
+    });
+    dom.fireWindow('keydown', { code: 'KeyQ', repeat: false, preventDefault() {} });
+    expect(during).toEqual(['RELEASED:RELEASED:SCREEN']);
+    expect(useInputStore.getState().shellState).toBe('SCREEN');
+    manager.setBeforeShellChange(null);
+    manager.detach();
+  });
+
+  it('takes an empty-world click from the canvas and ignores a window root', () => {
+    const dom = installDom();
+    const manager = new InputManager();
+    manager.attach(dom.canvas);
+    const windowRoot = { closest: (selector: string) => (selector === '[data-ghiland-window]' ? {} : null) };
+    dom.fireCanvas('pointerdown', { clientX: 1, clientY: 1, target: windowRoot });
+    dom.fireCanvas('click', { clientX: 1, clientY: 1, target: windowRoot });
+    expect(dom.requestPointerLock).not.toHaveBeenCalled();
+
+    dom.fireCanvas('pointerdown', { clientX: 0, clientY: 0, target: {} });
+    dom.fireCanvas('click', { clientX: 20, clientY: 0, target: {} });
+    expect(dom.requestPointerLock).not.toHaveBeenCalled();
+
+    dom.fireCanvas('pointerdown', { clientX: 8, clientY: 8, target: {} });
+    dom.fireCanvas('click', { clientX: 9, clientY: 8, target: {} });
+    expect(dom.requestPointerLock).toHaveBeenCalledTimes(1);
     manager.detach();
   });
 });

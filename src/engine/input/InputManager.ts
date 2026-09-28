@@ -1,4 +1,4 @@
-import type { Action, InputOwner } from '@/contracts/input';
+import type { Action, InputOwner, ShellState } from '@/contracts/input';
 import { bus } from '@/engine/events/bus';
 import { defaultBindings } from '@/engine/input/bindings';
 import { decideKey, isEditableElement } from '@/engine/input/keyRoute';
@@ -25,6 +25,8 @@ export class InputManager {
   private escapeGate: EscapeGate = idleEscapeGate;
   private systemToken: number | null = null;
   private blurTimer = 0;
+  private press: { x: number; y: number } | null = null;
+  private beforeShell: ((from: ShellState, to: ShellState) => void) | null = null;
 
   attach(canvas: HTMLElement): () => void {
     this.detach();
@@ -36,6 +38,8 @@ export class InputManager {
     document.addEventListener('visibilitychange', this.onVisibility);
     document.addEventListener('pointerlockchange', this.onLockChange);
     document.addEventListener('pointerlockerror', this.onLockError);
+    canvas.addEventListener('pointerdown', this.onPointerDown);
+    canvas.addEventListener('click', this.onClick);
     return () => this.detach();
   }
 
@@ -47,6 +51,8 @@ export class InputManager {
     document.removeEventListener('visibilitychange', this.onVisibility);
     document.removeEventListener('pointerlockchange', this.onLockChange);
     document.removeEventListener('pointerlockerror', this.onLockError);
+    this.canvas.removeEventListener('pointerdown', this.onPointerDown);
+    this.canvas.removeEventListener('click', this.onClick);
     window.clearTimeout(this.blurTimer);
     this.canvas = null;
     this.pendingLock = false;
@@ -72,6 +78,11 @@ export class InputManager {
     this.apply(reduceShell(this.readModel(), { type: 'clickEmptyWorld' }));
   }
 
+  /** D-017. Runs before the store write so a carried window can pin on the way out of WORLD. */
+  setBeforeShellChange(hook: ((from: ShellState, to: ShellState) => void) | null): void {
+    this.beforeShell = hook;
+  }
+
   private readModel(): ShellModel {
     const state = useInputStore.getState();
     return {
@@ -83,6 +94,7 @@ export class InputManager {
 
   private apply(result: { model: ShellModel; effects: ShellEffect[] }): void {
     const previous = useInputStore.getState().shellState;
+    if (previous !== result.model.state) this.beforeShell?.(previous, result.model.state);
     const requesting = result.effects.some((effect) => effect.type === 'requestPointerLock');
     if (!requesting && (this.pendingLock || this.acceptLock)) this.cancelPendingLock();
     this.owners.setBase(ownerForShell(result.model.state));
@@ -134,6 +146,24 @@ export class InputManager {
       () => fail(),
     );
   }
+
+  private onPointerDown = (event: PointerEvent): void => {
+    if (useInputStore.getState().shellState === 'WORLD') return;
+    if (isWindowTarget(event.target)) return;
+    this.press = { x: event.clientX, y: event.clientY };
+  };
+
+  private onClick = (event: MouseEvent): void => {
+    if (useInputStore.getState().shellState === 'WORLD') return;
+    if (isWindowTarget(event.target)) return;
+    const origin = this.press;
+    this.press = null;
+    if (!origin) return;
+    const dx = event.clientX - origin.x;
+    const dy = event.clientY - origin.y;
+    if (dx * dx + dy * dy > 16) return;
+    this.clickEmptyWorld();
+  };
 
   private onKeyDown = (event: KeyboardEvent): void => {
     const editable = isEditableElement(event.target) || isEditableElement(document.activeElement);
@@ -263,6 +293,11 @@ export class InputManager {
     this.lockGeneration += 1;
     this.apply(reduceShell(this.readModel(), { type: 'pointerLockRejected' }));
   };
+}
+
+function isWindowTarget(target: EventTarget | null): boolean {
+  const element = target as { closest?: (selector: string) => unknown } | null;
+  return Boolean(element?.closest?.('[data-ghiland-window]'));
 }
 
 export const inputManager = new InputManager();
