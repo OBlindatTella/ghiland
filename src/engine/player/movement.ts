@@ -46,16 +46,22 @@ export function wishVelocity(input: WishInput, spec: MovementSpec = DEFAULT_MOVE
 }
 
 /**
- * Yaw 0 faces +Z. Positive yaw turns toward +X.
+ * Yaw 0 faces +Z. Positive yaw turns toward +X, which is screen-left.
+ * Mouse-right therefore decreases yaw, toward screen-right (world −X).
  * `wish.z` is forward, `wish.x` is right, both in view space.
  */
 export function viewToWorld(wish: { x: number; z: number }, yaw: number): { x: number; z: number } {
   const sin = Math.sin(yaw);
   const cos = Math.cos(yaw);
   return {
-    x: wish.x * cos + wish.z * sin,
-    z: -wish.x * sin + wish.z * cos,
+    x: -wish.x * cos + wish.z * sin,
+    z: wish.x * sin + wish.z * cos,
   };
+}
+
+/** Shared with the camera. A positive `movementX` (mouse right) yaws toward screen-right. */
+export function yawFromMouse(movementX: number, sensitivity: number): number {
+  return -movementX * sensitivity;
 }
 
 export function dampVec2(

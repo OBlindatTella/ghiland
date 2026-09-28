@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { PerspectiveCamera, Vector3 } from 'three';
 import {
   clampFrameDt,
   clampPitch,
@@ -6,6 +7,7 @@ import {
   DEFAULT_MOVEMENT,
   viewToWorld,
   wishVelocity,
+  yawFromMouse,
 } from '@/engine/player/movement';
 
 const still = { forward: false, back: false, left: false, right: false, strollFast: false };
@@ -36,11 +38,32 @@ describe('wishVelocity', () => {
 });
 
 describe('viewToWorld', () => {
-  it('faces +Z at yaw 0 and +X after a right turn', () => {
-    expect(viewToWorld({ x: 0, z: 1 }, 0)).toEqual({ x: 0, z: 1 });
-    const turned = viewToWorld({ x: 0, z: 1 }, Math.PI / 2);
-    expect(turned.x).toBeCloseTo(1, 5);
-    expect(turned.z).toBeCloseTo(0, 5);
+  it('facing +Z, D moves screen-right and mouse-right yaws screen-right', () => {
+    const camera = new PerspectiveCamera();
+    camera.rotation.order = 'YXZ';
+    camera.rotation.y = Math.PI;
+    camera.updateMatrixWorld();
+    const forward = new Vector3();
+    const right = new Vector3();
+    camera.getWorldDirection(forward);
+    right.setFromMatrixColumn(camera.matrixWorld, 0);
+    expect(forward.z).toBeGreaterThan(0.99);
+    expect(forward.x).toBeCloseTo(0, 5);
+    expect(right.x).toBeLessThan(-0.99);
+
+    const strafe = viewToWorld({ x: 1, z: 0 }, 0);
+    expect(strafe.x).toBeCloseTo(right.x, 5);
+    expect(strafe.z).toBeCloseTo(right.z, 5);
+
+    const yaw = yawFromMouse(1, 0.2);
+    expect(yaw).toBeLessThan(0);
+    camera.rotation.y = Math.PI + yaw;
+    camera.updateMatrixWorld();
+    camera.getWorldDirection(forward);
+    expect(forward.x).toBeLessThan(0);
+    const moved = viewToWorld({ x: 0, z: 1 }, yaw);
+    expect(moved.x).toBeCloseTo(forward.x, 5);
+    expect(moved.z).toBeCloseTo(forward.z, 5);
   });
 });
 

@@ -13,6 +13,7 @@ import {
   DEFAULT_MOVEMENT,
   viewToWorld,
   wishVelocity,
+  yawFromMouse,
 } from '@/engine/player/movement';
 import { playerRef } from '@/engine/player/playerRef';
 import { useInputStore } from '@/state/input';
@@ -55,7 +56,7 @@ export function FirstPersonController({
       lookAvgY.current = scaledY.average;
       const sensitivity = useSettings.getState().mouseSensitivity;
       const invert = useSettings.getState().invertY ? -1 : 1;
-      targetYaw.current += scaledX.delta * LOOK_SENSITIVITY * sensitivity;
+      targetYaw.current += yawFromMouse(scaledX.delta, LOOK_SENSITIVITY * sensitivity);
       targetPitch.current = clampPitch(
         targetPitch.current - scaledY.delta * LOOK_SENSITIVITY * sensitivity * invert,
       );
