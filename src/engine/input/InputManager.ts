@@ -8,6 +8,7 @@ import { idleEscapeGate, onBrowserEscapeUnlock, onEscapeKey, type EscapeGate } f
 import { classifyLockLoss, reduceShell, type ShellEffect, type ShellModel } from '@/engine/input/shellMachine';
 import { useInputStore } from '@/state/input';
 import { usePerfStore } from '@/state/perf';
+import { useScreenStore } from '@/state/screen';
 
 export class InputManager {
   private keys = new KeyState();
@@ -117,7 +118,15 @@ export class InputManager {
       const next = onEscapeKey(this.escapeGate, document.pointerLockElement !== null);
       this.escapeGate = next.gate;
       this.scheduleEscapeReset();
-      if (next.apply) this.apply(reduceShell(this.readModel(), { type: 'escape' }));
+      if (next.apply) {
+        if (useInputStore.getState().shellState === 'SCREEN' && !useScreenStore.getState().pop().release) {
+          return;
+        }
+        this.apply(reduceShell(this.readModel(), { type: 'escape' }));
+      }
+    } else if (event.code === 'Slash' && useInputStore.getState().shellState === 'SCREEN') {
+      const stack = useScreenStore.getState().stack;
+      if (!stack.includes('text') && !stack.includes('settings')) useScreenStore.getState().push('launcher');
     } else if (event.code === 'Backquote') {
       usePerfStore.getState().toggle();
     }

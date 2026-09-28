@@ -5,9 +5,8 @@ import { Canvas, useThree } from '@react-three/fiber';
 import { ACESFilmicToneMapping } from 'three';
 import { installDevHook } from '@/engine/dev/installDevHook';
 import { PerfProbe } from '@/engine/perf/PerfProbe';
-import { FirstPersonController } from '@/engine/player/FirstPersonController';
-import { SeasideHouseScene } from '@/worlds/seaside-house/Scene';
-import { seasideColliders, SPAWN } from '@/worlds/seaside-house/level';
+import { SceneManager } from '@/engine/scene/SceneManager';
+import { useSession } from '@/state/session';
 
 let canvasMounts = 0;
 
@@ -21,11 +20,11 @@ function CanvasLifecycle() {
     camera.rotation.order = 'YXZ';
     camera.rotation.y = Math.PI;
     camera.rotation.x = 0;
-    camera.position.set(SPAWN.x, SPAWN.y, SPAWN.z);
     gl.toneMapping = ACESFilmicToneMapping;
     gl.toneMappingExposure = 1.05;
     gl.domElement.style.touchAction = 'none';
     gl.domElement.style.outline = 'none';
+    useSession.getState().setProgress(0.36);
   }, [camera, gl]);
 
   return null;
@@ -48,17 +47,16 @@ export function CanvasRoot() {
           fov: 62,
           near: 0.08,
           far: 500,
-          position: [SPAWN.x, SPAWN.y, SPAWN.z],
+          position: [0, 1.62, -8.2],
         }}
         onCreated={({ camera }) => {
           camera.rotation.order = 'YXZ';
           camera.rotation.y = Math.PI;
-          camera.position.set(SPAWN.x, SPAWN.y, SPAWN.z);
+          camera.position.set(0, 1.62, -8.2);
         }}
       >
         <CanvasLifecycle />
-        <SeasideHouseScene />
-        <FirstPersonController spawn={SPAWN} colliders={seasideColliders} />
+        <SceneManager />
         <PerfProbe />
       </Canvas>
     </div>

@@ -21,7 +21,6 @@ const environment: EnvironmentPreset = {
   },
 };
 
-/** Not registered until step 2. The greybox scene is mounted by the canvas directly. */
 export const seasideHouse: WorldDefinition = {
   id: 'seaside-house',
   version: 1,
@@ -29,6 +28,7 @@ export const seasideHouse: WorldDefinition = {
   tagline: 'A corridor, then the glass.',
   status: 'playable',
   thumbnail: '/worlds/seaside-house/card.jpg',
+  load: () => import('./module'),
   spawn: { position: [SPAWN.x, SPAWN.y, SPAWN.z], yaw: 0 },
   collision: seasideCollision,
   environment,

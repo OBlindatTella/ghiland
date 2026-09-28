@@ -1,5 +1,7 @@
 'use client';
 
+import { useEffect } from 'react';
+import type { WorldSceneProps } from '@/contracts/world';
 import { levelBoxes, SEA_Y } from './level';
 
 function sunPosition(elevationDeg: number, azimuthDeg: number, distance: number): [number, number, number] {
@@ -40,7 +42,11 @@ function AabbMesh({
 }
 
 /** Greybox only: boxes, a flat sea, sun, hemisphere, and fog. */
-export function SeasideHouseScene() {
+export function SeasideHouseScene({ onReady, quality }: WorldSceneProps) {
+  useEffect(() => {
+    onReady();
+  }, [onReady, quality]);
+
   const sun = sunPosition(12, 22, 40);
   const opaque = levelBoxes.filter((item) => item.opacity >= 1);
   const transparent = levelBoxes.filter((item) => item.opacity < 1);
