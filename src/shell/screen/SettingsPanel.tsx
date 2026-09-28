@@ -1,13 +1,39 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import type { Action } from '@/contracts/input';
 import { audioEngine } from '@/engine/audio/engine';
+import { defaultBindings } from '@/engine/input/bindings';
+import { labelForCode } from '@/shell/keyLabel';
 import type { QualitySetting } from '@/contracts/quality';
 import { usePerfStore } from '@/state/perf';
 import { useInputStore } from '@/state/input';
 import { storageWriteFailed, subscribeStorageFailure } from '@/state/persist';
 import { useScreenStore } from '@/state/screen';
 import { useSettings } from '@/state/settings';
+
+const KEY_NAMES: Record<Action, string> = {
+  moveForward: 'Walk forward',
+  moveBack: 'Walk back',
+  moveLeft: 'Strafe left',
+  moveRight: 'Strafe right',
+  strollFast: 'Faster stroll',
+  toggleScreen: 'Screen',
+  interact: 'Interact',
+  pin: 'Pin',
+  toggleMute: 'Mute',
+  togglePerfHud: 'Performance',
+  openLauncher: 'Launcher',
+  escape: 'Back',
+};
+
+function keyText(code: string): string {
+  if (code === 'Slash') return '/';
+  if (code === 'Backquote') return '`';
+  if (code.startsWith('Shift')) return 'Shift';
+  if (code.startsWith('Arrow')) return code.slice(5);
+  return labelForCode(code, null);
+}
 
 const QUALITY: { id: QualitySetting; label: string }[] = [
   { id: 'LOW', label: 'Low' },
@@ -99,6 +125,14 @@ export function SettingsPanel() {
           Mute
           <input type="checkbox" checked={settings.muted} onChange={(event) => settings.setMuted(event.target.checked)} />
         </label>
+        <label className="mt-3 flex items-center justify-between text-[13px] leading-5">
+          Mute when the tab is hidden
+          <input
+            type="checkbox"
+            checked={settings.muteWhenHidden}
+            onChange={(event) => settings.setMuteWhenHidden(event.target.checked)}
+          />
+        </label>
         <h2 className="mt-6 text-[12px] leading-4 text-[#f2f0eb]/64">Controls</h2>
         <Slider
           label="Mouse sensitivity"
@@ -114,6 +148,15 @@ export function SettingsPanel() {
           Invert Y
           <input type="checkbox" checked={settings.invertY} onChange={(event) => settings.setInvertY(event.target.checked)} />
         </label>
+        <h2 className="mt-6 text-[12px] leading-4 text-[#f2f0eb]/64">Keys</h2>
+        <ul data-testid="settings-keys" className="mt-2 space-y-1 text-[13px] leading-5 text-[#f2f0eb]/80">
+          {defaultBindings.map((binding) => (
+            <li key={binding.action} className="flex justify-between gap-4">
+              <span>{KEY_NAMES[binding.action]}</span>
+              <span>{binding.codes.map((code) => keyText(code)).join(' / ')}</span>
+            </li>
+          ))}
+        </ul>
         <h2 className="mt-6 text-[12px] leading-4 text-[#f2f0eb]/64">Graphics</h2>
         <div className="mt-3 flex gap-1" role="radiogroup" aria-label="Quality">
           {QUALITY.map((item) => {
