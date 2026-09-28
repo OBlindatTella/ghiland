@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Group } from 'three';
 import type { QualityProfile } from '@/contracts/quality';
 import type { Collider, WorldModule } from '@/contracts/world';
@@ -25,6 +25,9 @@ function WorldHost({
 }) {
   const group = useRef<Group>(null);
   const Scene = module.Scene;
+  const onReady = useCallback(() => {
+    useSession.getState().setProgress(0.9);
+  }, []);
 
   useEffect(() => {
     const root = group.current;
@@ -38,9 +41,7 @@ function WorldHost({
     <group ref={group}>
       <Scene
         quality={quality}
-        onReady={() => {
-          useSession.getState().setProgress(0.9);
-        }}
+        onReady={onReady}
       />
       <FirstPersonController spawn={spawn} colliders={colliders} />
       <StableFrames

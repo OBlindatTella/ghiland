@@ -37,7 +37,9 @@ export const useSession = create<SessionStore>((set, get) => ({
     });
   },
   setProgress: (value) => {
-    const next = Math.max(get().loadProgress, Math.min(1, value));
+    const current = get();
+    if (current.worldPhase === 'active') return;
+    const next = Math.max(current.loadProgress, Math.min(1, value));
     set({ loadProgress: next, worldPhase: next >= 1 ? 'ready' : 'loading' });
   },
   markActive: () => set({ phase: 'inWorld', worldPhase: 'active', loadProgress: 1 }),

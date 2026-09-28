@@ -49,7 +49,7 @@ function AabbMesh({
 export function SeasideHouseScene({ onReady, quality }: WorldSceneProps) {
   useEffect(() => {
     onReady();
-  }, [onReady, quality]);
+  }, [onReady]);
 
   const sun = sunPosition(12, 22, 40);
   const shadows = quality.shadows !== 'off';

@@ -20,7 +20,11 @@ function CanvasLifecycle() {
 
   useEffect(() => {
     canvasMounts += 1;
-    installDevHook(() => canvasMounts);
+    installDevHook(() => canvasMounts, () => ({
+      dpr: gl.getPixelRatio(),
+      shadows: gl.shadowMap.enabled,
+      fov: 'fov' in camera ? camera.fov : null,
+    }));
     camera.rotation.order = 'YXZ';
     camera.rotation.y = Math.PI;
     camera.rotation.x = 0;
