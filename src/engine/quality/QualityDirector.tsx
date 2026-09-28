@@ -1,10 +1,11 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useContext, useRef } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
 import { BasicShadowMap, PCFSoftShadowMap } from 'three';
-import { Bloom, EffectComposer, SMAA, ToneMapping } from '@react-three/postprocessing';
-import { COMPOSER_TONE_MODE } from '@/engine/quality/toneState';
+import { Bloom, EffectComposer, EffectComposerContext, SMAA, ToneMapping } from '@react-three/postprocessing';
+import { COMPOSER_TONE_MODE, readComposerTone } from '@/engine/quality/toneState';
+import { composerGpuBytes, releaseComposerTargets, trackGpuBytes, trackedGpuBytes } from '@/engine/quality/gpuMemory';
 import { bus } from '@/engine/events/bus';
 import { heuristicTier, initialAutoClock, stepAutoQuality, type AutoClock } from '@/engine/quality/autoQuality';
 import { qualityProfiles } from '@/engine/quality/profiles';
@@ -128,6 +129,54 @@ export function PostStack({ profile }: { profile: QualityProfile }) {
     <EffectComposer multisampling={smaa ? 0 : profile.multisampling} enableNormalPass={false} autoClear>
       {smaa ? <SMAA /> : <Bloom intensity={0.12} luminanceThreshold={0.9} mipmapBlur />}
       <ToneMapping mode={COMPOSER_TONE_MODE} />
+      <ComposerLifecycle />
     </EffectComposer>
   );
+}
+
+let liveComposer: {
+  multisampling?: number;
+  passes: readonly object[];
+  inputBuffer: { width: number; height: number; samples?: number; depthBuffer?: boolean };
+  outputBuffer: { width: number; height: number; samples?: number; depthBuffer?: boolean };
+  depthRenderTarget?: { width: number; height: number; samples?: number } | null;
+} | null = null;
+
+export function readLiveComposer(rendererToneMapping: number) {
+  if (!liveComposer) return null;
+  return {
+    ...readComposerTone({ toneMapping: rendererToneMapping }, liveComposer),
+    targetBytes: composerGpuBytes(liveComposer),
+  };
+}
+
+export function readTrackedGpuBytes(): number {
+  return trackedGpuBytes();
+}
+
+function ComposerLifecycle() {
+  const { composer } = useContext(EffectComposerContext);
+  const size = useThree((state) => state.size);
+  const dpr = useThree((state) => state.viewport.dpr);
+
+  useEffect(() => {
+    liveComposer = composer;
+    return () => {
+      if (liveComposer === composer) liveComposer = null;
+      releaseComposerTargets(composer);
+    };
+  }, [composer]);
+
+  useEffect(() => {
+    let release = () => {};
+    const id = window.requestAnimationFrame(() => {
+      release = trackGpuBytes(composerGpuBytes(composer));
+    });
+    return () => {
+      window.cancelAnimationFrame(id);
+      release();
+    };
+  }, [composer, size.width, size.height, dpr]);
+
+  return null;
 }

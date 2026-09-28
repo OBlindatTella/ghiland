@@ -1,4 +1,5 @@
 import { audioEngine } from '@/engine/audio/engine';
+import { readLiveComposer, readTrackedGpuBytes } from '@/engine/quality/QualityDirector';
 import { queuePlayerTransform } from '@/engine/player/playerCommand';
 import { playerRef, type PlayerSnapshot } from '@/engine/player/playerRef';
 import { useInputStore } from '@/state/input';
@@ -20,6 +21,8 @@ declare global {
       getHint: () => boolean;
       getPhase: () => { phase: string; worldPhase: string; progress: number };
       getView: () => { dpr: number; shadows: boolean; fov: number | null } | null;
+      getGpuMemory: () => { bytes: number; textures: number; geometries: number };
+      getComposer: () => ReturnType<typeof readLiveComposer>;
       setPlayer: (snapshot: PlayerSnapshot) => void;
     };
   }
@@ -28,6 +31,7 @@ declare global {
 export function installDevHook(
   getCanvasMounts: () => number,
   getView?: () => { dpr: number; shadows: boolean; fov: number | null },
+  getRendererInfo?: () => { textures: number; geometries: number; toneMapping: number },
 ): void {
   if (!devHooksEnabled()) return;
   window.__ghiland = {
@@ -52,5 +56,10 @@ export function installDevHook(
       return { phase: session.phase, worldPhase: session.worldPhase, progress: session.loadProgress };
     },
     getView: () => getView?.() ?? null,
+    getGpuMemory: () => {
+      const info = getRendererInfo?.() ?? { textures: 0, geometries: 0, toneMapping: 0 };
+      return { bytes: readTrackedGpuBytes(), textures: info.textures, geometries: info.geometries };
+    },
+    getComposer: () => readLiveComposer(getRendererInfo?.().toneMapping ?? 0),
   };
 }

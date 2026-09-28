@@ -25,6 +25,10 @@ function CanvasLifecycle() {
       dpr: gl.getPixelRatio(),
       shadows: gl.shadowMap.enabled,
       fov: 'fov' in camera ? camera.fov : null,
+    }), () => ({
+      textures: gl.info.memory.textures,
+      geometries: gl.info.memory.geometries,
+      toneMapping: gl.toneMapping,
     }));
     camera.rotation.order = 'YXZ';
     camera.rotation.y = Math.PI;
