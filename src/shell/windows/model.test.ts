@@ -1,0 +1,78 @@
+import { describe, expect, it } from 'vitest';
+import { closeWindow, emptyWindowBook, migrateWindows, openWindow, setWindowRect, setWindowState } from '@/shell/windows/model';
+
+const viewport = { w: 1280, h: 800 };
+const size = { w: 440, h: 560 };
+
+describe('window book', () => {
+  it('opens one window per app, raises it, and cascades a second app', () => {
+    const first = openWindow(emptyWindowBook, {
+      id: 'a',
+      appId: 'notes',
+      title: 'Notes',
+      defaultSize: size,
+      viewport,
+      now: 1,
+    });
+    expect(first.created).toBe(true);
+    expect(first.book.focusedId).toBe('a');
+    const again = openWindow(first.book, {
+      id: 'ignored',
+      appId: 'notes',
+      title: 'Notes',
+      defaultSize: size,
+      viewport,
+      now: 2,
+    });
+    expect(again.created).toBe(false);
+    expect(Object.keys(again.book.windows)).toEqual(['a']);
+    const second = openWindow(again.book, {
+      id: 'b',
+      appId: 'chat',
+      title: 'Chat',
+      defaultSize: { w: 440, h: 620 },
+      viewport,
+      now: 3,
+    });
+    expect(second.book.focusedId).toBe('b');
+    expect(second.book.windows.b.z).toBeGreaterThan(second.book.windows.a.z);
+    const rectA = second.book.windows.a.lastScreenRect;
+    const rectB = second.book.windows.b.lastScreenRect;
+    expect(rectB.x).toBe(rectA.x + 32);
+    expect(rectB.y).toBeGreaterThanOrEqual(24);
+    expect(rectB.y + rectB.h).toBeLessThanOrEqual(800 - 88);
+  });
+
+  it('minimizes to the tray and restores the same rect', () => {
+    const opened = openWindow(emptyWindowBook, {
+      id: 'a',
+      appId: 'notes',
+      title: 'Notes',
+      defaultSize: size,
+      viewport,
+      now: 1,
+    });
+    const moved = setWindowRect(opened.book, 'a', { x: 80, y: 90, w: 500, h: 400 });
+    const hidden = setWindowState(moved, 'a', 'minimized');
+    expect(hidden.windows.a.state).toBe('minimized');
+    expect(hidden.focusedId).toBeNull();
+    const shown = setWindowState(hidden, 'a', 'normal');
+    expect(shown.windows.a.lastScreenRect).toEqual({ x: 80, y: 90, w: 500, h: 400 });
+    expect(shown.focusedId).toBe('a');
+  });
+
+  it('closes and is ready to migrate without persisting carried state', () => {
+    const opened = openWindow(emptyWindowBook, {
+      id: 'a',
+      appId: 'notes',
+      title: 'Notes',
+      defaultSize: size,
+      viewport,
+      now: 1,
+    });
+    expect(closeWindow(opened.book, 'a').windows).toEqual({});
+    const migrated = migrateWindows({ windows: [opened.book.windows.a] }, 1);
+    expect(migrated.windows).toHaveLength(1);
+    expect(migrateWindows({ windows: 'nope' }, 1)).toEqual({ windows: [] });
+  });
+});

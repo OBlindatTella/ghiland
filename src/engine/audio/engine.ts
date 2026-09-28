@@ -164,22 +164,33 @@ export class AudioEngine {
     useEnvironment.getState().setAudioZone(this.zone, this.exterior);
   }
 
-  playTick(): void {
+  /** Short interface one-shots. They hit the interface bus, so the Interface slider and mute apply. */
+  playUi(kind: 'open' | 'close' | 'minimize' | 'focus'): void {
     const ctx = this.ctx;
     const busNode = this.interface;
     if (!ctx || !busNode) return;
+    const tone = {
+      open: { freq: 880, peak: 0.04, hold: 0.07 },
+      close: { freq: 494, peak: 0.035, hold: 0.06 },
+      minimize: { freq: 660, peak: 0.03, hold: 0.05 },
+      focus: { freq: 988, peak: 0.018, hold: 0.035 },
+    }[kind];
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
     osc.type = 'sine';
-    osc.frequency.value = 740;
+    osc.frequency.value = tone.freq;
     const now = ctx.currentTime;
     gain.gain.setValueAtTime(0.0001, now);
-    gain.gain.exponentialRampToValueAtTime(0.05, now + 0.012);
-    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.09);
+    gain.gain.exponentialRampToValueAtTime(tone.peak, now + 0.008);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + tone.hold);
     osc.connect(gain);
     gain.connect(busNode);
     osc.start(now);
-    osc.stop(now + 0.1);
+    osc.stop(now + tone.hold + 0.02);
+  }
+
+  playTick(): void {
+    this.playUi('open');
   }
 
   debug(): AudioDebug {
