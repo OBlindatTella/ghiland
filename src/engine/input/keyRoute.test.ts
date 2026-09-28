@@ -12,6 +12,15 @@ describe('decideKey', () => {
     expect(decideKey('KeyQ', false, 'world', true, true).action).toBeNull();
   });
 
+  it('lets Notes type Q, Space, arrows and backtick (S1-04)', () => {
+    for (const code of ['KeyQ', 'Space', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Backquote']) {
+      const decision = decideKey(code, true, 'text', false, false);
+      expect(decision.action).toBeNull();
+      expect(decision.preventDefault).toBe(false);
+      expect(decision.track).toBe(false);
+    }
+  });
+
   it('lets an editable focus keep gameplay keys, Q, backtick, Space and arrows', () => {
     for (const code of ['KeyW', 'KeyQ', 'Backquote', 'Space', 'ArrowLeft']) {
       const decision = decideKey(code, true, 'world', true, false);
