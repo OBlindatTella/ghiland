@@ -77,6 +77,7 @@ describe('quality tier hysteresis', () => {
   it('prefers the last good tier, otherwise a weak GPU starts low', () => {
     expect(heuristicTier({ renderer: 'NVIDIA', cores: 4, lastGood: 'HIGH' })).toBe('HIGH');
     expect(heuristicTier({ renderer: 'ANGLE (SwiftShader)', cores: 8, deviceMemory: 8 })).toBe('LOW');
+    expect(heuristicTier({ renderer: 'ANGLE (Intel, Intel(R) Iris(R) Xe Graphics)', cores: 8, deviceMemory: 8 })).toBe('LOW');
     expect(heuristicTier({ renderer: 'NVIDIA GeForce', cores: 8, deviceMemory: 16 })).toBe('HIGH');
   });
 });

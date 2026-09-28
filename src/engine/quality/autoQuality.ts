@@ -130,7 +130,7 @@ export function heuristicTier(input: {
   if (input.lastGood) return capTier(input.lastGood, capped);
   const renderer = input.renderer.toLowerCase();
   const weak =
-    /swiftshader|llvmpipe|basic render|intel\(r\) hd|intel\(r\) uhd|mali-4|adreno \(tm\) [345]/.test(renderer) ||
+    /swiftshader|llvmpipe|basic render|intel\(r\) hd|intel\(r\) uhd|intel\(r\) iris\(r\) xe|mali-4|adreno \(tm\) [345]/.test(renderer) ||
     input.cores <= 4 ||
     (input.deviceMemory !== undefined && input.deviceMemory <= 4);
   const tier: QualityTier = weak ? 'LOW' : input.cores >= 8 && (input.deviceMemory === undefined || input.deviceMemory >= 8) ? 'HIGH' : 'MED';
