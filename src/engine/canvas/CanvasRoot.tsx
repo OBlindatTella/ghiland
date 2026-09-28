@@ -3,6 +3,7 @@
 import { useEffect } from 'react';
 import { Canvas, useThree } from '@react-three/fiber';
 import { ACESFilmicToneMapping } from 'three';
+import { AudioRig } from '@/engine/audio/AudioRig';
 import { installDevHook } from '@/engine/dev/installDevHook';
 import { PerfProbe } from '@/engine/perf/PerfProbe';
 import { ContextGuard } from '@/engine/quality/ContextGuard';
@@ -61,6 +62,7 @@ export function CanvasRoot() {
       >
         <CanvasLifecycle />
         <SceneManager />
+        <AudioRig />
         <QualityDirector />
         <ContextGuard />
         <PerfProbe />

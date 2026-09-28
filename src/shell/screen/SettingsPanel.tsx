@@ -1,6 +1,7 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { audioEngine } from '@/engine/audio/engine';
 import type { QualitySetting } from '@/contracts/quality';
 import { usePerfStore } from '@/state/perf';
 import { useScreenStore } from '@/state/screen';
@@ -58,6 +59,10 @@ export function SettingsPanel() {
   const open = useScreenStore((state) => state.stack.includes('settings'));
   const settings = useSettings();
   const autoTier = usePerfStore((state) => state.autoTier);
+  useEffect(() => {
+    if (open) audioEngine.playTick();
+  }, [open]);
+
   if (!open) return null;
 
   const close = () => useScreenStore.getState().remove('settings');

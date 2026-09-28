@@ -1,6 +1,6 @@
 let context: AudioContext | null = null;
 
-/** Created on the Seaside card click so the browser unlocks audio. Step 4 builds the graph on this context. */
+/** Created on the Seaside card click so the browser unlocks audio. The engine builds its graph on this context. */
 export function unlockAudio(): AudioContext | null {
   if (typeof window === 'undefined') return null;
   const Ctx = window.AudioContext;

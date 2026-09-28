@@ -1,3 +1,4 @@
+import { audioEngine } from '@/engine/audio/engine';
 import { playerRef } from '@/engine/player/playerRef';
 import { useInputStore } from '@/state/input';
 
@@ -8,6 +9,7 @@ declare global {
       getPointerLocked: () => boolean;
       getPlayer: () => typeof playerRef.current;
       getCanvasMounts: () => number;
+      getAudio: () => ReturnType<typeof audioEngine.debug>;
     };
   }
 }
@@ -19,5 +21,6 @@ export function installDevHook(getCanvasMounts: () => number): void {
     getPointerLocked: () => useInputStore.getState().pointerLocked,
     getPlayer: () => playerRef.current,
     getCanvasMounts,
+    getAudio: () => audioEngine.debug(),
   };
 }

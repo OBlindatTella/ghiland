@@ -19,7 +19,9 @@ Open `/` or `/w/seaside-house`. Click the Seaside House card. When the corridor 
 | Q | Toggle WORLD and SCREEN |
 | Esc | In WORLD, the browser unlocks and the Screen opens. In SCREEN, step back one layer, then "Click to walk" |
 | / | Focus the launcher shelf |
-| ` | Toggle the fps / draw call / triangle readout |
+| ` | Toggle the perf readout |
+| M | Mute, while walking |
+| Settings | On the Screen shelf: volume, mute, sensitivity, FOV, quality |
 
 `pnpm test` runs the shell-state and collision tests. `pnpm lint` and `pnpm build` check the app.
 

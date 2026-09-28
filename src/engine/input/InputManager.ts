@@ -128,6 +128,8 @@ export class InputManager {
     } else if (event.code === 'Slash' && useInputStore.getState().shellState === 'SCREEN') {
       const stack = useScreenStore.getState().stack;
       if (!stack.includes('text') && !stack.includes('settings')) useScreenStore.getState().push('launcher');
+    } else if (event.code === 'KeyM' && useInputStore.getState().shellState === 'WORLD') {
+      useSettings.getState().toggleMuted();
     } else if (event.code === 'Backquote') {
       useSettings.getState().togglePerf();
     }

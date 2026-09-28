@@ -1,5 +1,6 @@
 import type { EnvironmentPreset } from '@/contracts/environment';
 import type { WorldDefinition } from '@/contracts/world';
+import { seasideAudio } from './audio';
 import { seasideCollision, SPAWN } from './level';
 
 const environment: EnvironmentPreset = {
@@ -52,6 +53,7 @@ export const seasideHouse: WorldDefinition = {
       exposureTarget: 0.9,
     },
   ],
+  audio: seasideAudio,
   portals: [
     {
       id: 'open-glass',

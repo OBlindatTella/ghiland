@@ -3,6 +3,7 @@
 import dynamic from 'next/dynamic';
 import { useEffect } from 'react';
 import { usePathname } from 'next/navigation';
+import { beginWorldAudio } from '@/engine/audio';
 import { unlockAudio } from '@/engine/audio/unlock';
 import { LoadingBackdrop } from '@/shell/loading/LoadingBackdrop';
 import { Landing } from '@/shell/landing/Landing';
@@ -34,6 +35,7 @@ export function GhilandApp() {
 
   const onEnter = () => {
     unlockAudio();
+    beginWorldAudio('seaside-house');
     useInputStore.getState().reset();
     useSession.getState().beginSeaside();
     if (window.location.pathname !== '/w/seaside-house') {
