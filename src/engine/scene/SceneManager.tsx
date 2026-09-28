@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Group } from 'three';
 import type { QualityProfile } from '@/contracts/quality';
 import type { Collider, WorldModule } from '@/contracts/world';
+import { audioEngine } from '@/engine/audio/engine';
 import { disposeObject3D } from '@/engine/scene/dispose';
 import { StableFrames } from '@/engine/scene/StableFrames';
 import { FirstPersonController } from '@/engine/player/FirstPersonController';
@@ -60,6 +61,11 @@ export function SceneManager() {
   const worldId = useSession((state) => state.worldId);
   const tier = useAppliedQuality((state) => state.tier);
   const [module, setModule] = useState<WorldModule | null>(null);
+
+  useEffect(() => {
+    if (worldId) return;
+    audioEngine.stop();
+  }, [worldId]);
 
   useEffect(() => {
     if (!worldId) return;

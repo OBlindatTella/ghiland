@@ -1,4 +1,4 @@
-import type { WorldAudioSpec } from '@/contracts/audio';
+import type { SpatialEmitter, WorldAudioSpec } from '@/contracts/audio';
 import type { AcousticPortal, WorldZone } from '@/contracts/environment';
 import { fillColouredNoise } from '@/engine/audio/noise';
 import { bus } from '@/engine/events/bus';
@@ -7,6 +7,12 @@ import { useAppliedQuality } from '@/state/appliedQuality';
 import { useEnvironment } from '@/state/environment';
 import { useInputStore } from '@/state/input';
 import { useSettings } from '@/state/settings';
+
+export interface AudioSourceInfo {
+  id: string;
+  kind: 'media' | 'buffer';
+  decodedBytes: number;
+}
 
 export interface AudioDebug {
   running: boolean;
@@ -18,6 +24,8 @@ export interface AudioDebug {
   ambient: number;
   interface: number;
   rms: number;
+  sources: AudioSourceInfo[];
+  decodedBytes: number;
 }
 
 interface BedVoice {
@@ -25,6 +33,8 @@ interface BedVoice {
   filter: BiquadFilterNode;
   gain: GainNode;
   base: number;
+  kind: 'media' | 'buffer';
+  decodedBytes: number;
   stop: () => void;
 }
 
@@ -62,6 +72,10 @@ export class AudioEngine {
   private lowpassHz = 18000;
   private zone = '';
   private started = false;
+  private emitter: SpatialEmitter | null = null;
+  private decodedBytes = 0;
+  private gullGeneration = 0;
+  private echoTimer = 0;
   private lastMuted = false;
   private unsubs: Array<() => void> = [];
 
@@ -118,9 +132,27 @@ export class AudioEngine {
       const voice = this.makeBed(ctx, bed.id, bed.gain, bed.fadeInMs ?? 1200, bed.src);
       if (voice) this.beds.push(voice);
     }
-    const gull = spec.emitters?.find((emitter) => emitter.id === 'gull');
-    if (gull?.src) void this.loadGull(gull.src);
-    this.scheduleGull(8);
+    this.emitter = spec.emitters?.find((emitter) => emitter.src) ?? null;
+    if (this.emitter?.src) {
+      void this.loadGull(this.emitter.src);
+      this.scheduleGull(8);
+    }
+  }
+
+  /** Stops every bed, emitter, and timer so a world exit or re-entry cannot stack. */
+  stop(): void {
+    this.gullGeneration += 1;
+    for (const bed of this.beds) bed.stop();
+    this.beds = [];
+    globalThis.clearTimeout(this.gullTimer);
+    globalThis.clearTimeout(this.echoTimer);
+    this.gullTimer = 0;
+    this.echoTimer = 0;
+    this.gullBuffer = null;
+    this.decodedBytes = 0;
+    this.emitter = null;
+    this.started = false;
+    this.spec = null;
   }
 
   setListener(position: { x: number; y: number; z: number }, forward: { x: number; y: number; z: number }): void {
@@ -206,6 +238,13 @@ export class AudioEngine {
       ambient: this.ambient?.gain.value ?? 0,
       interface: this.interface?.gain.value ?? 0,
       rms: data.length ? Math.sqrt(sum / data.length) : 0,
+      sources: [
+        ...this.beds.map((bed) => ({ id: bed.id, kind: bed.kind, decodedBytes: bed.decodedBytes })),
+        ...(this.gullBuffer && this.emitter
+          ? [{ id: this.emitter.id, kind: 'buffer' as const, decodedBytes: this.gullBuffer.length * this.gullBuffer.numberOfChannels * 4 }]
+          : []),
+      ],
+      decodedBytes: this.decodedBytes,
     };
   }
 
@@ -224,9 +263,24 @@ export class AudioEngine {
     const now = ctx.currentTime;
     gain.gain.setTargetAtTime(gainValue, now, Math.max(0.05, fadeMs / 3000));
     let cancelNoise = () => {};
+    let cancelPlayback = () => {};
     let dead = false;
+    const voice: BedVoice = {
+      id,
+      filter: occlusion,
+      gain,
+      base: gainValue,
+      kind: src ? 'media' : 'buffer',
+      decodedBytes: 0,
+      stop: () => {
+        dead = true;
+        cancelNoise();
+        cancelPlayback();
+      },
+    };
     const procedural = () => {
       if (dead) return;
+      voice.kind = 'buffer';
       const wind = id === 'wind';
       if (wind) {
         character.type = 'bandpass';
@@ -249,36 +303,35 @@ export class AudioEngine {
           const buffer = ctx.createBuffer(2, length, ctx.sampleRate);
           buffer.copyToChannel(left, 0);
           buffer.copyToChannel(right, 1);
-          this.startBuffer(ctx, buffer, character);
+          const bytes = buffer.length * buffer.numberOfChannels * 4;
+          voice.decodedBytes += bytes;
+          this.decodedBytes += bytes;
+          cancelPlayback = this.startBuffer(ctx, buffer, character);
         });
       });
     };
     if (src) {
       character.type = 'lowpass';
       character.frequency.value = 18000;
-      this.startMedia(ctx, src, character, procedural);
+      cancelPlayback = this.startMedia(ctx, src, character, procedural);
     } else {
       procedural();
     }
-    return {
-      id,
-      filter: occlusion,
-      gain,
-      base: gainValue,
-      stop: () => {
-        dead = true;
-        cancelNoise();
-      },
-    };
+    return voice;
   }
 
-  private startBuffer(ctx: AudioContext, buffer: AudioBuffer, destination: AudioNode): void {
+  private startBuffer(ctx: AudioContext, buffer: AudioBuffer, destination: AudioNode): () => void {
+    let alive = true;
+    let timer = 0;
+    const sources: AudioBufferSourceNode[] = [];
     const loop = (when: number, offset: number) => {
+      if (!alive) return;
       const source = ctx.createBufferSource();
       const fade = ctx.createGain();
       source.buffer = buffer;
       source.connect(fade);
       fade.connect(destination);
+      sources.push(source);
       const playDur = Math.max(0.2, buffer.duration - offset);
       const fadeIn = Math.min(2.5, playDur * 0.35);
       const fadeOut = Math.min(3, playDur * 0.4);
@@ -291,14 +344,43 @@ export class AudioEngine {
       source.start(when, offset);
       source.stop(end + 0.05);
       const overlap = Math.min(3, playDur * 0.35);
-      window.setTimeout(() => loop(ctx.currentTime + 0.02, 0), Math.max(50, (playDur - overlap) * 1000));
+      timer = window.setTimeout(() => loop(ctx.currentTime + 0.02, 0), Math.max(50, (playDur - overlap) * 1000));
     };
     loop(ctx.currentTime, Math.random() * buffer.duration * 0.7);
+    return () => {
+      alive = false;
+      window.clearTimeout(timer);
+      for (const source of sources) {
+        try {
+          source.stop();
+        } catch {
+          /* already stopped */
+        }
+      }
+    };
   }
 
-  private startMedia(ctx: AudioContext, src: string, destination: AudioNode, fallback: () => void): void {
+  private startMedia(ctx: AudioContext, src: string, destination: AudioNode, fallback: () => void): () => void {
     let started = false;
     let failed = false;
+    const elements: HTMLAudioElement[] = [];
+    const intervals = new Set<number>();
+    const timeouts = new Set<number>();
+    const later = (ms: number, fn: () => void) => {
+      const id = window.setTimeout(() => {
+        timeouts.delete(id);
+        fn();
+      }, ms);
+      timeouts.add(id);
+    };
+    const cancel = () => {
+      failed = true;
+      for (const id of intervals) window.clearInterval(id);
+      for (const id of timeouts) window.clearTimeout(id);
+      intervals.clear();
+      timeouts.clear();
+      for (const audio of elements) audio.pause();
+    };
     const giveUp = () => {
       if (started || failed) return;
       failed = true;
@@ -307,6 +389,7 @@ export class AudioEngine {
     const spawn = (lead: boolean) => {
       if (failed) return;
       const audio = new Audio(src);
+      elements.push(audio);
       audio.crossOrigin = 'anonymous';
       audio.preload = 'auto';
       const source = ctx.createMediaElementSource(audio);
@@ -320,21 +403,24 @@ export class AudioEngine {
         handed = true;
         fade.gain.setTargetAtTime(0.0001, ctx.currentTime, 0.6);
         spawn(false);
-        window.setTimeout(() => {
+        later(2500, () => {
           audio.pause();
           source.disconnect();
           fade.disconnect();
-        }, 2500);
+        });
       };
       const watch = window.setInterval(() => {
         if (failed || !started) return;
         if (!Number.isFinite(audio.duration) || audio.duration === 0 || audio.paused) return;
         if (audio.currentTime < audio.duration - 3) return;
         window.clearInterval(watch);
+        intervals.delete(watch);
         handoff();
       }, 200);
+      intervals.add(watch);
       const abandon = () => {
         window.clearInterval(watch);
+        intervals.delete(watch);
         audio.pause();
         giveUp();
       };
@@ -342,6 +428,7 @@ export class AudioEngine {
       void audio.play().then(() => {
         if (failed) {
           window.clearInterval(watch);
+          intervals.delete(watch);
           audio.pause();
           return;
         }
@@ -355,28 +442,42 @@ export class AudioEngine {
         'ended',
         () => {
           window.clearInterval(watch);
+          intervals.delete(watch);
           handoff();
         },
         { once: true },
       );
     };
     spawn(true);
+    return cancel;
   }
 
   private async loadGull(src: string): Promise<void> {
     const ctx = this.ctx;
+    const generation = this.gullGeneration;
     if (!ctx) return;
-    const response = await fetch(src);
-    const bytes = await response.arrayBuffer();
-    this.gullBuffer = await ctx.decodeAudioData(bytes.slice(0));
+    try {
+      const response = await fetch(src);
+      if (!response.ok) return;
+      const bytes = await response.arrayBuffer();
+      if (generation !== this.gullGeneration) return;
+      const buffer = await ctx.decodeAudioData(bytes.slice(0));
+      if (generation !== this.gullGeneration) return;
+      this.gullBuffer = buffer;
+      this.decodedBytes += buffer.length * buffer.numberOfChannels * 4;
+    } catch {
+      /* a missing gull stays silent; the beds keep playing */
+    }
   }
 
   private scheduleGull(delaySec: number): void {
     window.clearTimeout(this.gullTimer);
     this.gullTimer = window.setTimeout(() => {
+      if (!this.started || !this.emitter) return;
       this.playGull();
       if (Math.random() < 0.3) {
-        window.setTimeout(() => this.playGull(), 1400 + Math.random() * 1200);
+        window.clearTimeout(this.echoTimer);
+        this.echoTimer = window.setTimeout(() => this.playGull(), 1400 + Math.random() * 1200);
       }
       this.scheduleGull(25 + Math.random() * 65);
     }, delaySec * 1000);
@@ -386,24 +487,26 @@ export class AudioEngine {
     const ctx = this.ctx;
     const buffer = this.gullBuffer;
     const busNode = this.ambient;
-    if (!ctx || !buffer || !busNode) return;
+    const emitter = this.emitter;
+    if (!ctx || !buffer || !busNode || !emitter) return;
     const tier = useAppliedQuality.getState().tier;
     const panner = ctx.createPanner();
     panner.panningModel = tier === 'HIGH' || tier === 'ULTRA' ? 'HRTF' : 'equalpower';
-    panner.distanceModel = 'inverse';
-    panner.refDistance = 6;
-    panner.maxDistance = 140;
-    panner.rolloffFactor = 1.1;
-    const distance = 30 + Math.random() * 90;
-    const angle = Math.random() * Math.PI - Math.PI / 2;
-    panner.positionX.value = Math.sin(angle) * distance;
-    panner.positionY.value = 8 + Math.random() * 16;
-    panner.positionZ.value = 20 + Math.cos(angle) * distance;
+    panner.distanceModel = emitter.rolloff === 'linear' ? 'linear' : emitter.rolloff === 'exponential' ? 'exponential' : 'inverse';
+    panner.refDistance = emitter.refDistance;
+    panner.maxDistance = emitter.maxDistance;
+    panner.rolloffFactor = 1;
+    const [x, y, z] = emitter.position;
+    const jitter = (Math.random() - 0.5) * 4;
+    panner.positionX.value = x + jitter;
+    panner.positionY.value = y;
+    panner.positionZ.value = z + jitter;
+    const distance = Math.hypot(x, y, z);
     const filter = ctx.createBiquadFilter();
     filter.type = 'lowpass';
     filter.frequency.value = this.exterior ? 8000 - distance * 30 : Math.min(this.lowpassHz, 4000);
     const gain = ctx.createGain();
-    gain.gain.value = 0.35 * (1 - distance / 180);
+    gain.gain.value = emitter.gain;
     const source = ctx.createBufferSource();
     source.buffer = buffer;
     source.playbackRate.value = 0.94 + Math.random() * 0.12;

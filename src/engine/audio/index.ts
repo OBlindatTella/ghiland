@@ -10,5 +10,10 @@ export function beginWorldAudio(worldId: string): void {
   const world = getWorld(worldId);
   if (!ctx || !world?.audio) return;
   audioEngine.attach(ctx);
+  audioEngine.stop();
   audioEngine.start(world.audio, world.zones, world.portals ?? []);
+}
+
+export function endWorldAudio(): void {
+  audioEngine.stop();
 }
