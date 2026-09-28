@@ -2,7 +2,7 @@
 
 import { useEffect } from 'react';
 import { Canvas, useThree } from '@react-three/fiber';
-import { ACESFilmicToneMapping } from 'three';
+import { AgXToneMapping } from 'three';
 import { AudioRig } from '@/engine/audio/AudioRig';
 import { installDevHook } from '@/engine/dev/installDevHook';
 import { PerfProbe } from '@/engine/perf/PerfProbe';
@@ -28,7 +28,7 @@ function CanvasLifecycle() {
     camera.rotation.order = 'YXZ';
     camera.rotation.y = Math.PI;
     camera.rotation.x = 0;
-    gl.toneMapping = ACESFilmicToneMapping;
+    gl.toneMapping = AgXToneMapping;
     gl.toneMappingExposure = 1.05;
     gl.domElement.style.touchAction = 'none';
     gl.domElement.style.outline = 'none';
