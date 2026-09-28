@@ -1,0 +1,127 @@
+import type { ScreenRect } from '@/contracts/math';
+import type { WindowInstance, WindowState } from '@/contracts/window';
+import { placeRect, type Size } from '@/shell/windows/geometry';
+
+export interface WindowBook {
+  windows: Record<string, WindowInstance>;
+  focusedId: string | null;
+}
+
+export const emptyWindowBook: WindowBook = { windows: {}, focusedId: null };
+
+export interface OpenWindowInput {
+  id: string;
+  appId: string;
+  title: string;
+  defaultSize: Size;
+  viewport: Size;
+  now: number;
+}
+
+function list(book: WindowBook): WindowInstance[] {
+  return Object.values(book.windows).sort((a, b) => a.z - b.z);
+}
+
+function raise(book: WindowBook, id: string): WindowBook {
+  const windows = { ...book.windows };
+  const top = list(book).reduce((max, item) => Math.max(max, item.z), 0) + 1;
+  const current = windows[id];
+  if (!current) return book;
+  windows[id] = { ...current, z: top };
+  return { windows, focusedId: id };
+}
+
+export function openWindow(book: WindowBook, input: OpenWindowInput): { book: WindowBook; created: boolean } {
+  const existing = Object.values(book.windows).find((item) => item.appId === input.appId);
+  if (existing) {
+    const restored =
+      existing.state === 'minimized' ? { ...book.windows, [existing.id]: { ...existing, state: 'normal' as const } } : book.windows;
+    return { book: raise({ windows: restored, focusedId: book.focusedId }, existing.id), created: false };
+  }
+  const previous = book.focusedId ? book.windows[book.focusedId]?.lastScreenRect ?? null : null;
+  const rect = placeRect(input.defaultSize, input.viewport, previous);
+  const z = list(book).reduce((max, item) => Math.max(max, item.z), 0) + 1;
+  const window: WindowInstance = {
+    id: input.id,
+    appId: input.appId,
+    title: input.title,
+    mode: { kind: 'overlay', rect },
+    lastScreenRect: rect,
+    state: 'normal',
+    z,
+    owner: 'local',
+    createdAt: input.now,
+  };
+  return {
+    book: { windows: { ...book.windows, [window.id]: window }, focusedId: window.id },
+    created: true,
+  };
+}
+
+export function closeWindow(book: WindowBook, id: string): WindowBook {
+  if (!book.windows[id]) return book;
+  const windows = { ...book.windows };
+  delete windows[id];
+  const remaining = Object.values(windows).sort((a, b) => b.z - a.z);
+  return { windows, focusedId: book.focusedId === id ? remaining[0]?.id ?? null : book.focusedId };
+}
+
+export function focusWindow(book: WindowBook, id: string): WindowBook {
+  if (!book.windows[id]) return book;
+  return raise(book, id);
+}
+
+export function setWindowState(book: WindowBook, id: string, state: WindowState): WindowBook {
+  const current = book.windows[id];
+  if (!current) return book;
+  const next = { ...book.windows, [id]: { ...current, state } };
+  if (state === 'minimized') {
+    const others = Object.values(next)
+      .filter((item) => item.id !== id && item.state !== 'minimized')
+      .sort((a, b) => b.z - a.z);
+    return { windows: next, focusedId: book.focusedId === id ? others[0]?.id ?? null : book.focusedId };
+  }
+  return raise({ windows: next, focusedId: book.focusedId }, id);
+}
+
+export function setWindowRect(book: WindowBook, id: string, rect: ScreenRect): WindowBook {
+  const current = book.windows[id];
+  if (!current || current.mode.kind !== 'overlay') return book;
+  return {
+    ...book,
+    windows: {
+      ...book.windows,
+      [id]: { ...current, lastScreenRect: rect, mode: { kind: 'overlay', rect } },
+    },
+  };
+}
+
+export function setWindowTitle(book: WindowBook, id: string, title: string): WindowBook {
+  const current = book.windows[id];
+  if (!current) return book;
+  return { ...book, windows: { ...book.windows, [id]: { ...current, title } } };
+}
+
+/** Persistence shape for step 7. Not written to storage yet. */
+export interface WindowsPersist {
+  windows: WindowInstance[];
+}
+
+export const windowsVersion = 1;
+
+export function migrateWindows(raw: unknown, fromVersion: number): WindowsPersist {
+  if (fromVersion > windowsVersion || !raw || typeof raw !== 'object') return { windows: [] };
+  const windows = (raw as { windows?: unknown }).windows;
+  if (!Array.isArray(windows)) return { windows: [] };
+  return { windows: windows.filter((item) => item && typeof item === 'object') as WindowInstance[] };
+}
+
+export function bookFromPersist(data: WindowsPersist): WindowBook {
+  const windows: Record<string, WindowInstance> = {};
+  for (const item of data.windows) {
+    if (!item.id || !item.appId) continue;
+    const mode = item.mode?.kind === 'detached' ? { kind: 'overlay' as const, rect: item.lastScreenRect } : item.mode;
+    windows[item.id] = { ...item, mode, state: item.state === 'minimized' ? 'minimized' : 'normal', owner: 'local' };
+  }
+  return { windows, focusedId: null };
+}

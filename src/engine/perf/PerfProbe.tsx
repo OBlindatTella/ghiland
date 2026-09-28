@@ -4,6 +4,7 @@ import { useEffect, useRef } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
 import { perfSample, usePerfStore } from '@/state/perf';
 import { useGlStore } from '@/state/gl';
+import { trackedGpuMb } from '@/engine/quality/gpuMemory';
 
 interface HeapMemory {
   usedJSHeapSize: number;
@@ -48,6 +49,7 @@ export function PerfProbe() {
       geometries: gl.info.memory.geometries,
       textures: gl.info.memory.textures,
       heapMb: memory ? memory.usedJSHeapSize / (1024 * 1024) : null,
+      gpuMb: trackedGpuMb(),
       longTasks: sample.longTasks,
     };
     Object.assign(perfSample, metrics);

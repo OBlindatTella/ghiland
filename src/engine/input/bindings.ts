@@ -10,7 +10,8 @@ export const defaultBindings: readonly KeyBinding[] = [
   { action: 'toggleScreen', codes: ['KeyQ'], owners: ['world', 'ui'] },
   { action: 'interact', codes: ['KeyE'], owners: ['world', 'ui'] },
   { action: 'pin', codes: ['KeyP'], owners: ['world', 'ui'] },
-  { action: 'toggleMute', codes: ['KeyM'], owners: ['world'] },
+  { action: 'toggleMute', codes: ['KeyM'], owners: ['world', 'ui'] },
   { action: 'togglePerfHud', codes: ['Backquote'], owners: ['world', 'ui', 'system'] },
+  { action: 'openLauncher', codes: ['Slash'], owners: ['ui'] },
   { action: 'escape', codes: ['Escape'], owners: ['ui', 'text', 'system'] },
 ];

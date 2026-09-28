@@ -62,4 +62,14 @@ describe('settings migration and clamping', () => {
     expect(store.get('ghiland:settings')).toBeNull();
     expect(Object.keys(store.dump).some((key) => key.startsWith('ghiland:settings:corrupt-'))).toBe(true);
   });
+
+  it('moves a future-version blob aside instead of rewriting it', () => {
+    const store = memory();
+    const raw = JSON.stringify({ state: { master: 0.2, quality: 'ULTRA' }, version: 9 });
+    store.set('ghiland:settings', raw);
+    expect(readPersistedSettings(store.get('ghiland:settings'), 'ghiland:settings', store)).toBeNull();
+    expect(store.get('ghiland:settings')).toBeNull();
+    const backup = Object.entries(store.dump).find(([key]) => key.startsWith('ghiland:settings:future-'));
+    expect(backup?.[1]).toBe(raw);
+  });
 });

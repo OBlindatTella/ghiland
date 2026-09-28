@@ -1,8 +1,12 @@
 import { audioEngine } from '@/engine/audio/engine';
+import { runCameraPath, type CameraStop } from '@/engine/dev/cameraPath';
+import { readLiveComposer, readTrackedGpuBytes } from '@/engine/quality/QualityDirector';
 import { queuePlayerTransform } from '@/engine/player/playerCommand';
 import { playerRef, type PlayerSnapshot } from '@/engine/player/playerRef';
+import type { QualitySetting } from '@/contracts/quality';
 import { useInputStore } from '@/state/input';
 import { useSession } from '@/state/session';
+import { useSettings } from '@/state/settings';
 
 /** Development, or a production build started with NEXT_PUBLIC_GHILAND_TEST_HOOKS=1. Off by default. */
 export function devHooksEnabled(): boolean {
@@ -20,7 +24,11 @@ declare global {
       getHint: () => boolean;
       getPhase: () => { phase: string; worldPhase: string; progress: number };
       getView: () => { dpr: number; shadows: boolean; fov: number | null } | null;
+      getGpuMemory: () => { bytes: number; textures: number; geometries: number };
+      getComposer: () => ReturnType<typeof readLiveComposer>;
       setPlayer: (snapshot: PlayerSnapshot) => void;
+      runCameraPath: (stops: CameraStop[]) => () => void;
+      setQuality: (quality: QualitySetting) => void;
     };
   }
 }
@@ -28,6 +36,7 @@ declare global {
 export function installDevHook(
   getCanvasMounts: () => number,
   getView?: () => { dpr: number; shadows: boolean; fov: number | null },
+  getRendererInfo?: () => { textures: number; geometries: number; toneMapping: number },
 ): void {
   if (!devHooksEnabled()) return;
   window.__ghiland = {
@@ -52,5 +61,12 @@ export function installDevHook(
       return { phase: session.phase, worldPhase: session.worldPhase, progress: session.loadProgress };
     },
     getView: () => getView?.() ?? null,
+    getGpuMemory: () => {
+      const info = getRendererInfo?.() ?? { textures: 0, geometries: 0, toneMapping: 0 };
+      return { bytes: readTrackedGpuBytes(), textures: info.textures, geometries: info.geometries };
+    },
+    getComposer: () => readLiveComposer(getRendererInfo?.().toneMapping ?? 0),
+    runCameraPath: (stops) => runCameraPath(stops),
+    setQuality: (quality) => useSettings.getState().setQuality(quality),
   };
 }

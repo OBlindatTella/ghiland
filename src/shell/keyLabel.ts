@@ -4,7 +4,7 @@ import { defaultBindings } from '@/engine/input/bindings';
 /** Physical code to the character printed on that key. QWERTY is the fallback when no layout map exists. */
 export function labelForCode(code: string, layout: ReadonlyMap<string, string> | null): string {
   const mapped = layout?.get(code);
-  if (mapped) return mapped;
+  if (mapped) return mapped.length === 1 ? mapped.toUpperCase() : mapped;
   if (code.startsWith('Key') && code.length === 4) return code.slice(3);
   return code;
 }

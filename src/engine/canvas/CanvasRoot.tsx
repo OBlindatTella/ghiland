@@ -5,6 +5,8 @@ import { Canvas, useThree } from '@react-three/fiber';
 import { AgXToneMapping } from 'three';
 import { AudioRig } from '@/engine/audio/AudioRig';
 import { installDevHook } from '@/engine/dev/installDevHook';
+import { qualityProfiles } from '@/engine/quality/profiles';
+import { useAppliedQuality } from '@/state/appliedQuality';
 import { PerfProbe } from '@/engine/perf/PerfProbe';
 import { ContextGuard } from '@/engine/quality/ContextGuard';
 import { QualityDirector } from '@/engine/quality/QualityDirector';
@@ -25,6 +27,10 @@ function CanvasLifecycle() {
       dpr: gl.getPixelRatio(),
       shadows: gl.shadowMap.enabled,
       fov: 'fov' in camera ? camera.fov : null,
+    }), () => ({
+      textures: gl.info.memory.textures,
+      geometries: gl.info.memory.geometries,
+      toneMapping: gl.toneMapping,
     }));
     camera.rotation.order = 'YXZ';
     camera.rotation.y = Math.PI;
@@ -41,11 +47,12 @@ function CanvasLifecycle() {
 
 export function CanvasRoot() {
   const lost = useGlStore((state) => state.lost);
+  const tier = useAppliedQuality((state) => state.tier);
   return (
     <div className="absolute inset-0">
       <Canvas
         frameloop={lost ? 'never' : 'always'}
-        dpr={[1, 1.5]}
+        dpr={qualityProfiles[tier].dpr}
         shadows={false}
         gl={{
           antialias: false,

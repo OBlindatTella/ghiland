@@ -5,9 +5,11 @@ import { decideKey, isEditableElement } from '@/engine/input/keyRoute';
 import { KeyState } from '@/engine/input/keyState';
 import { ownerForShell, OwnerStack } from '@/engine/input/ownerStack';
 import { requestCanvasPointerLock } from '@/engine/input/pointerLock';
+import { isWindowTarget } from '@/engine/windows/windowTarget';
 import { idleEscapeGate, onBrowserEscapeUnlock, onEscapeKey, onToggleUnlock, type EscapeGate } from '@/engine/input/escapeGate';
 import { classifyLockLoss, reduceShell, type ShellEffect, type ShellModel } from '@/engine/input/shellMachine';
 import { useInputStore } from '@/state/input';
+import { useSession } from '@/state/session';
 import { useSettings } from '@/state/settings';
 import { useScreenStore } from '@/state/screen';
 
@@ -16,8 +18,11 @@ export class InputManager {
   private owners = new OwnerStack('ui');
   private canvas: HTMLElement | null = null;
   private pendingLock = false;
-  /** A grant is applied only when this request is still the one the player asked for. */
   private acceptLock = false;
+  /** pointerlockerror events to ignore while the unadjustedMovement retry is in flight. */
+  private lockErrorsToIgnore = 0;
+  /** Context loss and other system exits must not be classified as an Esc unlock. */
+  private systemUnlock = false;
   /** A second Q arrived while the first Q's exit was still in flight. */
   private relockAfterToggle = false;
   private unlockIntent: 'toggle' | null = null;
@@ -57,15 +62,24 @@ export class InputManager {
     this.canvas = null;
     this.pendingLock = false;
     this.acceptLock = false;
+    this.lockErrorsToIgnore = 0;
     this.relockAfterToggle = false;
   }
 
   pushOwner(owner: InputOwner): number {
-    return this.owners.push(owner);
+    const token = this.owners.push(owner);
+    this.publishOwner();
+    return token;
   }
 
   popOwner(token: number): void {
     this.owners.pop(token);
+    this.publishOwner();
+  }
+
+  private publishOwner(): void {
+    const owner = this.owners.current();
+    if (useInputStore.getState().owner !== owner) useInputStore.setState({ owner });
   }
 
   isActionDown(action: Action): boolean {
@@ -75,7 +89,13 @@ export class InputManager {
   }
 
   clickEmptyWorld(): void {
+    if (!this.gameplayOpen()) return;
     this.apply(reduceShell(this.readModel(), { type: 'clickEmptyWorld' }));
+  }
+
+  /** Loading and the arrival fade ignore keys, clicks, and pointer lock. */
+  private gameplayOpen(): boolean {
+    return useSession.getState().worldPhase === 'active';
   }
 
   /** D-017. Runs before the store write so a carried window can pin on the way out of WORLD. */
@@ -115,7 +135,7 @@ export class InputManager {
 
   private requestLock(): void {
     const canvas = this.canvas;
-    if (!canvas || this.pendingLock) return;
+    if (!canvas || this.pendingLock || !this.gameplayOpen()) return;
     if (document.pointerLockElement === canvas) {
       if (this.unlockIntent === 'toggle') {
         this.relockAfterToggle = true;
@@ -133,29 +153,39 @@ export class InputManager {
       if (generation !== this.lockGeneration || !this.pendingLock) return;
       this.pendingLock = false;
       this.acceptLock = false;
+      this.lockErrorsToIgnore = 0;
       this.lockGeneration += 1;
       this.apply(reduceShell(this.readModel(), { type: 'pointerLockRejected' }));
     };
+    this.lockErrorsToIgnore = 1;
     const outcome = requestCanvasPointerLock(canvas);
-    if (outcome === 'event') return;
+    if (outcome === 'event') {
+      this.lockErrorsToIgnore = 0;
+      return;
+    }
     void outcome.then(
       () => {
         if (generation !== this.lockGeneration) return;
         this.pendingLock = false;
       },
-      () => fail(),
+      () => {
+        this.lockErrorsToIgnore = 0;
+        fail();
+      },
     );
   }
 
   private onPointerDown = (event: PointerEvent): void => {
+    if (!this.gameplayOpen()) return;
     if (useInputStore.getState().shellState === 'WORLD') return;
-    if (isWindowTarget(event.target)) return;
+    if (isWindowTarget(event)) return;
     this.press = { x: event.clientX, y: event.clientY };
   };
 
   private onClick = (event: MouseEvent): void => {
+    if (!this.gameplayOpen()) return;
     if (useInputStore.getState().shellState === 'WORLD') return;
-    if (isWindowTarget(event.target)) return;
+    if (isWindowTarget(event)) return;
     const origin = this.press;
     this.press = null;
     if (!origin) return;
@@ -166,6 +196,7 @@ export class InputManager {
   };
 
   private onKeyDown = (event: KeyboardEvent): void => {
+    if (!this.gameplayOpen()) return;
     const editable = isEditableElement(event.target) || isEditableElement(document.activeElement);
     const decision = decideKey(
       event.code,
@@ -196,7 +227,7 @@ export class InputManager {
       useSettings.getState().toggleMuted();
     } else if (decision.action === 'togglePerfHud') {
       useSettings.getState().togglePerf();
-    } else if (!editable && !event.repeat && event.code === 'Slash' && useInputStore.getState().shellState === 'SCREEN') {
+    } else if (decision.action === 'openLauncher') {
       const stack = useScreenStore.getState().stack;
       if (!stack.includes('text') && !stack.includes('settings')) useScreenStore.getState().push('launcher');
     }
@@ -229,12 +260,22 @@ export class InputManager {
   private onLockChange = (): void => {
     const locked = this.canvas !== null && document.pointerLockElement === this.canvas;
     this.pendingLock = false;
+    if (!locked && this.systemUnlock) {
+      this.systemUnlock = false;
+      this.escapeGate = idleEscapeGate;
+      this.acceptLock = false;
+      this.unlockIntent = null;
+      useInputStore.getState().setPointerLocked(false);
+      return;
+    }
     if (locked) {
       if (!this.acceptLock) {
+        this.systemUnlock = true;
         document.exitPointerLock();
         return;
       }
       this.acceptLock = false;
+      this.lockErrorsToIgnore = 0;
       this.unlockIntent = null;
       this.apply(reduceShell(this.readModel(), { type: 'pointerLockGained' }));
       useInputStore.getState().setPointerLocked(true);
@@ -265,11 +306,13 @@ export class InputManager {
   private cancelPendingLock(): void {
     this.pendingLock = false;
     this.acceptLock = false;
+    this.lockErrorsToIgnore = 0;
     this.lockGeneration += 1;
   }
 
   private applyEscape(): void {
     if (useInputStore.getState().shellState === 'SCREEN' && !useScreenStore.getState().pop().release) {
+      this.cancelPendingLock();
       return;
     }
     this.apply(reduceShell(this.readModel(), { type: 'escape' }));
@@ -280,6 +323,19 @@ export class InputManager {
     this.systemToken = this.pushOwner('system');
   }
 
+  /** D-017. Context loss goes through apply so the pointer, gate, and auto-pin hook all run. */
+  loseContext(): void {
+    this.holdSystem();
+    this.escapeGate = idleEscapeGate;
+    this.systemUnlock = Boolean(document.pointerLockElement);
+    this.cancelPendingLock();
+    this.unlockIntent = null;
+    this.relockAfterToggle = false;
+    if (document.pointerLockElement) document.exitPointerLock();
+    useInputStore.getState().setPointerLocked(false);
+    this.apply(reduceShell(this.readModel(), { type: 'blur' }));
+  }
+
   releaseSystem(): void {
     if (this.systemToken === null) return;
     this.popOwner(this.systemToken);
@@ -287,17 +343,16 @@ export class InputManager {
   }
 
   private onLockError = (): void => {
+    if (this.lockErrorsToIgnore > 0) {
+      this.lockErrorsToIgnore -= 1;
+      return;
+    }
     if (!this.pendingLock) return;
     this.pendingLock = false;
     this.acceptLock = false;
     this.lockGeneration += 1;
     this.apply(reduceShell(this.readModel(), { type: 'pointerLockRejected' }));
   };
-}
-
-function isWindowTarget(target: EventTarget | null): boolean {
-  const element = target as { closest?: (selector: string) => unknown } | null;
-  return Boolean(element?.closest?.('[data-ghiland-window]'));
 }
 
 export const inputManager = new InputManager();

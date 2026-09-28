@@ -65,6 +65,38 @@ function pushOut(x: number, z: number, radius: number, boxes: readonly Obstacle[
   return { x: cx, z: cz };
 }
 
+/**
+ * A diagonal step can walk into a box's X footprint before it reaches the face,
+ * then stop dead on that face. Stay on the outside edge instead, so Z slides past.
+ * Only boxes the step is actually approaching qualify — a wall metres away does not.
+ * Pure sideways movement (dz === 0) is left alone.
+ */
+function holdOpeningEdge(
+  x: number,
+  z: number,
+  nextX: number,
+  dz: number,
+  radius: number,
+  boxes: readonly Obstacle[],
+): number {
+  if (dz === 0) return nextX;
+  let held = nextX;
+  for (const box of boxes) {
+    const minX = box.minX - radius;
+    const maxX = box.maxX + radius;
+    const minZ = box.minZ - radius;
+    const maxZ = box.maxZ + radius;
+    const outside = x <= minX || x >= maxX;
+    const entered = held > minX && held < maxX;
+    const clearOfFace = z <= minZ || z >= maxZ;
+    const toward = (dz > 0 && z <= minZ) || (dz < 0 && z >= maxZ);
+    if (outside && entered && clearOfFace && toward) {
+      held = x <= minX ? minX - SKIN : maxX + SKIN;
+    }
+  }
+  return held;
+}
+
 function moveAxis(
   x: number,
   z: number,
@@ -117,7 +149,14 @@ export function slideMove(
 ): { x: number; z: number } {
   const boxes = movementObstacles(colliders, body);
   const freed = pushOut(x, z, body.radius, boxes);
-  const nextX = moveAxis(freed.x, freed.z, dx, body.radius, boxes, 'x');
+  const nextX = holdOpeningEdge(
+    freed.x,
+    freed.z,
+    moveAxis(freed.x, freed.z, dx, body.radius, boxes, 'x'),
+    dz,
+    body.radius,
+    boxes,
+  );
   const nextZ = moveAxis(nextX, freed.z, dz, body.radius, boxes, 'z');
   return pushOut(nextX, nextZ, body.radius, boxes);
 }

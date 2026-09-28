@@ -90,16 +90,41 @@ describe('seaside greybox collision', () => {
     expect(x).toBeCloseTo(0.7, 1);
   });
 
-  it('walks straight from spawn past the reveal point to the glass', () => {
+  it('walks straight from V2 through the centre opening to the balustrade', () => {
     let x = 0;
-    let z = SPAWN.z;
+    let z = -3;
+    let stalled = 0;
     for (let i = 0; i < 200; i += 1) {
       const next = slideMove(x, z, 0, 0.08, body, seasideColliders);
+      if (next.z <= z + 0.001) {
+        if (z < 8.5) stalled += 1;
+        break;
+      }
       x = next.x;
       z = next.z;
     }
-    expect(z).toBeGreaterThan(4);
+    expect(stalled).toBe(0);
+    expect(z).toBeGreaterThan(8.5);
+    expect(z).toBeLessThan(9);
     expect(Math.abs(x)).toBeLessThan(0.05);
+  });
+
+  it('slides along a closed panel edge without snagging', () => {
+    let x = 1.65;
+    let z = 3.4;
+    let stalled = 0;
+    let edgeX = x;
+    for (let i = 0; i < 80; i += 1) {
+      const next = slideMove(x, z, 0.05, 0.1, body, seasideColliders);
+      if (next.z <= z + 0.001) stalled += 1;
+      x = next.x;
+      z = next.z;
+      if (z <= 4.9) edgeX = Math.max(edgeX, x);
+      if (z > 5) break;
+    }
+    expect(stalled).toBe(0);
+    expect(z).toBeGreaterThan(5);
+    expect(edgeX).toBeLessThanOrEqual(1.71);
   });
 
   it('keeps the fin, including the player radius, outside the centre band', () => {
@@ -114,7 +139,7 @@ describe('seaside greybox collision', () => {
   });
 
   it('blocks the closed glass and the balustrade', () => {
-    const intoGlass = slideMove(-1, 3, 0, 4, body, seasideColliders);
+    const intoGlass = slideMove(3, 3, 0, 4, body, seasideColliders);
     expect(intoGlass.z).toBeLessThan(4.5);
 
     const intoRail = slideMove(0, 8, 0, 3, body, seasideColliders);

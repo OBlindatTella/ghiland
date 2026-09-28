@@ -15,6 +15,7 @@ export type Action =
   | 'pin'
   | 'toggleMute'
   | 'togglePerfHud'
+  | 'openLauncher'
   | 'escape';
 
 /** `codes` are `KeyboardEvent.code` values. */

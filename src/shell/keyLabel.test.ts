@@ -5,7 +5,7 @@ import { screenKeyLabel } from '@/shell/keyLabel';
 describe('screen key label', () => {
   it('reads the Screen binding and the keyboard layout', () => {
     expect(screenKeyLabel(null)).toBe('Q');
-    const azerty = new Map([['KeyQ', 'A']]);
+    const azerty = new Map([['KeyQ', 'a']]);
     expect(screenKeyLabel(azerty)).toBe('A');
     expect(screenKeyLabel(null, [{ action: 'toggleScreen', codes: ['KeyA'], owners: ['ui'] }])).toBe('A');
   });

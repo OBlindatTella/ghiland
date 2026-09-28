@@ -5,6 +5,8 @@ import { PerfHud } from '@/engine/perf/PerfHud';
 import { Shelf } from '@/shell/launcher/Shelf';
 import { screenKeyLabel } from '@/shell/keyLabel';
 import { SettingsPanel } from '@/shell/screen/SettingsPanel';
+import { FocusGuard } from '@/shell/windows/FocusGuard';
+import { WindowLayer } from '@/shell/windows/WindowLayer';
 import { RestoringVeil } from '@/shell/screen/RestoringVeil';
 import { useAppliedQuality } from '@/state/appliedQuality';
 import { useInputStore } from '@/state/input';
@@ -38,7 +40,8 @@ export function ShellChrome() {
   }, []);
 
   return (
-    <>
+    <div data-ghiland-screen="" className="contents">
+      <FocusGuard />
       <div data-testid="shell-state" data-shell={shell} className="sr-only">
         {shell}
       </div>
@@ -52,6 +55,7 @@ export function ShellChrome() {
         className="pointer-events-none absolute inset-0 z-20 bg-[#1c1814]"
         style={{ opacity: dim ? 0.45 : 0, transition: 'opacity 200ms linear' }}
       />
+      <WindowLayer />
       <Shelf />
       <SettingsPanel />
       <RestoringVeil />
@@ -59,12 +63,12 @@ export function ShellChrome() {
         <p
           role="status"
           aria-live="polite"
-          className="pointer-events-none absolute bottom-16 left-1/2 z-30 -translate-x-1/2 rounded-full bg-[#141413]/90 px-4 py-2 text-[13px] leading-5 text-[#f2f0eb]"
+          className="ghiland-hint pointer-events-none absolute bottom-16 left-1/2 z-30 -translate-x-1/2 rounded-full bg-[#141413]/90 px-4 py-2 text-[13px] leading-5 text-[#f2f0eb]"
         >
           Click to walk · {screenKey} Screen
         </p>
       ) : null}
       {showPerf ? <PerfHud /> : null}
-    </>
+    </div>
   );
 }

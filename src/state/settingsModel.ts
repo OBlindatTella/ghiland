@@ -16,6 +16,8 @@ export interface SettingsData {
   reduceMotion: boolean;
   showPerfHud: boolean;
   lastAutoTier: QualityTier | null;
+  /** Failed AUTO climb. Expires after 7 days or a manual quality change (D-022). */
+  autoCeiling: { tier: QualityTier; renderer: string; at: number } | null;
 }
 
 export const settingsDefaults: SettingsData = {
@@ -31,6 +33,7 @@ export const settingsDefaults: SettingsData = {
   reduceMotion: false,
   showPerfHud: false,
   lastAutoTier: null,
+  autoCeiling: null,
 };
 
 const TIERS = new Set<QualitySetting>(['LOW', 'MED', 'HIGH', 'ULTRA', 'AUTO']);
@@ -74,7 +77,17 @@ export function sanitizeSettings(raw: unknown): SettingsData {
     reduceMotion: flag(data.reduceMotion, settingsDefaults.reduceMotion),
     showPerfHud: flag(data.showPerfHud, settingsDefaults.showPerfHud),
     lastAutoTier: typeof last === 'string' && AUTO_TIERS.has(last as QualityTier) ? (last as QualityTier) : null,
+    autoCeiling: readCeiling(data.autoCeiling),
   };
+}
+
+function readCeiling(value: unknown): SettingsData['autoCeiling'] {
+  if (!value || typeof value !== 'object') return null;
+  const data = value as { tier?: unknown; renderer?: unknown; at?: unknown };
+  if (typeof data.tier !== 'string' || !AUTO_TIERS.has(data.tier as QualityTier)) return null;
+  if (typeof data.renderer !== 'string' || data.renderer.length === 0 || data.renderer.length > 300) return null;
+  if (typeof data.at !== 'number' || !Number.isFinite(data.at)) return null;
+  return { tier: data.tier as QualityTier, renderer: data.renderer, at: data.at };
 }
 
 /** Zustand persist stores `{ state, version }`. A corrupt blob is renamed and discarded. */
@@ -84,6 +97,15 @@ export function readPersistedSettings(raw: string | null, key: string, adapter: 
     const parsed = JSON.parse(raw) as { state?: unknown; version?: number };
     if (!parsed || typeof parsed !== 'object' || !('state' in parsed)) throw new Error('shape');
     const version = typeof parsed.version === 'number' ? parsed.version : 0;
+    if (version > SETTINGS_VERSION) {
+      try {
+        adapter.set(`${key}:future-${Date.now()}`, raw);
+        adapter.remove(key);
+      } catch {
+        // The backup itself can fail when storage is blocked. Keep the original key.
+      }
+      return null;
+    }
     const state = sanitizeSettings(migrateSettings(parsed.state, version));
     return JSON.stringify({ state, version: SETTINGS_VERSION });
   } catch {

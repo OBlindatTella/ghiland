@@ -24,7 +24,9 @@ export function PerfHud() {
       <br />
       {n(metrics.calls)} draws · {n(metrics.triangles)} tris
       <br />
-      {n(metrics.geometries)} geo · {n(metrics.textures)} tex · heap {heap}
+      {n(metrics.geometries)} geo · {n(metrics.textures)} tex · gpu {metrics.gpuMb.toFixed(0)} MB
+      <br />
+      heap {heap}
       <br />
       {metrics.longTasks} long tasks · {setting === 'AUTO' ? `AUTO ${applied}` : applied}
     </p>

@@ -4,7 +4,7 @@ import type { WorldDefinition } from '@/contracts/world';
 import { seasideAudio } from './audio';
 import { seasideCollision, SPAWN } from './level';
 
-/** Yaw around Y. −15° turns a window that faces into the room toward x = 0 from the +X side. */
+/** Yaw around Y. Front face is local +Z (D-023). −165° faces the room and 15° toward x = 0. */
 function yawQuat(deg: number): Quat {
   const half = (deg * Math.PI) / 360;
   return [0, Math.sin(half), 0, Math.cos(half)];
@@ -65,7 +65,7 @@ export const seasideHouse: WorldDefinition = {
     {
       id: 'hero-sea',
       position: [5.1, 1.45, 3.9],
-      quaternion: yawQuat(-15),
+      quaternion: yawQuat(-165),
       label: 'Sea',
     },
   ],
@@ -73,7 +73,7 @@ export const seasideHouse: WorldDefinition = {
     {
       id: 'open-glass',
       between: ['interior', 'terrace'],
-      bounds: { min: [0, 0, 4.4], max: [4, 3.2, 4.6] },
+      bounds: { min: [-2, 0, 4.4], max: [2, 3.2, 4.6] },
       open: true,
     },
   ],

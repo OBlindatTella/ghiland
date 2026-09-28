@@ -21,6 +21,7 @@ import { takePlayerTransform } from '@/engine/player/playerCommand';
 import { playerRef } from '@/engine/player/playerRef';
 import { CAMERA_FRAME_PRIORITY } from '@/engine/render/frameOrder';
 import { useInputStore } from '@/state/input';
+import { useSession } from '@/state/session';
 import { useSettings } from '@/state/settings';
 
 const BODY: Body = {
@@ -65,6 +66,7 @@ export function FirstPersonController({
       lookGuardUntil.current = performance.now() + LOOK_GUARD_MS;
     };
     const onMove = (event: MouseEvent) => {
+      if (useSession.getState().worldPhase !== 'active') return;
       if (document.pointerLockElement !== gl.domElement) return;
       const scaled = clampLookVector(
         event.movementX,
@@ -106,7 +108,8 @@ export function FirstPersonController({
 
     const shell = useInputStore.getState().shellState;
     const locked = useInputStore.getState().pointerLocked;
-    if (shell !== 'WORLD' || !locked) {
+    const playing = useSession.getState().worldPhase === 'active';
+    if (!playing || shell !== 'WORLD' || !locked) {
       vel.current = { x: 0, z: 0 };
     } else if (step > 0) {
       const wish = viewToWorld(

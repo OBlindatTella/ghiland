@@ -4,9 +4,11 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Group } from 'three';
 import type { QualityProfile } from '@/contracts/quality';
 import type { Collider, WorldModule } from '@/contracts/world';
+import { audioEngine } from '@/engine/audio/engine';
 import { disposeObject3D } from '@/engine/scene/dispose';
 import { StableFrames } from '@/engine/scene/StableFrames';
 import { FirstPersonController } from '@/engine/player/FirstPersonController';
+import { registerRayBlockers } from '@/engine/windows/crosshair';
 import { resolveEyeHeight } from '@/engine/player/movement';
 import { qualityProfiles } from '@/engine/quality/profiles';
 import { useAppliedQuality } from '@/state/appliedQuality';
@@ -31,6 +33,13 @@ function WorldHost({
   const onReady = useCallback(() => {
     useSession.getState().setProgress(0.9);
   }, []);
+
+  useEffect(() => {
+    const boxes = colliders
+      .filter((collider) => collider.layers.includes('occluder') || collider.layers.includes('placement'))
+      .map((collider) => collider.box);
+    return registerRayBlockers(boxes);
+  }, [colliders]);
 
   useEffect(() => {
     const root = group.current;
@@ -58,13 +67,22 @@ function WorldHost({
 
 export function SceneManager() {
   const worldId = useSession((state) => state.worldId);
+  const loadAttempt = useSession((state) => state.loadAttempt);
   const tier = useAppliedQuality((state) => state.tier);
   const [module, setModule] = useState<WorldModule | null>(null);
 
   useEffect(() => {
+    if (worldId) return;
+    audioEngine.stop();
+  }, [worldId]);
+
+  useEffect(() => {
     if (!worldId) return;
     const definition = getWorld(worldId);
-    if (!definition?.load) return;
+    if (!definition?.load) {
+      useSession.getState().failLoad();
+      return;
+    }
     let cancelled = false;
     useSession.getState().setProgress(0.22);
     void definition.load().then(async (loaded) => {
@@ -80,12 +98,14 @@ export function SceneManager() {
       }
       useSession.getState().setProgress(0.74);
       setModule(loaded.default);
+    }).catch(() => {
+      if (!cancelled) useSession.getState().failLoad();
     });
     return () => {
       cancelled = true;
       setModule(null);
     };
-  }, [worldId]);
+  }, [worldId, loadAttempt]);
 
   if (!module || !worldId) return null;
   const definition = getWorld(worldId);

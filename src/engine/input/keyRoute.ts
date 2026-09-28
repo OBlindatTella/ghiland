@@ -1,12 +1,25 @@
 import type { Action, InputOwner, KeyBinding } from '@/contracts/input';
 import { defaultBindings } from '@/engine/input/bindings';
 
-const EDITABLE_TAGS = new Set(['INPUT', 'TEXTAREA', 'SELECT']);
+const EDITABLE_TAGS = new Set(['TEXTAREA', 'SELECT']);
+const NON_TEXT_INPUTS = new Set([
+  'button',
+  'checkbox',
+  'color',
+  'file',
+  'hidden',
+  'image',
+  'radio',
+  'range',
+  'reset',
+  'submit',
+]);
 
-export function isEditableElement(target: EventTarget | { tagName?: string; isContentEditable?: boolean } | null): boolean {
+export function isEditableElement(target: EventTarget | { tagName?: string; isContentEditable?: boolean; type?: string } | null): boolean {
   if (!target || typeof target !== 'object') return false;
-  const element = target as { tagName?: string; isContentEditable?: boolean };
+  const element = target as { tagName?: string; isContentEditable?: boolean; type?: string };
   if (element.isContentEditable) return true;
+  if (element.tagName === 'INPUT') return !NON_TEXT_INPUTS.has((element.type ?? 'text').toLowerCase());
   return EDITABLE_TAGS.has(element.tagName ?? '') || element.tagName === 'IFRAME';
 }
 

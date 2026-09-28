@@ -12,6 +12,15 @@ describe('decideKey', () => {
     expect(decideKey('KeyQ', false, 'world', true, true).action).toBeNull();
   });
 
+  it('lets Notes type Q, Space, arrows and backtick (S1-04)', () => {
+    for (const code of ['KeyQ', 'Space', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Backquote']) {
+      const decision = decideKey(code, true, 'text', false, false);
+      expect(decision.action).toBeNull();
+      expect(decision.preventDefault).toBe(false);
+      expect(decision.track).toBe(false);
+    }
+  });
+
   it('lets an editable focus keep gameplay keys, Q, backtick, Space and arrows', () => {
     for (const code of ['KeyW', 'KeyQ', 'Backquote', 'Space', 'ArrowLeft']) {
       const decision = decideKey(code, true, 'world', true, false);
@@ -29,12 +38,19 @@ describe('decideKey', () => {
     expect(decideKey('ArrowUp', false, 'ui', false, false).preventDefault).toBe(false);
   });
 
-  it('treats inputs, textareas, contenteditable and iframes as editable', () => {
+  it('treats text fields as editable and leaves sliders and checkboxes free', () => {
     expect(isEditableElement({ tagName: 'INPUT' })).toBe(true);
+    expect(isEditableElement({ tagName: 'INPUT', type: 'text' })).toBe(true);
+    expect(isEditableElement({ tagName: 'INPUT', type: 'range' })).toBe(false);
+    expect(isEditableElement({ tagName: 'INPUT', type: 'checkbox' })).toBe(false);
     expect(isEditableElement({ tagName: 'TEXTAREA' })).toBe(true);
     expect(isEditableElement({ tagName: 'DIV', isContentEditable: true })).toBe(true);
     expect(isEditableElement({ tagName: 'IFRAME' })).toBe(true);
     expect(isEditableElement({ tagName: 'BUTTON' })).toBe(false);
     expect(isEditableElement(null)).toBe(false);
+    expect(decideKey('KeyQ', false, 'ui', false, false).action).toBe('toggleScreen');
+    expect(decideKey('KeyM', false, 'ui', false, false).action).toBe('toggleMute');
+    expect(decideKey('Slash', false, 'ui', false, false).action).toBe('openLauncher');
+    expect(decideKey('Slash', false, 'world', true, false).action).toBeNull();
   });
 });

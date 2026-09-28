@@ -49,25 +49,25 @@ Grid floors. The default Three.js sky, default lighting or the grey-blue "demo" 
 A single-storey modern house cantilevered over a rocky cove, facing open sea to the west-southwest. Warm minimal architecture: lime plaster, pale oak, travertine, dark bronze frames, one enormous glass wall. It belongs to someone who actually lives there: a half-read book, a jumper over a chair, a cup left on the table, sand on the terrace.
 
 ### Layout and dimensions
-Coordinate frame for the spec: metres, Y up, +Z points toward the sea, origin at the centre of the living room's back wall line (z = -3.5 is the back wall). These are three.js world coordinates (D-019): facing +Z, the viewer's left is +X. "Left" and "right" in the notes below are what the viewer sees.
+Coordinate frame for the spec: metres, Y up, +Z points toward the sea, origin at the centre of the living room's back wall line (z = -3.5 is the back wall).
 
 | Zone | Extent (x × z) | Ceiling | Notes |
 |---|---|---|---|
 | Entry corridor | x −1.1…1.1, z −9…−3.5 (2.2 × 5.5 m) | 2.4 m, oak slats | Dim, narrow, warm. Compression before the reveal. |
 | Living volume | x −7…7, z −3.5…4.5 (14 × 8 m) | 3.2 m, plaster | Open plan: lounge left, kitchen/dining right, clear centre. |
-| Study nook | x 5…7, z −3.5…0 | 3.2 m | Desk under a narrow side window framing the headland. Natural "home" spot for the Ghiland Screen. |
-| Glass wall | x −6…6 at z = 4.5 | full height | Six 2 m sliding panels. The two at x 0…+4 are open, with sheer linen curtains, so the straight path from the reveal point walks into open air. The panel at x +4…+6 stays closed and backs the hero pin anchor. |
+| Study nook | x −7…−5, z −3.5…0 | 3.2 m | Desk under a narrow side window framing the headland. Natural "home" spot for the Ghiland Screen. |
+| Glass wall | x −6…6 at z = 4.5 | full height | Six 2 m sliding panels. [Three.js coordinates per D-019/D-025:] The two central panels at x −2…+2 are open, with sheer linen curtains, so the straight path from the reveal point walks into open air. The panel at x +4…+6 stays closed and backs the hero pin anchor. |
 | Terrace | x −7…7, z 4.5…9 (14 × 4.5 m) | open sky | Teak deck cantilevered over water. Glass balustrade 1.05 m high. |
 | Sea surface | y = −6.0 | | 6 m below the deck. Rocks at the base on both sides. |
 
 Walkable area is about 100 m² inside, 63 m² of terrace and 12 m² of corridor, all on one level. No stairs in Alpha 0.1: they add controller risk and nothing to the feeling. Colliders are invisible and follow the walls, furniture footprints and the balustrade, with smooth wall-sliding.
 
-Furniture placement: lounge (x +2…+6, viewer left) has a low linen sofa facing the sea, a wool rug, a travertine coffee table, a floor lamp and a bookshelf on the back wall. Kitchen (x −7…−2, viewer right) has a travertine island with two stools, open oak shelving and a dining table for six near the glass with two pendant lights. Centre (x −2…2) stays empty so the path from the corridor to the glass is a straight, unobstructed line. One bouclé reading chair sits by the glass, just right of centre. Terrace has two lounge chairs, a built-in bench along the left edge, a planter with an olive tree and grasses, and an outdoor lantern.
+Furniture placement: lounge (x −6…−2) has a low linen sofa facing the sea, a wool rug, a travertine coffee table, a floor lamp and a bookshelf on the back wall. Kitchen (x 2…7) has a travertine island with two stools, open oak shelving and a dining table for six near the glass with two pendant lights. Centre (x −2…2) stays empty so the path from the corridor to the glass is a straight, unobstructed line. One bouclé reading chair sits by the glass, just right of centre. Terrace has two lounge chairs, a built-in bench along the left edge, a planter with an olive tree and grasses, and an outdoor lantern.
 
 ### Spawn and the reveal
 - Spawn at (0, eye height, −8.2), facing +Z, in the corridor.
 - Entry transition (ruling, follows Pixel): clicking the Seaside card unlocks browser audio and starts the sea, muffled, under the loading backdrop. There is no black screen. When the scene is ready the backdrop dissolves into the corridor view over about 1 s, so the sound arrives first and the image follows.
-- From spawn you see a vertical sliver of bright sea-light at the end of the corridor. A travertine fin stands at the room's side, outside x −2…+2 including the player radius (D-020), so it does not block the straight walk or the sea through the open panels. You hear the sea, filtered.
+- From spawn you see a vertical sliver of bright sea-light at the end of the corridor, beside a freestanding travertine fin wall at z ≈ −3.5 that blocks the full view. You hear the sea, filtered.
 - About 4 m of walking (3 s) brings you past the fin. The ceiling lifts from 2.4 to 3.2 m, the corridor widens into 14 m of room, and the whole 12 m glass wall opens with the horizon at eye level. Auto-exposure dips as the brightness hits you and then settles. This is the "wow".
 - From the reveal point to the open panel is 8 m, about 6 s at walking speed. The sea gets louder and brighter with every step.
 
@@ -269,7 +269,7 @@ Pixel owns interaction and content design. This section covers how a window sits
 - Night: overall UI brightness drops to about 85% after sunset so windows don't glare against a dim room.
 - Motion: appearance is a 250 ms fade with a 2 cm settle, never a pop. Windows do not sway with the wind or bob.
 - Suggested pin spots in the Seaside House (for Pixel's snap hints and the success test):
-  - Hero pinAnchor (authored; pinning within 1.5 m snaps here, glass is never a snap surface): centre at about (+5.1, 1.45, 3.9), in front of the closed panel at x +4…+6, 0.6 m from the glass, angled about 15° toward the room centre. This is the hero spot for the Notes test.
+  - Hero pinAnchor (authored; pinning within 1.5 m snaps here, glass is never a snap surface): centre at about (−5.1, 1.45, 3.9), in front of the closed panel at x −6…−4, 0.6 m from the glass, angled about 15° toward the room. This is the hero spot for the Notes test.
   - Size check at 500–550 px per metre: a Notes window of about 440 × 560 px pins at roughly 0.8 × 1.05 m, spanning about 0.9–1.95 m in height. Centred on the open panels it would cover most of the view, which is why the anchor sits over the closed panel. From the reveal point the note reads on the left third, the open panels and horizon hold the centre, and the sun glitter sits on the right. That makes a balanced frame instead of a blocked one. Recommend Pixel caps the default pinned Notes size at about 0.8 × 1.05 m for this anchor. The curtains' 0.35 m inward travel stays clear of the pane.
   - Over the dining table.
   - Above the study desk.
@@ -357,7 +357,7 @@ Preparation (fits the streaming ruling)
 SUMMARY: This defines Ghiland's cross-world environmental language, a full Seaside House design spec for Alpha 0.1 (updated with the Master's rulings), and licence-checked sound picks.
 WHAT WAS DONE: Wrote palette, light, motion, sound and framing rules; the house layout with dimensions, spawn and reveal; the lighting stack; materials; detail layers; procedural vs GLB split; tier table; ocean and wind design; audio layers; camera numbers; UI-in-world rules; two preview-card directions; and a table of 23 sound assets checked on their pages, with preparation notes.
 FILES / SYSTEMS AFFECTED: /workspace/ghiland/docs/phase-a/AURA_WORLDS.md. No code.
-IMPORTANT DECISIONS: Corridor-to-glass reveal with the entry starting under Pixel's loading backdrop; late-afternoon default, with the slow sunset as a stretch goal; custom Gerstner ocean with no planar reflections; one onshore wind; lightmaps bake only ambient occlusion and indirect light; AgX with simulated auto-exposure; UI content unlit, frames take a 10–15% tint; raycast fade for occlusion, and glass never occludes; the hero pinAnchor sits over the closed panel at x +4…+6 so a pinned note at 500–550 px per metre doesn't block the view; alpha-to-coverage only on HIGH and ULTRA; all primary sounds are CC0, beds stream, and wave variations are short buffers; no stairs.
+IMPORTANT DECISIONS: Corridor-to-glass reveal with the entry starting under Pixel's loading backdrop; late-afternoon default, with the slow sunset as a stretch goal; custom Gerstner ocean with no planar reflections; one onshore wind; lightmaps bake only ambient occlusion and indirect light; AgX with simulated auto-exposure; UI content unlit, frames take a 10–15% tint; raycast fade for occlusion, and glass never occludes; the hero pinAnchor sits over the closed panel at x −6…−4 so a pinned note at 500–550 px per metre doesn't block the view; alpha-to-coverage only on HIGH and ULTRA; all primary sounds are CC0, beds stream, and wave variations are short buffers; no stairs.
 RISKS: Real-time sun shadows through a 12 m glass wall on integrated GPUs; plant alpha overdraw near the camera; the ocean bed is shore-level and needs processing to sound like it's heard from height; audio re-sequencing needs careful scheduling.
 KNOWN LIMITATIONS: All values are untested starting points. There's no concept art, greybox or measured performance yet. Sounds were chosen from page descriptions without listening. There's no CC0 yellow-legged gull, so the gulls are herring gulls. Freesound downloads need a free account.
 RECOMMENDED NEXT ACTION: Master decides who creates or uses a Freesound account to download the picks (it's free, but it needs an account). Forge builds the greybox with only sun, sky, fog, ocean and curtains. The audio step starts with a listening pass over the picks.

@@ -53,9 +53,23 @@ body {
   animation: ghiland-shelf-in 240ms cubic-bezier(0.2, 0, 0, 1);
 }
 
+@keyframes ghiland-hint-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.ghiland-hint {
+  animation: ghiland-hint-in 200ms linear 600ms both;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .ghiland-move,
-  .ghiland-shelf {
+  .ghiland-shelf,
+  .ghiland-hint {
     animation: none !important;
     transition-duration: 120ms !important;
   }

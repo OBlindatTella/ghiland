@@ -7,7 +7,7 @@ import type { PerfBudget, QualityProfile, QualityTier } from '@/contracts/qualit
 
 export type WorldStatus = 'playable' | 'preview';
 
-export type ColliderLayer = 'movement' | 'occluder' | 'pinSurface';
+export type ColliderLayer = 'movement' | 'occluder' | 'pinSurface' | 'placement';
 
 export interface Collider {
   id: string;

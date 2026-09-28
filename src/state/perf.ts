@@ -9,6 +9,7 @@ export interface PerfMetrics {
   geometries: number;
   textures: number;
   heapMb: number | null;
+  gpuMb: number;
   longTasks: number;
 }
 
@@ -20,6 +21,7 @@ export const emptyMetrics: PerfMetrics = {
   geometries: 0,
   textures: 0,
   heapMb: null,
+  gpuMb: 0,
   longTasks: 0,
 };
 

@@ -1,10 +1,12 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { InputManager } from '@/engine/input/InputManager';
 import { useInputStore } from '@/state/input';
+import { useSession } from '@/state/session';
 
 type Listener = (event: Event) => void;
 
 function installDom() {
+  useSession.setState({ phase: 'inWorld', worldPhase: 'active' });
   const windowListeners = new Map<string, Set<Listener>>();
   const docListeners = new Map<string, Set<Listener>>();
   const canvasListeners = new Map<string, Set<Listener>>();
@@ -21,7 +23,7 @@ function installDom() {
   };
   let focused = true;
   let exits = 0;
-  const requestPointerLock = vi.fn(() => undefined);
+  const requestPointerLock = vi.fn((_options?: { unadjustedMovement?: boolean }): Promise<void> | undefined => undefined);
   const canvas = {
     addEventListener: listen(canvasListeners),
     removeEventListener: forget(canvasListeners),
@@ -69,6 +71,32 @@ function installDom() {
   };
 }
 
+describe('arrival gate', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    useInputStore.getState().reset();
+    useSession.setState({ phase: 'landing', worldId: null, worldPhase: 'idle', loadProgress: 0 });
+  });
+
+  it('ignores keys and the pointer until the world is active', () => {
+    const dom = installDom();
+    useSession.setState({ worldPhase: 'loading', phase: 'loading' });
+    const manager = new InputManager();
+    manager.attach(dom.canvas);
+    dom.fireWindow('keydown', { code: 'KeyQ', repeat: false, preventDefault() {} });
+    expect(useInputStore.getState().shellState).toBe('RELEASED');
+    dom.fireCanvas('pointerdown', { clientX: 4, clientY: 4, target: {} });
+    dom.fireCanvas('click', { clientX: 4, clientY: 4, target: {} });
+    expect(dom.requestPointerLock).not.toHaveBeenCalled();
+
+    useSession.setState({ worldPhase: 'active' });
+    dom.fireCanvas('pointerdown', { clientX: 4, clientY: 4, target: {} });
+    dom.fireCanvas('click', { clientX: 4, clientY: 4, target: {} });
+    expect(dom.requestPointerLock).toHaveBeenCalledTimes(1);
+    manager.detach();
+  });
+});
+
 describe('iframe focus', () => {
   afterEach(() => {
     vi.unstubAllGlobals();
@@ -112,6 +140,32 @@ describe('pointer lock without a promise', () => {
     expect(useInputStore.getState().showClickToWalk).toBe(true);
     expect(useInputStore.getState().relockBlocked).toBe(true);
     expect(useInputStore.getState().shellState).toBe('SCREEN');
+    manager.detach();
+  });
+
+  it('keeps the fallback lock when the unadjustedMovement request is rejected', async () => {
+    const dom = installDom();
+    const manager = new InputManager();
+    useInputStore.setState({ shellState: 'SCREEN', owner: 'ui', showClickToWalk: false, relockBlocked: false });
+    let calls = 0;
+    dom.requestPointerLock.mockImplementation((options?: { unadjustedMovement?: boolean }) => {
+      calls += 1;
+      if (options?.unadjustedMovement) {
+        dom.fireDoc('pointerlockerror', {});
+        return Promise.reject(new DOMException('unsupported', 'NotSupportedError'));
+      }
+      return Promise.resolve();
+    });
+    manager.attach(dom.canvas);
+    dom.fireWindow('keydown', { code: 'KeyQ', repeat: false, preventDefault() {} });
+    await Promise.resolve();
+    expect(calls).toBe(2);
+    expect(useInputStore.getState().relockBlocked).toBe(false);
+    dom.documentStub.pointerLockElement = dom.canvas;
+    dom.fireDoc('pointerlockchange', {});
+    expect(useInputStore.getState().shellState).toBe('WORLD');
+    expect(useInputStore.getState().pointerLocked).toBe(true);
+    expect(dom.exits()).toBe(0);
     manager.detach();
   });
 });
@@ -216,6 +270,36 @@ describe('shell prep for windows', () => {
     dom.fireWindow('keydown', { code: 'KeyQ', repeat: false, preventDefault() {} });
     expect(during).toEqual(['RELEASED:RELEASED:SCREEN']);
     expect(useInputStore.getState().shellState).toBe('SCREEN');
+    manager.setBeforeShellChange(null);
+    manager.detach();
+  });
+
+  it('routes context loss through apply, releases the pointer, and drops a pending lock', () => {
+    const dom = installDom();
+    const manager = new InputManager();
+    useInputStore.setState({ shellState: 'WORLD', owner: 'world', showClickToWalk: false, pointerLocked: true });
+    dom.documentStub.pointerLockElement = dom.canvas;
+    manager.attach(dom.canvas);
+    const during: string[] = [];
+    manager.setBeforeShellChange((from, to) => {
+      during.push(`${from}:${useInputStore.getState().shellState}:${to}`);
+    });
+    manager.loseContext();
+    expect(during).toEqual(['WORLD:WORLD:RELEASED']);
+    expect(useInputStore.getState().shellState).toBe('RELEASED');
+    expect(useInputStore.getState().pointerLocked).toBe(false);
+    expect(dom.exits()).toBeGreaterThan(0);
+    dom.documentStub.pointerLockElement = null;
+    dom.fireDoc('pointerlockchange', {});
+    expect(useInputStore.getState().shellState).toBe('RELEASED');
+
+    useInputStore.setState({ shellState: 'SCREEN', owner: 'ui', showClickToWalk: false, relockBlocked: false });
+    dom.fireWindow('keydown', { code: 'KeyQ', repeat: false, preventDefault() {} });
+    manager.loseContext();
+    dom.documentStub.pointerLockElement = dom.canvas;
+    dom.fireDoc('pointerlockchange', {});
+    expect(dom.exits()).toBeGreaterThan(1);
+    expect(useInputStore.getState().shellState).toBe('RELEASED');
     manager.setBeforeShellChange(null);
     manager.detach();
   });

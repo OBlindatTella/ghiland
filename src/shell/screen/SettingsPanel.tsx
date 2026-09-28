@@ -1,11 +1,39 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import type { Action } from '@/contracts/input';
 import { audioEngine } from '@/engine/audio/engine';
+import { defaultBindings } from '@/engine/input/bindings';
+import { labelForCode } from '@/shell/keyLabel';
 import type { QualitySetting } from '@/contracts/quality';
 import { usePerfStore } from '@/state/perf';
+import { useInputStore } from '@/state/input';
+import { storageWriteFailed, subscribeStorageFailure } from '@/state/persist';
 import { useScreenStore } from '@/state/screen';
 import { useSettings } from '@/state/settings';
+
+const KEY_NAMES: Record<Action, string> = {
+  moveForward: 'Walk forward',
+  moveBack: 'Walk back',
+  moveLeft: 'Strafe left',
+  moveRight: 'Strafe right',
+  strollFast: 'Faster stroll',
+  toggleScreen: 'Screen',
+  interact: 'Interact',
+  pin: 'Pin',
+  toggleMute: 'Mute',
+  togglePerfHud: 'Performance',
+  openLauncher: 'Launcher',
+  escape: 'Back',
+};
+
+function keyText(code: string): string {
+  if (code === 'Slash') return '/';
+  if (code === 'Backquote') return '`';
+  if (code.startsWith('Shift')) return 'Shift';
+  if (code.startsWith('Arrow')) return code.slice(5);
+  return labelForCode(code, null);
+}
 
 const QUALITY: { id: QualitySetting; label: string }[] = [
   { id: 'LOW', label: 'Low' },
@@ -56,9 +84,13 @@ function Slider({
 }
 
 export function SettingsPanel() {
-  const open = useScreenStore((state) => state.stack.includes('settings'));
+  const shell = useInputStore((state) => state.shellState);
+  const settingsLayer = useScreenStore((state) => state.stack.includes('settings'));
+  const open = shell === 'SCREEN' && settingsLayer;
   const settings = useSettings();
   const autoTier = usePerfStore((state) => state.autoTier);
+  const [storageBlocked, setStorageBlocked] = useState(storageWriteFailed);
+  useEffect(() => subscribeStorageFailure(() => setStorageBlocked(true)), []);
   useEffect(() => {
     if (open) audioEngine.playTick();
   }, [open]);
@@ -83,6 +115,9 @@ export function SettingsPanel() {
         </button>
       </header>
       <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-4">
+        {storageBlocked ? (
+          <p className="mb-3 text-[13px] leading-5 text-[#f2f0eb]/64">Settings could not be saved in this browser.</p>
+        ) : null}
         <h2 className="text-[12px] leading-4 text-[#f2f0eb]/64">Sound</h2>
         <Slider label="Master" min={0} max={1} step={0.01} value={settings.master} display={(value) => String(Math.round(value * 100))} onChange={settings.setMaster} />
         <Slider label="Ambient" min={0} max={1} step={0.01} value={settings.ambient} display={(value) => String(Math.round(value * 100))} onChange={settings.setAmbient} />
@@ -90,6 +125,14 @@ export function SettingsPanel() {
         <label className="mt-3 flex items-center justify-between text-[13px] leading-5">
           Mute
           <input type="checkbox" checked={settings.muted} onChange={(event) => settings.setMuted(event.target.checked)} />
+        </label>
+        <label className="mt-3 flex items-center justify-between text-[13px] leading-5">
+          Mute when the tab is hidden
+          <input
+            type="checkbox"
+            checked={settings.muteWhenHidden}
+            onChange={(event) => settings.setMuteWhenHidden(event.target.checked)}
+          />
         </label>
         <h2 className="mt-6 text-[12px] leading-4 text-[#f2f0eb]/64">Controls</h2>
         <Slider
@@ -106,6 +149,15 @@ export function SettingsPanel() {
           Invert Y
           <input type="checkbox" checked={settings.invertY} onChange={(event) => settings.setInvertY(event.target.checked)} />
         </label>
+        <h2 className="mt-6 text-[12px] leading-4 text-[#f2f0eb]/64">Keys</h2>
+        <ul data-testid="settings-keys" className="mt-2 space-y-1 text-[13px] leading-5 text-[#f2f0eb]/80">
+          {defaultBindings.map((binding) => (
+            <li key={binding.action} className="flex justify-between gap-4">
+              <span>{KEY_NAMES[binding.action]}</span>
+              <span>{binding.codes.map((code) => keyText(code)).join(' / ')}</span>
+            </li>
+          ))}
+        </ul>
         <h2 className="mt-6 text-[12px] leading-4 text-[#f2f0eb]/64">Graphics</h2>
         <div className="mt-3 flex gap-1" role="radiogroup" aria-label="Quality">
           {QUALITY.map((item) => {
@@ -127,6 +179,18 @@ export function SettingsPanel() {
             );
           })}
         </div>
+        <h2 className="mt-6 text-[12px] leading-4 text-[#f2f0eb]/64">About / credits</h2>
+        <ul data-testid="settings-credits" className="mt-2 space-y-2 text-[13px] leading-5 text-[#f2f0eb]/80">
+          <li>Ocean. Joseph Sardin, small waves at Houlgate, facing the Channel. CC0.</li>
+          <li>
+            Wind. Beeld en Geluid, “Waaien”.{' '}
+            <a className="underline" href="https://creativecommons.org/licenses/by-sa/3.0/" target="_blank" rel="noreferrer">
+              CC BY-SA 3.0
+            </a>
+            . Lightly limited.
+          </li>
+          <li>Gull. Sonothèque ADVL, European herring gull flight call. CC0.</li>
+        </ul>
       </div>
     </section>
   );

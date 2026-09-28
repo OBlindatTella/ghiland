@@ -1,12 +1,15 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useContext, useRef } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
 import { BasicShadowMap, PCFSoftShadowMap } from 'three';
-import { Bloom, EffectComposer, SMAA } from '@react-three/postprocessing';
+import { Bloom, EffectComposer, EffectComposerContext, SMAA, ToneMapping } from '@react-three/postprocessing';
+import { COMPOSER_TONE_MODE, readComposerTone } from '@/engine/quality/toneState';
+import { composerGpuBytes, releaseComposerTargets, trackGpuBytes, trackedGpuBytes } from '@/engine/quality/gpuMemory';
 import { bus } from '@/engine/events/bus';
-import { heuristicTier, initialAutoClock, stepAutoQuality, type AutoClock } from '@/engine/quality/autoQuality';
+import { heuristicTier, initialAutoClock, stepAutoQuality, ceilingStillValid, type AutoClock } from '@/engine/quality/autoQuality';
 import { qualityProfiles } from '@/engine/quality/profiles';
+import type { QualityProfile } from '@/contracts/quality';
 import { perfSample, usePerfStore } from '@/state/perf';
 import { useAppliedQuality } from '@/state/appliedQuality';
 import { useGlStore } from '@/state/gl';
@@ -26,19 +29,26 @@ export function QualityDirector() {
   const applied = useAppliedQuality((state) => state.tier);
   const profile = qualityProfiles[applied];
   const clock = useRef<AutoClock>(initialAutoClock('HIGH'));
+  const rendererName = useRef('');
 
   useEffect(() => {
     const debug = gl.getContext().getExtension('WEBGL_debug_renderer_info');
-    const renderer = debug ? String(gl.getContext().getParameter(debug.UNMASKED_RENDERER_WEBGL)) : '';
     const nav = navigator as Navigator & { deviceMemory?: number };
+    const renderer = debug ? String(gl.getContext().getParameter(debug.UNMASKED_RENDERER_WEBGL)) : '';
+    rendererName.current = renderer;
+    const settings = useSettings.getState();
+    const now = Date.now();
+    const ceiling = ceilingStillValid(settings.autoCeiling, renderer, now);
     const tier = heuristicTier({
       renderer,
       cores: navigator.hardwareConcurrency || 4,
       deviceMemory: nav.deviceMemory,
-      lastGood: useSettings.getState().lastAutoTier,
+      lastGood: settings.lastAutoTier,
+      ceiling: settings.autoCeiling,
+      now,
     });
     usePerfStore.getState().setAutoTier(tier);
-    clock.current = initialAutoClock(tier);
+    clock.current = initialAutoClock(tier, ceiling ?? 'ULTRA');
   }, [gl]);
 
   useEffect(() => {
@@ -89,8 +99,6 @@ export function QualityDirector() {
   }, []);
 
   useEffect(() => {
-    const dpr = Math.min(profile.dpr[1], Math.max(profile.dpr[0], window.devicePixelRatio || 1));
-    gl.setPixelRatio(dpr);
     gl.shadowMap.enabled = profile.shadows !== 'off';
     gl.shadowMap.type = profile.shadows === 'soft' ? PCFSoftShadowMap : BasicShadowMap;
     gl.shadowMap.needsUpdate = true;
@@ -109,24 +117,83 @@ export function QualityDirector() {
   useFrame((_, dt) => {
     if (useSettings.getState().quality !== 'AUTO' || useGlStore.getState().lost) return;
     if (useSession.getState().worldPhase !== 'active' || perfSample.fps <= 0) return;
+    const previousCeiling = clock.current.ceiling;
     const next = stepAutoQuality(clock.current, perfSample.fps, dt);
     clock.current = next;
+    if (next.remember) {
+      const tier = next.remember;
+      window.setTimeout(() => useSettings.getState().setLastAutoTier(tier), 0);
+    }
     if (!next.changed) return;
     usePerfStore.getState().setAutoTier(next.tier);
-    useSettings.getState().setLastAutoTier(next.tier);
+    if (next.ceiling !== previousCeiling) {
+      const ceiling = next.ceiling;
+      const renderer = rendererName.current;
+      window.setTimeout(() => {
+        useSettings.getState().setAutoCeiling({ tier: ceiling, renderer, at: Date.now() });
+      }, 0);
+    }
   });
 
-  if (profile.postprocessing.smaa) {
-    return (
-      <EffectComposer multisampling={0} enableNormalPass={false} autoClear>
-        <SMAA />
-      </EffectComposer>
-    );
-  }
+  return <PostStack profile={profile} />;
+}
 
+/** SMAA on LOW/MED, bloom and MSAA on HIGH/ULTRA, AgX on every tier. */
+export function PostStack({ profile }: { profile: QualityProfile }) {
+  const smaa = profile.postprocessing.smaa;
   return (
-    <EffectComposer multisampling={profile.multisampling} enableNormalPass={false} autoClear>
-      <Bloom intensity={0.12} luminanceThreshold={0.9} mipmapBlur />
+    <EffectComposer multisampling={smaa ? 0 : profile.multisampling} enableNormalPass={false} autoClear>
+      {smaa ? <SMAA /> : <Bloom intensity={0.12} luminanceThreshold={0.9} mipmapBlur />}
+      <ToneMapping mode={COMPOSER_TONE_MODE} />
+      <ComposerLifecycle />
     </EffectComposer>
   );
+}
+
+let liveComposer: {
+  multisampling?: number;
+  passes: readonly object[];
+  inputBuffer: { width: number; height: number; samples?: number; depthBuffer?: boolean };
+  outputBuffer: { width: number; height: number; samples?: number; depthBuffer?: boolean };
+  depthRenderTarget?: { width: number; height: number; samples?: number } | null;
+} | null = null;
+
+export function readLiveComposer(rendererToneMapping: number) {
+  if (!liveComposer) return null;
+  return {
+    ...readComposerTone({ toneMapping: rendererToneMapping }, liveComposer),
+    targetBytes: composerGpuBytes(liveComposer),
+  };
+}
+
+export function readTrackedGpuBytes(): number {
+  return trackedGpuBytes();
+}
+
+function ComposerLifecycle() {
+  const { composer } = useContext(EffectComposerContext);
+  const size = useThree((state) => state.size);
+  const dpr = useThree((state) => state.viewport.dpr);
+
+  useEffect(() => {
+    liveComposer = composer;
+    return () => {
+      if (liveComposer === composer) liveComposer = null;
+      releaseComposerTargets(composer);
+    };
+  }, [composer]);
+
+  useEffect(() => {
+    let release = () => {};
+    const id = window.requestAnimationFrame(() => {
+      composer.setSize(size.width, size.height);
+      release = trackGpuBytes(composerGpuBytes(composer));
+    });
+    return () => {
+      window.cancelAnimationFrame(id);
+      release();
+    };
+  }, [composer, size.width, size.height, dpr]);
+
+  return null;
 }

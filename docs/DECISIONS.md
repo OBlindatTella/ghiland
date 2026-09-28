@@ -74,3 +74,18 @@ The straight walk from spawn (0,1.62,-8.2) to the glass must be unobstructed, an
 
 ## D-021 Minimum eye distance for placed and carried windows (Sentinel open point, test plan v0.3)
 A window centre is never placed closer than 0.7 m from the player's eye. When the glass force-float rule (>=0.3 m on the player's side) can't satisfy that, because the player is standing too close to the glass, the placement is invalid: the ghost shows the invalid state and P does nothing until the player steps back. The carry distance stays at its default.
+
+## D-022 AUTO quality remembers failed tiers (ruling on S2-05)
+If a climb to tier T is demoted within 60 s, T becomes the session ceiling and is never retried that session. The persisted value lastAutoTier only records a tier that held for at least 60 s of stable frames. A persisted ceiling (per GPU renderer string) expires after 7 days or on a manual quality change. AUTO then never flaps: at most one failed climb per session.
+
+## D-023 Window front-face convention (ruling on S2-11)
+A window quad's front (readable) face is local +Z, the PlaneGeometry default. An anchor or placement rotation turns that +Z normal toward the viewer. A rotation of θ about Y maps the normal to (sin θ, 0, cos θ). hero-sea faces the room (−Z), turned 15° toward the room centre (−X from x=+5.1), so its yaw is ≈ −165°. Unit-test every authored anchor's normal against its intended viewing side.
+
+## D-024 Reveal without a fin screen (ruling on S2-13)
+Alpha 0.1 accepts losing the fin 'sliver' reveal. The reveal is carried by the corridor framing: the corridor walls, a lowered soffit/header at the corridor mouth, and the light contrast between the dim corridor and the bright glass. In step 8 Aura may add a screening element only outside the walk band x −2…+2 (for example a low planter or a wall return on the viewer-right). It must not block the straight path or V2.
+
+## D-025 Open panels move to the centre (ruling on S2-12)
+Aura's intent was a straight path from the reveal point into open air. After D-019 the opening's edge sat exactly on x=0, the centre line. So the two central panels, x −2…+2, are the open ones. The panels at −6…−2 and +2…+6 are closed. hero-sea stays at about (+5.1, 1.45, 3.9) in front of the closed +4…+6 panel. The terrace walk from V2 goes straight out with no seam. Collision along panel edges must slide without snagging.
+
+## D-026 Docs source of truth
+The box copies in /workspace/ghiland/docs are canonical for specs, owned by Ghiland Master. Each builder run gets the updated box files and overwrites the repo docs/ copies with them. The builder does not edit spec docs itself; it only edits KNOWN_ISSUES.md, ROADMAP.md, AUDIO_CREDITS.md and README content, and it proposes spec changes in its report.
