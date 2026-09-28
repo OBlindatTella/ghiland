@@ -62,11 +62,19 @@ export class InputManager {
   }
 
   pushOwner(owner: InputOwner): number {
-    return this.owners.push(owner);
+    const token = this.owners.push(owner);
+    this.publishOwner();
+    return token;
   }
 
   popOwner(token: number): void {
     this.owners.pop(token);
+    this.publishOwner();
+  }
+
+  private publishOwner(): void {
+    const owner = this.owners.current();
+    if (useInputStore.getState().owner !== owner) useInputStore.setState({ owner });
   }
 
   isActionDown(action: Action): boolean {
@@ -205,7 +213,7 @@ export class InputManager {
       useSettings.getState().toggleMuted();
     } else if (decision.action === 'togglePerfHud') {
       useSettings.getState().togglePerf();
-    } else if (!editable && !event.repeat && event.code === 'Slash' && useInputStore.getState().shellState === 'SCREEN') {
+    } else if (decision.action === 'openLauncher') {
       const stack = useScreenStore.getState().stack;
       if (!stack.includes('text') && !stack.includes('settings')) useScreenStore.getState().push('launcher');
     }
