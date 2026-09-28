@@ -17,6 +17,7 @@ import {
   wishVelocity,
   yawFromMouse,
 } from '@/engine/player/movement';
+import { takePlayerTransform } from '@/engine/player/playerCommand';
 import { playerRef } from '@/engine/player/playerRef';
 import { CAMERA_FRAME_PRIORITY } from '@/engine/render/frameOrder';
 import { useInputStore } from '@/state/input';
@@ -49,8 +50,13 @@ export function FirstPersonController({
   const vel = useRef({ x: 0, z: 0 });
   const lookAvg = useRef(0);
   const lookGuardUntil = useRef(0);
+  const eye = useRef(eyeHeight);
 
   useEffect(() => inputManager.attach(gl.domElement), [gl]);
+
+  useEffect(() => {
+    eye.current = eyeHeight;
+  }, [eyeHeight]);
 
   useEffect(() => {
     const onLock = () => {
@@ -83,6 +89,16 @@ export function FirstPersonController({
   }, [gl]);
 
   useFrame((_, dt) => {
+    const command = takePlayerTransform();
+    if (command) {
+      pos.current = { x: command.x, z: command.z };
+      eye.current = command.y;
+      yaw.current = command.yaw;
+      targetYaw.current = command.yaw;
+      pitch.current = command.pitch;
+      targetPitch.current = command.pitch;
+      vel.current = { x: 0, z: 0 };
+    }
     const step = clampFrameDt(dt);
     const lookAlpha = 1 - Math.exp(-step / LOOK_TAU);
     yaw.current += (targetYaw.current - yaw.current) * lookAlpha;
@@ -115,14 +131,13 @@ export function FirstPersonController({
       pos.current = moved;
     }
 
-    const eye = eyeHeight;
-    camera.position.set(pos.current.x, eye, pos.current.z);
+    camera.position.set(pos.current.x, eye.current, pos.current.z);
     camera.rotation.order = 'YXZ';
     camera.rotation.y = Math.PI + yaw.current;
     camera.rotation.x = pitch.current;
     camera.rotation.z = 0;
     playerRef.current = {
-      position: { x: pos.current.x, y: eye, z: pos.current.z },
+      position: { x: pos.current.x, y: eye.current, z: pos.current.z },
       yaw: yaw.current,
       pitch: pitch.current,
     };

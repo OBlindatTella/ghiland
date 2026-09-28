@@ -43,6 +43,7 @@ These are the review items that are still different from Atlas. The others in th
 - S1-17. Radius expansion is a square, the timestep is variable and clamped at 50 ms, and the sweep is X then Z. A step cannot tunnel the glass at that clamp. Rounded corners wait for stools and chairs.
 - S1-20. A keyup lost without a window blur (release while a command key is held, some OS shortcuts) can leave that key down. Blur and a hidden tab still clear the set. Not reproduced in this pass.
 - D-017 auto-pin. `setBeforeShellChange` runs before the shell store updates. Nothing is installed yet, because carried windows do not exist. Step 5 should pin there when leaving WORLD.
+- Test hooks. `window.__ghiland` is on in development, and in production only when the build was started with `NEXT_PUBLIC_GHILAND_TEST_HOOKS=1`. A normal production build has no hook. `getCanvasMounts` counts effect runs, so React Strict Mode in dev can read 2 on the first mount. `setPlayer` is applied on the next frame and zeroes velocity.
 - D-021. A window centre must stay at least 0.7 m from the eye, and a placement that cannot is invalid. Windows are not built yet, so there is no placement to enforce.
 
 ## Browser

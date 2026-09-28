@@ -1,7 +1,13 @@
 import { audioEngine } from '@/engine/audio/engine';
-import { playerRef } from '@/engine/player/playerRef';
+import { queuePlayerTransform } from '@/engine/player/playerCommand';
+import { playerRef, type PlayerSnapshot } from '@/engine/player/playerRef';
 import { useInputStore } from '@/state/input';
 import { useSession } from '@/state/session';
+
+/** Development, or a production build started with NEXT_PUBLIC_GHILAND_TEST_HOOKS=1. Off by default. */
+export function devHooksEnabled(): boolean {
+  return process.env.NODE_ENV !== 'production' || process.env.NEXT_PUBLIC_GHILAND_TEST_HOOKS === '1';
+}
 
 declare global {
   interface Window {
@@ -14,6 +20,7 @@ declare global {
       getHint: () => boolean;
       getPhase: () => { phase: string; worldPhase: string; progress: number };
       getView: () => { dpr: number; shadows: boolean; fov: number | null } | null;
+      setPlayer: (snapshot: PlayerSnapshot) => void;
     };
   }
 }
@@ -22,11 +29,21 @@ export function installDevHook(
   getCanvasMounts: () => number,
   getView?: () => { dpr: number; shadows: boolean; fov: number | null },
 ): void {
-  if (process.env.NODE_ENV === 'production') return;
+  if (!devHooksEnabled()) return;
   window.__ghiland = {
     getShell: () => useInputStore.getState().shellState,
     getPointerLocked: () => useInputStore.getState().pointerLocked,
     getPlayer: () => playerRef.current,
+    setPlayer: (snapshot) => {
+      queuePlayerTransform({
+        x: snapshot.position.x,
+        y: snapshot.position.y,
+        z: snapshot.position.z,
+        yaw: snapshot.yaw,
+        pitch: snapshot.pitch,
+      });
+      playerRef.current = snapshot;
+    },
     getCanvasMounts,
     getAudio: () => audioEngine.debug(),
     getHint: () => useInputStore.getState().showClickToWalk,
