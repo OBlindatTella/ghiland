@@ -65,3 +65,12 @@ Reason: legibility and predictability beat perfect composition; placement must n
 
 ## D-017 FOV setting ships (55–75°); lock loss while carrying auto-pins; context-loss veil; M mutes; UI sounds on with own slider
 ## D-018 HIGH GPU memory budget raised to 384 MB for the RTX 3060 gating tier; LOW unchanged at 128 MB
+
+## D-019 Coordinate handedness (ruling on Sentinel S1-02)
+Aura's visual intent wins: what the viewer sees from the reveal point facing +Z must match AURA_WORLDS.md ("left"/"right" are viewer-relative). Aura's brief used -X as viewer-left, but in three.js (right-handed, Y up) facing +Z the viewer's left is +X. So every X coordinate authored in AURA_WORLDS.md and the plan is negated in code (x -> -x) for Seaside House. From now on, all docs quote three.js world coordinates. Examples: the open glass panels span x 0..+4, and the hero-sea anchor is about (+5.1, 1.45, 3.9). Anchor yaw "15° toward room" means rotated toward the room centre (x=0). RUL-21 and D-014 read with these coordinates.
+
+## D-020 Reveal path stays clear (ruling on Sentinel S1-03)
+The straight walk from spawn (0,1.62,-8.2) to the glass must be unobstructed, and the reveal viewpoint V2 (0,1.62,-3) must be walkable. The reveal fin and its collider, with the player radius included, must sit entirely outside the centre band x -2..+2 (flush against a corridor/room side wall), and they must not block the reveal view of the sea through the open panels. GP-5 gates this.
+
+## D-021 Minimum eye distance for placed and carried windows (Sentinel open point, test plan v0.3)
+A window centre is never placed closer than 0.7 m from the player's eye. When the glass force-float rule (>=0.3 m on the player's side) can't satisfy that, because the player is standing too close to the glass, the placement is invalid: the ghost shows the invalid state and P does nothing until the player steps back. The carry distance stays at its default.

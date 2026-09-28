@@ -2,12 +2,16 @@
 
 import { useEffect } from 'react';
 import { Canvas, useThree } from '@react-three/fiber';
-import { ACESFilmicToneMapping } from 'three';
+import { AgXToneMapping } from 'three';
+import { AudioRig } from '@/engine/audio/AudioRig';
 import { installDevHook } from '@/engine/dev/installDevHook';
 import { PerfProbe } from '@/engine/perf/PerfProbe';
-import { FirstPersonController } from '@/engine/player/FirstPersonController';
-import { SeasideHouseScene } from '@/worlds/seaside-house/Scene';
-import { seasideColliders, SPAWN } from '@/worlds/seaside-house/level';
+import { ContextGuard } from '@/engine/quality/ContextGuard';
+import { QualityDirector } from '@/engine/quality/QualityDirector';
+import { SceneManager } from '@/engine/scene/SceneManager';
+import { CrosshairRig } from '@/engine/windows/CrosshairRig';
+import { useGlStore } from '@/state/gl';
+import { useSession } from '@/state/session';
 
 let canvasMounts = 0;
 
@@ -17,25 +21,30 @@ function CanvasLifecycle() {
 
   useEffect(() => {
     canvasMounts += 1;
-    installDevHook(() => canvasMounts);
+    installDevHook(() => canvasMounts, () => ({
+      dpr: gl.getPixelRatio(),
+      shadows: gl.shadowMap.enabled,
+      fov: 'fov' in camera ? camera.fov : null,
+    }));
     camera.rotation.order = 'YXZ';
     camera.rotation.y = Math.PI;
     camera.rotation.x = 0;
-    camera.position.set(SPAWN.x, SPAWN.y, SPAWN.z);
-    gl.toneMapping = ACESFilmicToneMapping;
+    gl.toneMapping = AgXToneMapping;
     gl.toneMappingExposure = 1.05;
     gl.domElement.style.touchAction = 'none';
     gl.domElement.style.outline = 'none';
+    useSession.getState().setProgress(0.36);
   }, [camera, gl]);
 
   return null;
 }
 
 export function CanvasRoot() {
+  const lost = useGlStore((state) => state.lost);
   return (
     <div className="absolute inset-0">
       <Canvas
-        frameloop="always"
+        frameloop={lost ? 'never' : 'always'}
         dpr={[1, 1.5]}
         shadows={false}
         gl={{
@@ -48,17 +57,20 @@ export function CanvasRoot() {
           fov: 62,
           near: 0.08,
           far: 500,
-          position: [SPAWN.x, SPAWN.y, SPAWN.z],
+          position: [0, 1.62, -8.2],
         }}
         onCreated={({ camera }) => {
           camera.rotation.order = 'YXZ';
           camera.rotation.y = Math.PI;
-          camera.position.set(SPAWN.x, SPAWN.y, SPAWN.z);
+          camera.position.set(0, 1.62, -8.2);
         }}
       >
         <CanvasLifecycle />
-        <SeasideHouseScene />
-        <FirstPersonController spawn={SPAWN} colliders={seasideColliders} />
+        <CrosshairRig />
+        <SceneManager />
+        <AudioRig />
+        <QualityDirector />
+        <ContextGuard />
         <PerfProbe />
       </Canvas>
     </div>

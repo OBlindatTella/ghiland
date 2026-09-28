@@ -1,6 +1,6 @@
 # Ghiland
 
-A browser-based first-person world. Alpha 0.1 steps 0 and 1: scaffold and a walkable Seaside House greybox.
+A browser-based first-person world. Alpha 0.1 through the Seaside greybox, the world selector, and the Screen.
 
 ## Run
 
@@ -9,7 +9,7 @@ pnpm install
 pnpm dev
 ```
 
-Open `/` or `/w/seaside-house`. Click the Seaside House card, then click the world to walk.
+Open `/` or `/w/seaside-house`. Click the Seaside House card. When the corridor is live, click to walk.
 
 | Key | Action |
 |---|---|
@@ -17,8 +17,11 @@ Open `/` or `/w/seaside-house`. Click the Seaside House card, then click the wor
 | Shift | Stroll faster (2.2 m/s) |
 | Mouse | Look, while the pointer is locked |
 | Q | Toggle WORLD and SCREEN |
-| Esc | In WORLD, the browser unlocks and the Screen opens. In SCREEN, step back to "Click to walk" |
-| ` | Toggle the fps / draw call / triangle readout |
+| Esc | In WORLD, the browser unlocks and the Screen opens. In SCREEN, step back one layer, then "Click to walk" |
+| / | Focus the launcher shelf |
+| ` | Toggle the perf readout |
+| M | Mute, while walking |
+| Settings | On the Screen shelf: volume, mute, sensitivity, FOV, quality |
 
 `pnpm test` runs the shell-state and collision tests. `pnpm lint` and `pnpm build` check the app.
 

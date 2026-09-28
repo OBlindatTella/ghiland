@@ -1,14 +1,25 @@
 import { describe, expect, it } from 'vitest';
+import { PerspectiveCamera, Vector3 } from 'three';
 import {
   clampFrameDt,
+  clampLookVector,
   clampPitch,
   dampVec2,
   DEFAULT_MOVEMENT,
+  resolveEyeHeight,
   viewToWorld,
   wishVelocity,
+  yawFromMouse,
 } from '@/engine/player/movement';
 
 const still = { forward: false, back: false, left: false, right: false, strollFast: false };
+
+describe('eye height', () => {
+  it('uses MovementSpec.eyeHeight, then the default', () => {
+    expect(resolveEyeHeight()).toBe(DEFAULT_MOVEMENT.eyeHeight);
+    expect(resolveEyeHeight({ eyeHeight: 1.5 })).toBe(1.5);
+  });
+});
 
 describe('wishVelocity', () => {
   it('uses Aura speeds, including back and strafe multipliers', () => {
@@ -32,15 +43,40 @@ describe('wishVelocity', () => {
     expect(Math.hypot(diagonal.x, diagonal.z)).toBeCloseTo(1.35, 5);
     const strollDiagonal = wishVelocity({ ...still, forward: true, left: true, strollFast: true });
     expect(Math.hypot(strollDiagonal.x, strollDiagonal.z)).toBeCloseTo(2.2, 5);
+    const backDiagonal = wishVelocity({ ...still, back: true, right: true });
+    const backSpeed = 1.35 * DEFAULT_MOVEMENT.backMultiplier;
+    expect(Math.hypot(backDiagonal.x, backDiagonal.z)).toBeLessThanOrEqual(backSpeed + 1e-6);
+    expect(Math.hypot(backDiagonal.x, backDiagonal.z)).toBeCloseTo(backSpeed, 5);
   });
 });
 
 describe('viewToWorld', () => {
-  it('faces +Z at yaw 0 and +X after a right turn', () => {
-    expect(viewToWorld({ x: 0, z: 1 }, 0)).toEqual({ x: 0, z: 1 });
-    const turned = viewToWorld({ x: 0, z: 1 }, Math.PI / 2);
-    expect(turned.x).toBeCloseTo(1, 5);
-    expect(turned.z).toBeCloseTo(0, 5);
+  it('facing +Z, D moves screen-right and mouse-right yaws screen-right', () => {
+    const camera = new PerspectiveCamera();
+    camera.rotation.order = 'YXZ';
+    camera.rotation.y = Math.PI;
+    camera.updateMatrixWorld();
+    const forward = new Vector3();
+    const right = new Vector3();
+    camera.getWorldDirection(forward);
+    right.setFromMatrixColumn(camera.matrixWorld, 0);
+    expect(forward.z).toBeGreaterThan(0.99);
+    expect(forward.x).toBeCloseTo(0, 5);
+    expect(right.x).toBeLessThan(-0.99);
+
+    const strafe = viewToWorld({ x: 1, z: 0 }, 0);
+    expect(strafe.x).toBeCloseTo(right.x, 5);
+    expect(strafe.z).toBeCloseTo(right.z, 5);
+
+    const yaw = yawFromMouse(1, 0.2);
+    expect(yaw).toBeLessThan(0);
+    camera.rotation.y = Math.PI + yaw;
+    camera.updateMatrixWorld();
+    camera.getWorldDirection(forward);
+    expect(forward.x).toBeLessThan(0);
+    const moved = viewToWorld({ x: 0, z: 1 }, yaw);
+    expect(moved.x).toBeCloseTo(forward.x, 5);
+    expect(moved.z).toBeCloseTo(forward.z, 5);
   });
 });
 
@@ -57,6 +93,17 @@ describe('damping and clamps', () => {
     for (let i = 0; i < 12; i += 1) slowing = dampVec2(slowing, { x: 0, z: 0 }, 1 / 60);
     expect(slowing.z).toBeLessThan(1.35 * 0.6);
     expect(slowing.z).toBeGreaterThan(0.2);
+  });
+
+  it('clamps a mouse spike during the post-lock guard and does not learn from it', () => {
+    const first = clampLookVector(400, 0, 0, true);
+    expect(Math.hypot(first.dx, first.dy)).toBeCloseTo(24, 5);
+    expect(first.average).toBeLessThan(8);
+    const after = clampLookVector(400, 0, first.average, true);
+    expect(Math.hypot(after.dx, after.dy)).toBeCloseTo(24, 5);
+    const calm = clampLookVector(2, 1, 4, false);
+    expect(calm.dx).toBeCloseTo(2, 5);
+    expect(calm.dy).toBeCloseTo(1, 5);
   });
 
   it('clamps a stalled frame and pitch', () => {

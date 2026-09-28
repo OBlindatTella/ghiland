@@ -1,6 +1,10 @@
 import type { MovementSpec } from '@/contracts/input';
 
 /** Aura §5. Shift is strollFast, not a sprint. There is no jump. */
+export function resolveEyeHeight(movement?: Partial<MovementSpec>): number {
+  return movement?.eyeHeight ?? DEFAULT_MOVEMENT.eyeHeight;
+}
+
 export const DEFAULT_MOVEMENT: MovementSpec = {
   walkSpeed: 1.35,
   strollFastSpeed: 2.2,
@@ -42,20 +46,37 @@ export function wishVelocity(input: WishInput, spec: MovementSpec = DEFAULT_MOVE
     z /= len;
   }
   const speed = input.strollFast ? spec.strollFastSpeed : spec.walkSpeed;
-  return { x: x * speed, z: z * speed };
+  let vx = x * speed;
+  let vz = z * speed;
+  const backpedal = input.back && !input.forward;
+  if (backpedal) {
+    const cap = speed * spec.backMultiplier;
+    const magnitude = Math.hypot(vx, vz);
+    if (magnitude > cap) {
+      vx *= cap / magnitude;
+      vz *= cap / magnitude;
+    }
+  }
+  return { x: vx, z: vz };
 }
 
 /**
- * Yaw 0 faces +Z. Positive yaw turns toward +X.
+ * Yaw 0 faces +Z. Positive yaw turns toward +X, which is screen-left.
+ * Mouse-right therefore decreases yaw, toward screen-right (world −X).
  * `wish.z` is forward, `wish.x` is right, both in view space.
  */
 export function viewToWorld(wish: { x: number; z: number }, yaw: number): { x: number; z: number } {
   const sin = Math.sin(yaw);
   const cos = Math.cos(yaw);
   return {
-    x: wish.x * cos + wish.z * sin,
-    z: -wish.x * sin + wish.z * cos,
+    x: -wish.x * cos + wish.z * sin,
+    z: wish.x * sin + wish.z * cos,
   };
+}
+
+/** Shared with the camera. A positive `movementX` (mouse right) yaws toward screen-right. */
+export function yawFromMouse(movementX: number, sensitivity: number): number {
+  return -movementX * sensitivity;
 }
 
 export function dampVec2(
@@ -77,12 +98,31 @@ export function clampPitch(pitch: number): number {
   return Math.min(PITCH_LIMIT, Math.max(-PITCH_LIMIT, pitch));
 }
 
-/** Clamp a single mouse delta to 3× the rolling average once that average is established. */
-export function clampLookDelta(delta: number, rollingAverage: number): { delta: number; average: number } {
-  const magnitude = Math.abs(delta);
-  const average = rollingAverage * 0.9 + magnitude * 0.1;
-  if (rollingAverage > 8 && magnitude > rollingAverage * 3) {
-    return { delta: Math.sign(delta) * rollingAverage * 3, average };
+/** Counts. The first moments after lock use this floor so a spike cannot pass while the average is still 0. */
+export const LOOK_GUARD_MS = 200;
+const LOOK_FLOOR = 8;
+const LOOK_SPIKE_RATIO = 3;
+
+/**
+ * Clamp the look vector to 3× a floor (during the post-lock guard) or 3× the rolling average.
+ * The average is fed the clamped magnitude, so one spike does not raise the next threshold.
+ */
+export function clampLookVector(
+  dx: number,
+  dy: number,
+  rollingAverage: number,
+  guard: boolean,
+): { dx: number; dy: number; average: number } {
+  const magnitude = Math.hypot(dx, dy);
+  const basis = guard ? LOOK_FLOOR : Math.max(rollingAverage, LOOK_FLOOR);
+  const cap = basis * LOOK_SPIKE_RATIO;
+  let outX = dx;
+  let outY = dy;
+  if (magnitude > cap && magnitude > 0) {
+    const scale = cap / magnitude;
+    outX *= scale;
+    outY *= scale;
   }
-  return { delta, average };
+  const used = Math.hypot(outX, outY);
+  return { dx: outX, dy: outY, average: rollingAverage * 0.9 + used * 0.1 };
 }

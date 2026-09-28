@@ -1,0 +1,7 @@
+Atkinson Hyperlegible
+Copyright 2020 The Braille Institute of America, Inc.
+Licensed under the SIL Open Font License, Version 1.1.
+https://openfontlicense.org
+
+The woff2 files are the Latin Regular (400) and Bold (700) subsets.
+Ghiland uses 400 and 700. Pixel's 600 token maps to the bold file.

@@ -1,12 +1,12 @@
 # Roadmap
 
-Alpha 0.1 follows the build order in `ALPHA_0.1_PLAN.md`. This repository currently contains steps 0 and 1 only.
+Alpha 0.1 follows the build order in `ALPHA_0.1_PLAN.md`.
 
 - [x] **0 Scaffold.** Next.js App Router, TypeScript strict, Tailwind, pnpm, Vitest, ESLint import boundaries, `contracts/`, empty world and app registries, docs.
 - [x] **1 Greybox walk + input state machine.** Persistent canvas, Seaside House greybox, first-person movement, AABB sliding, WORLD / SCREEN / RELEASED.
-- [ ] **2 Worlds, loading, landing, selector.** Registry, SceneManager, loading, preview cards, audio unlock on the Seaside card.
-- [ ] **3 Settings, quality, perf.** Persisted settings, quality profiles, FOV, perf probe and HUD, context-loss veil.
-- [ ] **4 Audio beds + wind.** Environment director, buses, sea and wind, portal lowpass.
+- [x] **2 Worlds, loading, landing, selector.** Registry, SceneManager, loading, preview cards, audio unlock on the Seaside card.
+- [x] **3 Settings, quality, perf.** Persisted settings, quality profiles, FOV, perf probe and HUD, context-loss veil.
+- [x] **4 Audio beds + wind.** Buses, procedural sea and wind, gull one-shots, portal lowpass.
 - [ ] **5 Ghiland Screen + overlay windows.**
 - [ ] **6 Notes + AI-chat mock + one external-fallback app.**
 - [ ] **7 Carry, pin, pick up, occlusion fade, per-world persistence.**
