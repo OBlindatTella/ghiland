@@ -5,6 +5,7 @@ import { useEffect } from 'react';
 import { usePathname } from 'next/navigation';
 import { beginWorldAudio } from '@/engine/audio';
 import { unlockAudio } from '@/engine/audio/unlock';
+import { CanvasBoundary } from '@/shell/CanvasBoundary';
 import { LoadingBackdrop } from '@/shell/loading/LoadingBackdrop';
 import { Landing } from '@/shell/landing/Landing';
 import { ShellChrome } from '@/shell/ShellChrome';
@@ -45,7 +46,7 @@ export function GhilandApp() {
 
   return (
     <div className="relative h-full w-full">
-      {inWorld ? <Experience /> : null}
+      <CanvasBoundary>{inWorld ? <Experience /> : null}</CanvasBoundary>
       {inWorld ? <ShellChrome /> : null}
       {inWorld ? <LoadingBackdrop /> : null}
       {phase === 'landing' ? <Landing preselected={preselected} unknown={unknown} onEnter={onEnter} /> : null}
