@@ -12,11 +12,16 @@ interface SessionStore {
   stall: LoadStall;
   /** Set by the 30s "Try Low quality" action. Settings apply it in step 3. */
   forceLow: boolean;
+  loadError: string | null;
+  loadAttempt: number;
   beginSeaside: () => void;
   setProgress: (value: number) => void;
   markActive: () => void;
   setStall: (stall: LoadStall) => void;
   requestLow: () => void;
+  failLoad: () => void;
+  retryLoad: () => void;
+  backToLanding: () => void;
 }
 
 export const useSession = create<SessionStore>((set, get) => ({
@@ -26,14 +31,17 @@ export const useSession = create<SessionStore>((set, get) => ({
   loadProgress: 0,
   stall: 'ok',
   forceLow: false,
+  loadError: null,
+  loadAttempt: 0,
   beginSeaside: () => {
-    if (get().worldId === 'seaside-house') return;
+    if (get().worldId === 'seaside-house' && !get().loadError) return;
     set({
       phase: 'loading',
       worldId: 'seaside-house',
       worldPhase: 'loading',
       loadProgress: 0.08,
       stall: 'ok',
+      loadError: null,
     });
   },
   setProgress: (value) => {
@@ -45,4 +53,23 @@ export const useSession = create<SessionStore>((set, get) => ({
   markActive: () => set({ phase: 'inWorld', worldPhase: 'active', loadProgress: 1 }),
   setStall: (stall) => set({ stall }),
   requestLow: () => set({ forceLow: true, stall: 'ok' }),
+  failLoad: () => set({ loadError: "This place didn't arrive." }),
+  retryLoad: () =>
+    set({
+      loadError: null,
+      loadAttempt: get().loadAttempt + 1,
+      loadProgress: 0.08,
+      worldPhase: 'loading',
+      phase: 'loading',
+      stall: 'ok',
+    }),
+  backToLanding: () =>
+    set({
+      phase: 'landing',
+      worldId: null,
+      worldPhase: 'idle',
+      loadProgress: 0,
+      stall: 'ok',
+      loadError: null,
+    }),
 }));

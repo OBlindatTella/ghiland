@@ -59,6 +59,7 @@ function WorldHost({
 
 export function SceneManager() {
   const worldId = useSession((state) => state.worldId);
+  const loadAttempt = useSession((state) => state.loadAttempt);
   const tier = useAppliedQuality((state) => state.tier);
   const [module, setModule] = useState<WorldModule | null>(null);
 
@@ -70,7 +71,10 @@ export function SceneManager() {
   useEffect(() => {
     if (!worldId) return;
     const definition = getWorld(worldId);
-    if (!definition?.load) return;
+    if (!definition?.load) {
+      useSession.getState().failLoad();
+      return;
+    }
     let cancelled = false;
     useSession.getState().setProgress(0.22);
     void definition.load().then(async (loaded) => {
@@ -86,12 +90,14 @@ export function SceneManager() {
       }
       useSession.getState().setProgress(0.74);
       setModule(loaded.default);
+    }).catch(() => {
+      if (!cancelled) useSession.getState().failLoad();
     });
     return () => {
       cancelled = true;
       setModule(null);
     };
-  }, [worldId]);
+  }, [worldId, loadAttempt]);
 
   if (!module || !worldId) return null;
   const definition = getWorld(worldId);

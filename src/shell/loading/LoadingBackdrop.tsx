@@ -1,7 +1,9 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { audioEngine } from '@/engine/audio/engine';
 import { SeasidePoster } from '@/shell/landing/posters';
+import { useInputStore } from '@/state/input';
 import { useSession } from '@/state/session';
 import { useSettings } from '@/state/settings';
 
@@ -11,8 +13,9 @@ export function LoadingBackdrop() {
   const progress = useSession((state) => state.loadProgress);
   const phase = useSession((state) => state.phase);
   const stall = useSession((state) => state.stall);
+  const loadError = useSession((state) => state.loadError);
   const [gone, setGone] = useState(false);
-  const fading = progress >= 1 && !gone;
+  const fading = progress >= 1 && !gone && !loadError;
 
   useEffect(() => {
     if (phase === 'landing') return;
@@ -25,15 +28,49 @@ export function LoadingBackdrop() {
   }, [phase]);
 
   useEffect(() => {
-    if (progress < 1 || gone) return;
+    if (progress < 1 || gone || loadError) return;
     const id = window.setTimeout(() => {
       useSession.getState().markActive();
       setGone(true);
     }, ARRIVE_MS);
     return () => window.clearTimeout(id);
-  }, [progress, gone]);
+  }, [progress, gone, loadError]);
 
   if (phase === 'landing' || gone) return null;
+
+  if (loadError) {
+    return (
+      <div
+        data-testid="load-error"
+        className="absolute inset-0 z-40 flex flex-col items-center justify-center bg-[#1c1814] px-8 text-center"
+      >
+        <p className="text-[15px] leading-6 text-[#f2f0eb]">{loadError}</p>
+        <div className="mt-6 flex gap-2">
+          <button
+            type="button"
+            data-testid="load-retry"
+            className="rounded-[6px] border border-white/10 bg-[#141413] px-3 py-2 text-[13px] leading-5 text-[#f2f0eb]"
+            onClick={() => useSession.getState().retryLoad()}
+          >
+            Retry
+          </button>
+          <button
+            type="button"
+            data-testid="load-back"
+            className="rounded-[6px] border border-white/10 bg-[#141413] px-3 py-2 text-[13px] leading-5 text-[#f2f0eb]"
+            onClick={() => {
+              audioEngine.stop();
+              useInputStore.getState().reset();
+              useSession.getState().backToLanding();
+              if (window.location.pathname !== '/') window.history.pushState(null, '', '/');
+            }}
+          >
+            Back
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   const blur = fading ? 0 : Math.max(0, 24 * (1 - progress));
 
