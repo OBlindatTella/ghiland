@@ -97,6 +97,15 @@ export function readPersistedSettings(raw: string | null, key: string, adapter: 
     const parsed = JSON.parse(raw) as { state?: unknown; version?: number };
     if (!parsed || typeof parsed !== 'object' || !('state' in parsed)) throw new Error('shape');
     const version = typeof parsed.version === 'number' ? parsed.version : 0;
+    if (version > SETTINGS_VERSION) {
+      try {
+        adapter.set(`${key}:future-${Date.now()}`, raw);
+        adapter.remove(key);
+      } catch {
+        // The backup itself can fail when storage is blocked. Keep the original key.
+      }
+      return null;
+    }
     const state = sanitizeSettings(migrateSettings(parsed.state, version));
     return JSON.stringify({ state, version: SETTINGS_VERSION });
   } catch {

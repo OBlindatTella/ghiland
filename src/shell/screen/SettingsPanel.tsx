@@ -4,6 +4,8 @@ import { useEffect, useState } from 'react';
 import { audioEngine } from '@/engine/audio/engine';
 import type { QualitySetting } from '@/contracts/quality';
 import { usePerfStore } from '@/state/perf';
+import { useInputStore } from '@/state/input';
+import { storageWriteFailed, subscribeStorageFailure } from '@/state/persist';
 import { useScreenStore } from '@/state/screen';
 import { useSettings } from '@/state/settings';
 
@@ -56,9 +58,12 @@ function Slider({
 }
 
 export function SettingsPanel() {
-  const open = useScreenStore((state) => state.stack.includes('settings'));
+  const shell = useInputStore((state) => state.shellState);
+  const open = shell === 'SCREEN' && useScreenStore((state) => state.stack.includes('settings'));
   const settings = useSettings();
   const autoTier = usePerfStore((state) => state.autoTier);
+  const [storageBlocked, setStorageBlocked] = useState(storageWriteFailed);
+  useEffect(() => subscribeStorageFailure(() => setStorageBlocked(true)), []);
   useEffect(() => {
     if (open) audioEngine.playTick();
   }, [open]);
@@ -83,6 +88,9 @@ export function SettingsPanel() {
         </button>
       </header>
       <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-4">
+        {storageBlocked ? (
+          <p className="mb-3 text-[13px] leading-5 text-[#f2f0eb]/64">Settings could not be saved in this browser.</p>
+        ) : null}
         <h2 className="text-[12px] leading-4 text-[#f2f0eb]/64">Sound</h2>
         <Slider label="Master" min={0} max={1} step={0.01} value={settings.master} display={(value) => String(Math.round(value * 100))} onChange={settings.setMaster} />
         <Slider label="Ambient" min={0} max={1} step={0.01} value={settings.ambient} display={(value) => String(Math.round(value * 100))} onChange={settings.setAmbient} />
