@@ -3,10 +3,12 @@
 import { useEffect, useRef } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
 import { BasicShadowMap, PCFSoftShadowMap } from 'three';
-import { Bloom, EffectComposer, SMAA } from '@react-three/postprocessing';
+import { Bloom, EffectComposer, SMAA, ToneMapping } from '@react-three/postprocessing';
+import { COMPOSER_TONE_MODE } from '@/engine/quality/toneState';
 import { bus } from '@/engine/events/bus';
 import { heuristicTier, initialAutoClock, stepAutoQuality, type AutoClock } from '@/engine/quality/autoQuality';
 import { qualityProfiles } from '@/engine/quality/profiles';
+import type { QualityProfile } from '@/contracts/quality';
 import { perfSample, usePerfStore } from '@/state/perf';
 import { useAppliedQuality } from '@/state/appliedQuality';
 import { useGlStore } from '@/state/gl';
@@ -116,17 +118,16 @@ export function QualityDirector() {
     useSettings.getState().setLastAutoTier(next.tier);
   });
 
-  if (profile.postprocessing.smaa) {
-    return (
-      <EffectComposer multisampling={0} enableNormalPass={false} autoClear>
-        <SMAA />
-      </EffectComposer>
-    );
-  }
+  return <PostStack profile={profile} />;
+}
 
+/** SMAA on LOW/MED, bloom and MSAA on HIGH/ULTRA, AgX on every tier. */
+export function PostStack({ profile }: { profile: QualityProfile }) {
+  const smaa = profile.postprocessing.smaa;
   return (
-    <EffectComposer multisampling={profile.multisampling} enableNormalPass={false} autoClear>
-      <Bloom intensity={0.12} luminanceThreshold={0.9} mipmapBlur />
+    <EffectComposer multisampling={smaa ? 0 : profile.multisampling} enableNormalPass={false} autoClear>
+      {smaa ? <SMAA /> : <Bloom intensity={0.12} luminanceThreshold={0.9} mipmapBlur />}
+      <ToneMapping mode={COMPOSER_TONE_MODE} />
     </EffectComposer>
   );
 }
