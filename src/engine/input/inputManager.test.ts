@@ -32,7 +32,7 @@ function installDom() {
     addEventListener: listen(docListeners),
     removeEventListener: forget(docListeners),
     exitPointerLock() {
-      documentStub.pointerLockElement = null;
+      /* The browser keeps the lock until pointerlockchange. */
     },
   };
   const windowStub = {
@@ -104,6 +104,48 @@ describe('pointer lock without a promise', () => {
     expect(useInputStore.getState().showClickToWalk).toBe(true);
     expect(useInputStore.getState().relockBlocked).toBe(true);
     expect(useInputStore.getState().shellState).toBe('SCREEN');
+    manager.detach();
+  });
+});
+
+describe('escape pairing', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+    useInputStore.getState().reset();
+  });
+
+  it('still swallows the unlocking Esc after a 500 ms hitch', () => {
+    vi.useFakeTimers();
+    const dom = installDom();
+    const manager = new InputManager();
+    useInputStore.setState({ shellState: 'WORLD', owner: 'world', showClickToWalk: false });
+    dom.documentStub.pointerLockElement = dom.canvas;
+    manager.attach(dom.canvas);
+    dom.documentStub.pointerLockElement = null;
+    dom.fireDoc('pointerlockchange', {});
+    expect(useInputStore.getState().shellState).toBe('SCREEN');
+    vi.advanceTimersByTime(500);
+    dom.fireWindow('keydown', { code: 'Escape', repeat: false, preventDefault() {} });
+    expect(useInputStore.getState().shellState).toBe('SCREEN');
+    dom.fireWindow('keydown', { code: 'Escape', repeat: false, preventDefault() {} });
+    expect(useInputStore.getState().shellState).toBe('RELEASED');
+    manager.detach();
+  });
+
+  it('ends on RELEASED when Esc follows Q before the unlock lands', () => {
+    const dom = installDom();
+    const manager = new InputManager();
+    useInputStore.setState({ shellState: 'WORLD', owner: 'world', showClickToWalk: false });
+    dom.documentStub.pointerLockElement = dom.canvas;
+    manager.attach(dom.canvas);
+    dom.fireWindow('keydown', { code: 'KeyQ', repeat: false, preventDefault() {} });
+    expect(useInputStore.getState().shellState).toBe('SCREEN');
+    dom.fireWindow('keydown', { code: 'Escape', repeat: false, preventDefault() {} });
+    expect(useInputStore.getState().shellState).toBe('SCREEN');
+    dom.documentStub.pointerLockElement = null;
+    dom.fireDoc('pointerlockchange', {});
+    expect(useInputStore.getState().shellState).toBe('RELEASED');
     manager.detach();
   });
 });

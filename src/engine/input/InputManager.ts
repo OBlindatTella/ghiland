@@ -5,7 +5,7 @@ import { decideKey, isEditableElement } from '@/engine/input/keyRoute';
 import { KeyState } from '@/engine/input/keyState';
 import { ownerForShell, OwnerStack } from '@/engine/input/ownerStack';
 import { requestCanvasPointerLock } from '@/engine/input/pointerLock';
-import { idleEscapeGate, onBrowserEscapeUnlock, onEscapeKey, type EscapeGate } from '@/engine/input/escapeGate';
+import { idleEscapeGate, onBrowserEscapeUnlock, onEscapeKey, onToggleUnlock, type EscapeGate } from '@/engine/input/escapeGate';
 import { classifyLockLoss, reduceShell, type ShellEffect, type ShellModel } from '@/engine/input/shellMachine';
 import { useInputStore } from '@/state/input';
 import { useSettings } from '@/state/settings';
@@ -19,7 +19,6 @@ export class InputManager {
   private unlockIntent: 'toggle' | null = null;
   private lockGeneration = 0;
   private escapeGate: EscapeGate = idleEscapeGate;
-  private escapeReset = 0;
   private systemToken: number | null = null;
   private blurTimer = 0;
 
@@ -141,15 +140,13 @@ export class InputManager {
     if (decision.action === 'toggleScreen') {
       this.apply(reduceShell(this.readModel(), { type: 'toggleScreen' }));
     } else if (decision.action === 'escape') {
-      const next = onEscapeKey(this.escapeGate, document.pointerLockElement !== null);
+      const next = onEscapeKey(
+        this.escapeGate,
+        document.pointerLockElement !== null,
+        this.unlockIntent === 'toggle',
+      );
       this.escapeGate = next.gate;
-      this.scheduleEscapeReset();
-      if (next.apply) {
-        if (useInputStore.getState().shellState === 'SCREEN' && !useScreenStore.getState().pop().release) {
-          return;
-        }
-        this.apply(reduceShell(this.readModel(), { type: 'escape' }));
-      }
+      if (next.apply) this.applyEscape();
     } else if (decision.action === 'toggleMute') {
       useSettings.getState().toggleMuted();
     } else if (decision.action === 'togglePerfHud') {
@@ -198,14 +195,26 @@ export class InputManager {
       hidden: document.hidden,
       focused: document.hasFocus(),
     });
+    const follow = reason === 'toggle' ? onToggleUnlock(this.escapeGate) : null;
     this.unlockIntent = null;
     if (reason === 'escape') {
       this.escapeGate = onBrowserEscapeUnlock(this.escapeGate);
-      this.scheduleEscapeReset();
+    } else if (follow) {
+      this.escapeGate = follow.gate;
+    } else {
+      this.escapeGate = idleEscapeGate;
     }
     this.apply(reduceShell(this.readModel(), { type: 'pointerLockLost', reason }));
     useInputStore.getState().setPointerLocked(false);
+    if (follow?.applyEscape) this.applyEscape();
   };
+
+  private applyEscape(): void {
+    if (useInputStore.getState().shellState === 'SCREEN' && !useScreenStore.getState().pop().release) {
+      return;
+    }
+    this.apply(reduceShell(this.readModel(), { type: 'escape' }));
+  }
 
   holdSystem(): void {
     if (this.systemToken !== null) return;
@@ -216,16 +225,6 @@ export class InputManager {
     if (this.systemToken === null) return;
     this.popOwner(this.systemToken);
     this.systemToken = null;
-  }
-
-  private scheduleEscapeReset(): void {
-    if (!this.escapeGate.seenWhileLocked && !this.escapeGate.swallowNext) return;
-    const generation = this.escapeReset + 1;
-    this.escapeReset = generation;
-    window.setTimeout(() => {
-      if (generation !== this.escapeReset) return;
-      this.escapeGate = idleEscapeGate;
-    }, 200);
   }
 
   private onLockError = (): void => {

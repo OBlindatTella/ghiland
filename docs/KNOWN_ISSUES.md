@@ -47,6 +47,6 @@ These are the review items that are still different from Atlas. The others in th
 ## Browser
 
 - A rejected `requestPointerLock` is not retried. If `{ unadjustedMovement: true }` throws or rejects for a reason other than a denied gesture, the lock helper tries once more without that option. A browser that returns no promise is left pending until `pointerlockchange` or `pointerlockerror`.
-- Esc while locked is coalesced. Chrome may fire the Escape key and `pointerlockchange` in either order; one press opens SCREEN, and a later Esc leaves SCREEN.
+- Esc while locked is paired by event order, not a timer. The keydown and the matching unlock count as one press into SCREEN, including when a hitch of 500 ms separates them. Esc pressed while Q's unlock is still in flight is applied after that unlock.
 - Firefox's pointer-lock banner, layout-map key labels, and non-Chromium smoke tests are out of scope for this step.
 - Back/Forward changes the URL and keeps the session in the world. The canvas is not duplicated.
