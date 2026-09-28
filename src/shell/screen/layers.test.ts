@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { popScreenLayer, pushScreenLayer } from '@/shell/screen/layers';
+import { useInputStore } from '@/state/input';
+import { useScreenStore } from '@/state/screen';
 
 describe('Esc layer stack', () => {
   it('releases the Screen when nothing is open', () => {
@@ -24,5 +26,17 @@ describe('Esc layer stack', () => {
     const stack = pushScreenLayer(pushScreenLayer([], 'settings'), 'settings');
     expect(stack).toEqual(['settings']);
     expect(pushScreenLayer(['launcher', 'settings'], 'launcher')).toEqual(['settings', 'launcher']);
+  });
+
+  it('clears every layer when the shell leaves SCREEN', () => {
+    useInputStore.setState({ shellState: 'SCREEN', owner: 'ui', showClickToWalk: false });
+    useScreenStore.getState().push('settings');
+    useScreenStore.getState().push('launcher');
+    useInputStore.getState().applyModel(
+      { state: 'WORLD', relockBlocked: false, showClickToWalk: false },
+      'world',
+    );
+    expect(useScreenStore.getState().stack).toEqual([]);
+    useInputStore.getState().reset();
   });
 });

@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { popScreenLayer, pushScreenLayer, type ScreenLayer } from '@/shell/screen/layers';
+import { useInputStore } from '@/state/input';
 
 interface ScreenStore {
   stack: ScreenLayer[];
@@ -20,3 +21,9 @@ export const useScreenStore = create<ScreenStore>((set, get) => ({
   remove: (layer) => set({ stack: get().stack.filter((item) => item !== layer) }),
   clear: () => set({ stack: [] }),
 }));
+
+useInputStore.subscribe((state, previous) => {
+  if (previous.shellState === 'SCREEN' && state.shellState !== 'SCREEN') {
+    useScreenStore.getState().clear();
+  }
+});
