@@ -1,18 +1,27 @@
 import { createElement } from 'react';
 import { describe, expect, it } from 'vitest';
-import { CANVAS_FAILURE_MESSAGE, CanvasBoundary } from '@/shell/CanvasBoundary';
+import { CANVAS_FAILURE_MESSAGE, CANVAS_RELOAD_MESSAGE, CanvasBoundary } from '@/shell/CanvasBoundary';
 
 describe('canvas error boundary', () => {
   it('shows a calm message when the canvas fails to start', () => {
     const boundary = new CanvasBoundary({ children: createElement('canvas') });
     expect(boundary.render()).toEqual(createElement('canvas'));
-    boundary.state = CanvasBoundary.getDerivedStateFromError();
-    const view = boundary.render();
-    expect(view).not.toEqual(createElement('canvas'));
-    if (!view || typeof view !== 'object' || !('props' in view)) {
+    boundary.state = CanvasBoundary.getDerivedStateFromError(new Error('WebGL2 context failed'));
+    const webgl = boundary.render();
+    expect(webgl).not.toEqual(createElement('canvas'));
+    if (!webgl || typeof webgl !== 'object' || !('props' in webgl)) {
       throw new Error('expected a fallback element');
     }
-    expect(view.props.role).toBe('alert');
-    expect(view.props.children).toBe(CANVAS_FAILURE_MESSAGE);
+    expect(webgl.props.role).toBe('alert');
+    const webglText = JSON.stringify(webgl.props.children);
+    expect(webglText).toContain(CANVAS_FAILURE_MESSAGE);
+    expect(webglText).toContain('Reload');
+
+    boundary.state = CanvasBoundary.getDerivedStateFromError(new Error('Failed to fetch dynamically imported module'));
+    const chunk = boundary.render();
+    if (!chunk || typeof chunk !== 'object' || !('props' in chunk)) {
+      throw new Error('expected a fallback element');
+    }
+    expect(JSON.stringify(chunk.props.children)).toContain(CANVAS_RELOAD_MESSAGE);
   });
 });
