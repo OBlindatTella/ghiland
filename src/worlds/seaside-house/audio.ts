@@ -1,13 +1,13 @@
 import type { WorldAudioSpec } from '@/contracts/audio';
 
 /**
- * Ocean and wind are procedural beds (empty src) so a recorded file can replace them later.
- * Gulls are a decoded one-shot from a CC0 file. See docs/AUDIO_CREDITS.md.
+ * Ocean and wind are field recordings. An empty src, or a file that fails to play,
+ * falls back to the procedural beds in AudioEngine. See docs/AUDIO_CREDITS.md.
  */
 export const seasideAudio: WorldAudioSpec = {
   beds: [
-    { id: 'ocean', src: '', gain: 0.55, fadeInMs: 1400 },
-    { id: 'wind', src: '', gain: 0.22, fadeInMs: 1800 },
+    { id: 'ocean', src: '/worlds/seaside-house/ocean.ogg', gain: 0.55, fadeInMs: 1400 },
+    { id: 'wind', src: '/worlds/seaside-house/wind.ogg', gain: 0.22, fadeInMs: 1800 },
   ],
   emitters: [
     {

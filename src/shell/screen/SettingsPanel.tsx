@@ -127,6 +127,18 @@ export function SettingsPanel() {
             );
           })}
         </div>
+        <h2 className="mt-6 text-[12px] leading-4 text-[#f2f0eb]/64">About / credits</h2>
+        <ul data-testid="settings-credits" className="mt-2 space-y-2 text-[13px] leading-5 text-[#f2f0eb]/80">
+          <li>Ocean. Joseph Sardin, small waves at Houlgate, facing the Channel. CC0.</li>
+          <li>
+            Wind. Beeld en Geluid, “Waaien”.{' '}
+            <a className="underline" href="https://creativecommons.org/licenses/by-sa/3.0/" target="_blank" rel="noreferrer">
+              CC BY-SA 3.0
+            </a>
+            . Lightly limited.
+          </li>
+          <li>Gull. Sonothèque ADVL, European herring gull flight call. CC0.</li>
+        </ul>
       </div>
     </section>
   );

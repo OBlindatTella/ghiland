@@ -229,20 +229,25 @@ export class AudioEngine {
     gain.connect(this.ambient);
     const now = ctx.currentTime;
     gain.gain.setTargetAtTime(gainValue, now, Math.max(0.05, fadeMs / 3000));
+    const procedural = () => {
+      if (id === 'wind') {
+        character.type = 'bandpass';
+        character.frequency.value = 640;
+        character.Q.value = 0.35;
+        this.startBuffer(ctx, colouredNoise(ctx, 12, 0.92, 13), character);
+      } else {
+        character.type = 'lowpass';
+        character.frequency.value = 2400;
+        character.Q.value = 0.5;
+        this.startBuffer(ctx, colouredNoise(ctx, 12, 0.985, 8.5), character);
+      }
+    };
     if (src) {
       character.type = 'lowpass';
       character.frequency.value = 18000;
-      this.startMedia(ctx, src, character);
-    } else if (id === 'wind') {
-      character.type = 'bandpass';
-      character.frequency.value = 640;
-      character.Q.value = 0.35;
-      this.startBuffer(ctx, colouredNoise(ctx, 12, 0.92, 13), character);
+      this.startMedia(ctx, src, character, procedural);
     } else {
-      character.type = 'lowpass';
-      character.frequency.value = 2400;
-      character.Q.value = 0.5;
-      this.startBuffer(ctx, colouredNoise(ctx, 12, 0.985, 8.5), character);
+      procedural();
     }
     return { id, filter: occlusion, gain, base: gainValue, stop: () => undefined };
   }
@@ -271,8 +276,16 @@ export class AudioEngine {
     loop(ctx.currentTime, Math.random() * buffer.duration * 0.7);
   }
 
-  private startMedia(ctx: AudioContext, src: string, destination: AudioNode): void {
+  private startMedia(ctx: AudioContext, src: string, destination: AudioNode, fallback: () => void): void {
+    let started = false;
+    let failed = false;
+    const giveUp = () => {
+      if (started || failed) return;
+      failed = true;
+      fallback();
+    };
     const spawn = (lead: boolean) => {
+      if (failed) return;
       const audio = new Audio(src);
       audio.crossOrigin = 'anonymous';
       audio.preload = 'auto';
@@ -283,7 +296,7 @@ export class AudioEngine {
       fade.gain.value = 0.0001;
       let handed = false;
       const handoff = () => {
-        if (handed) return;
+        if (handed || failed) return;
         handed = true;
         fade.gain.setTargetAtTime(0.0001, ctx.currentTime, 0.6);
         spawn(false);
@@ -293,18 +306,31 @@ export class AudioEngine {
           fade.disconnect();
         }, 2500);
       };
-      void audio.play().then(() => {
-        if (lead && Number.isFinite(audio.duration) && audio.duration > 4) {
-          audio.currentTime = Math.random() * (audio.duration - 4);
-        }
-        fade.gain.setTargetAtTime(1, ctx.currentTime, 0.5);
-      });
       const watch = window.setInterval(() => {
+        if (failed || !started) return;
         if (!Number.isFinite(audio.duration) || audio.duration === 0 || audio.paused) return;
         if (audio.currentTime < audio.duration - 3) return;
         window.clearInterval(watch);
         handoff();
       }, 200);
+      const abandon = () => {
+        window.clearInterval(watch);
+        audio.pause();
+        giveUp();
+      };
+      audio.addEventListener('error', abandon, { once: true });
+      void audio.play().then(() => {
+        if (failed) {
+          window.clearInterval(watch);
+          audio.pause();
+          return;
+        }
+        started = true;
+        if (lead && Number.isFinite(audio.duration) && audio.duration > 4) {
+          audio.currentTime = Math.random() * (audio.duration - 4);
+        }
+        fade.gain.setTargetAtTime(1, ctx.currentTime, 0.5);
+      }).catch(abandon);
       audio.addEventListener(
         'ended',
         () => {
