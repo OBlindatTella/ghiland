@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { PerspectiveCamera, Vector3 } from 'three';
 import {
   clampFrameDt,
+  clampLookVector,
   clampPitch,
   dampVec2,
   DEFAULT_MOVEMENT,
@@ -84,6 +85,17 @@ describe('damping and clamps', () => {
     for (let i = 0; i < 12; i += 1) slowing = dampVec2(slowing, { x: 0, z: 0 }, 1 / 60);
     expect(slowing.z).toBeLessThan(1.35 * 0.6);
     expect(slowing.z).toBeGreaterThan(0.2);
+  });
+
+  it('clamps a mouse spike during the post-lock guard and does not learn from it', () => {
+    const first = clampLookVector(400, 0, 0, true);
+    expect(Math.hypot(first.dx, first.dy)).toBeCloseTo(24, 5);
+    expect(first.average).toBeLessThan(8);
+    const after = clampLookVector(400, 0, first.average, true);
+    expect(Math.hypot(after.dx, after.dy)).toBeCloseTo(24, 5);
+    const calm = clampLookVector(2, 1, 4, false);
+    expect(calm.dx).toBeCloseTo(2, 5);
+    expect(calm.dy).toBeCloseTo(1, 5);
   });
 
   it('clamps a stalled frame and pitch', () => {

@@ -7,8 +7,9 @@ import { inputManager } from '@/engine/input/InputManager';
 import { slideMove, type Body } from '@/engine/player/collision';
 import {
   clampFrameDt,
-  clampLookDelta,
+  clampLookVector,
   clampPitch,
+  LOOK_GUARD_MS,
   dampVec2,
   DEFAULT_MOVEMENT,
   viewToWorld,
@@ -42,27 +43,39 @@ export function FirstPersonController({
   const targetPitch = useRef(0);
   const pos = useRef({ x: spawn.x, z: spawn.z });
   const vel = useRef({ x: 0, z: 0 });
-  const lookAvgX = useRef(0);
-  const lookAvgY = useRef(0);
+  const lookAvg = useRef(0);
+  const lookGuardUntil = useRef(0);
 
   useEffect(() => inputManager.attach(gl.domElement), [gl]);
 
   useEffect(() => {
+    const onLock = () => {
+      if (document.pointerLockElement !== gl.domElement) return;
+      lookAvg.current = 0;
+      lookGuardUntil.current = performance.now() + LOOK_GUARD_MS;
+    };
     const onMove = (event: MouseEvent) => {
       if (document.pointerLockElement !== gl.domElement) return;
-      const scaledX = clampLookDelta(event.movementX, lookAvgX.current);
-      const scaledY = clampLookDelta(event.movementY, lookAvgY.current);
-      lookAvgX.current = scaledX.average;
-      lookAvgY.current = scaledY.average;
+      const scaled = clampLookVector(
+        event.movementX,
+        event.movementY,
+        lookAvg.current,
+        performance.now() < lookGuardUntil.current,
+      );
+      lookAvg.current = scaled.average;
       const sensitivity = useSettings.getState().mouseSensitivity;
       const invert = useSettings.getState().invertY ? -1 : 1;
-      targetYaw.current += yawFromMouse(scaledX.delta, LOOK_SENSITIVITY * sensitivity);
+      targetYaw.current += yawFromMouse(scaled.dx, LOOK_SENSITIVITY * sensitivity);
       targetPitch.current = clampPitch(
-        targetPitch.current - scaledY.delta * LOOK_SENSITIVITY * sensitivity * invert,
+        targetPitch.current - scaled.dy * LOOK_SENSITIVITY * sensitivity * invert,
       );
     };
+    document.addEventListener('pointerlockchange', onLock);
     window.addEventListener('mousemove', onMove);
-    return () => window.removeEventListener('mousemove', onMove);
+    return () => {
+      document.removeEventListener('pointerlockchange', onLock);
+      window.removeEventListener('mousemove', onMove);
+    };
   }, [gl]);
 
   useFrame((_, dt) => {
