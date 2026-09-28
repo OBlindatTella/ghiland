@@ -19,6 +19,7 @@ function installDom() {
     map.get(type)?.delete(fn as Listener);
   };
   let focused = true;
+  let exits = 0;
   const canvas = {
     addEventListener: listen(new Map()),
     removeEventListener: forget(new Map()),
@@ -32,7 +33,7 @@ function installDom() {
     addEventListener: listen(docListeners),
     removeEventListener: forget(docListeners),
     exitPointerLock() {
-      /* The browser keeps the lock until pointerlockchange. */
+      exits += 1;
     },
   };
   const windowStub = {
@@ -58,6 +59,7 @@ function installDom() {
     fireDoc(type: string, event: object) {
       fire(docListeners, type, event);
     },
+    exits: () => exits,
   };
 }
 
@@ -146,6 +148,47 @@ describe('escape pairing', () => {
     dom.documentStub.pointerLockElement = null;
     dom.fireDoc('pointerlockchange', {});
     expect(useInputStore.getState().shellState).toBe('RELEASED');
+    manager.detach();
+  });
+});
+
+describe('pending pointer lock', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    useInputStore.getState().reset();
+  });
+
+  it('cancels a lock requested by Q when Esc arrives first', () => {
+    const dom = installDom();
+    const manager = new InputManager();
+    useInputStore.setState({ shellState: 'SCREEN', owner: 'ui', showClickToWalk: false });
+    manager.attach(dom.canvas);
+    dom.fireWindow('keydown', { code: 'KeyQ', repeat: false, preventDefault() {} });
+    dom.fireWindow('keydown', { code: 'Escape', repeat: false, preventDefault() {} });
+    expect(useInputStore.getState().shellState).toBe('RELEASED');
+    dom.documentStub.pointerLockElement = dom.canvas;
+    dom.fireDoc('pointerlockchange', {});
+    expect(dom.exits()).toBeGreaterThan(0);
+    expect(useInputStore.getState().shellState).toBe('RELEASED');
+    expect(useInputStore.getState().pointerLocked).toBe(false);
+    manager.detach();
+  });
+
+  it('does not treat a second Q as a lock while the first exit is in flight', () => {
+    const dom = installDom();
+    const manager = new InputManager();
+    useInputStore.setState({ shellState: 'WORLD', owner: 'world', showClickToWalk: false });
+    dom.documentStub.pointerLockElement = dom.canvas;
+    manager.attach(dom.canvas);
+    dom.fireWindow('keydown', { code: 'KeyQ', repeat: false, preventDefault() {} });
+    dom.fireWindow('keydown', { code: 'KeyQ', repeat: false, preventDefault() {} });
+    expect(useInputStore.getState().shellState).toBe('SCREEN');
+    dom.documentStub.pointerLockElement = null;
+    dom.fireDoc('pointerlockchange', {});
+    expect(useInputStore.getState().shellState).toBe('SCREEN');
+    dom.documentStub.pointerLockElement = dom.canvas;
+    dom.fireDoc('pointerlockchange', {});
+    expect(useInputStore.getState().shellState).toBe('WORLD');
     manager.detach();
   });
 });

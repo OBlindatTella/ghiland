@@ -16,6 +16,10 @@ export class InputManager {
   private owners = new OwnerStack('ui');
   private canvas: HTMLElement | null = null;
   private pendingLock = false;
+  /** A grant is applied only when this request is still the one the player asked for. */
+  private acceptLock = false;
+  /** A second Q arrived while the first Q's exit was still in flight. */
+  private relockAfterToggle = false;
   private unlockIntent: 'toggle' | null = null;
   private lockGeneration = 0;
   private escapeGate: EscapeGate = idleEscapeGate;
@@ -46,6 +50,8 @@ export class InputManager {
     window.clearTimeout(this.blurTimer);
     this.canvas = null;
     this.pendingLock = false;
+    this.acceptLock = false;
+    this.relockAfterToggle = false;
   }
 
   pushOwner(owner: InputOwner): number {
@@ -77,6 +83,8 @@ export class InputManager {
 
   private apply(result: { model: ShellModel; effects: ShellEffect[] }): void {
     const previous = useInputStore.getState().shellState;
+    const requesting = result.effects.some((effect) => effect.type === 'requestPointerLock');
+    if (!requesting && (this.pendingLock || this.acceptLock)) this.cancelPendingLock();
     this.owners.setBase(ownerForShell(result.model.state));
     useInputStore.getState().applyModel(result.model, this.owners.current());
     if (previous !== result.model.state) {
@@ -97,16 +105,22 @@ export class InputManager {
     const canvas = this.canvas;
     if (!canvas || this.pendingLock) return;
     if (document.pointerLockElement === canvas) {
+      if (this.unlockIntent === 'toggle') {
+        this.relockAfterToggle = true;
+        return;
+      }
       this.apply(reduceShell(this.readModel(), { type: 'pointerLockGained' }));
       useInputStore.getState().setPointerLocked(true);
       return;
     }
     this.pendingLock = true;
+    this.acceptLock = true;
     const generation = this.lockGeneration + 1;
     this.lockGeneration = generation;
     const fail = () => {
       if (generation !== this.lockGeneration || !this.pendingLock) return;
       this.pendingLock = false;
+      this.acceptLock = false;
       this.lockGeneration += 1;
       this.apply(reduceShell(this.readModel(), { type: 'pointerLockRejected' }));
     };
@@ -146,6 +160,7 @@ export class InputManager {
         this.unlockIntent === 'toggle',
       );
       this.escapeGate = next.gate;
+      if (next.gate.escapeAfterToggle) this.relockAfterToggle = false;
       if (next.apply) this.applyEscape();
     } else if (decision.action === 'toggleMute') {
       useSettings.getState().toggleMuted();
@@ -185,6 +200,11 @@ export class InputManager {
     const locked = this.canvas !== null && document.pointerLockElement === this.canvas;
     this.pendingLock = false;
     if (locked) {
+      if (!this.acceptLock) {
+        document.exitPointerLock();
+        return;
+      }
+      this.acceptLock = false;
       this.unlockIntent = null;
       this.apply(reduceShell(this.readModel(), { type: 'pointerLockGained' }));
       useInputStore.getState().setPointerLocked(true);
@@ -196,6 +216,8 @@ export class InputManager {
       focused: document.hasFocus(),
     });
     const follow = reason === 'toggle' ? onToggleUnlock(this.escapeGate) : null;
+    const relock = reason === 'toggle' && this.relockAfterToggle && !follow?.applyEscape;
+    this.relockAfterToggle = false;
     this.unlockIntent = null;
     if (reason === 'escape') {
       this.escapeGate = onBrowserEscapeUnlock(this.escapeGate);
@@ -207,7 +229,14 @@ export class InputManager {
     this.apply(reduceShell(this.readModel(), { type: 'pointerLockLost', reason }));
     useInputStore.getState().setPointerLocked(false);
     if (follow?.applyEscape) this.applyEscape();
+    else if (relock) this.requestLock();
   };
+
+  private cancelPendingLock(): void {
+    this.pendingLock = false;
+    this.acceptLock = false;
+    this.lockGeneration += 1;
+  }
 
   private applyEscape(): void {
     if (useInputStore.getState().shellState === 'SCREEN' && !useScreenStore.getState().pop().release) {
@@ -230,6 +259,7 @@ export class InputManager {
   private onLockError = (): void => {
     if (!this.pendingLock) return;
     this.pendingLock = false;
+    this.acceptLock = false;
     this.lockGeneration += 1;
     this.apply(reduceShell(this.readModel(), { type: 'pointerLockRejected' }));
   };
