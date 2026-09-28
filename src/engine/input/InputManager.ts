@@ -21,6 +21,7 @@ export class InputManager {
   private escapeGate: EscapeGate = idleEscapeGate;
   private escapeReset = 0;
   private systemToken: number | null = null;
+  private blurTimer = 0;
 
   attach(canvas: HTMLElement): () => void {
     this.detach();
@@ -43,6 +44,7 @@ export class InputManager {
     document.removeEventListener('visibilitychange', this.onVisibility);
     document.removeEventListener('pointerlockchange', this.onLockChange);
     document.removeEventListener('pointerlockerror', this.onLockError);
+    window.clearTimeout(this.blurTimer);
     this.canvas = null;
     this.pendingLock = false;
   }
@@ -161,9 +163,16 @@ export class InputManager {
   };
 
   private onBlur = (): void => {
-    this.keys.clear();
-    this.unlockIntent = null;
-    this.apply(reduceShell(this.readModel(), { type: 'blur' }));
+    window.clearTimeout(this.blurTimer);
+    // Focus moving into an iframe blurs the parent window while document.hasFocus() stays true.
+    this.blurTimer = window.setTimeout(() => {
+      if (!this.canvas) return;
+      const active = document.activeElement as { tagName?: string } | null;
+      if (document.hasFocus() && active?.tagName === 'IFRAME') return;
+      this.keys.clear();
+      this.unlockIntent = null;
+      this.apply(reduceShell(this.readModel(), { type: 'blur' }));
+    }, 0);
   };
 
   private onVisibility = (): void => {
