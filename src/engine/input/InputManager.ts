@@ -16,8 +16,8 @@ export class InputManager {
   private owners = new OwnerStack('ui');
   private canvas: HTMLElement | null = null;
   private pendingLock = false;
-  /** One pointerlockerror from an unsupported unadjustedMovement option is not a rejection. */
-  private lockErrorsToIgnore = 0;
+  /** Context loss and other system exits must not be classified as an Esc unlock. */
+  private systemUnlock = false;
   /** A second Q arrived while the first Q's exit was still in flight. */
   private relockAfterToggle = false;
   private unlockIntent: 'toggle' | null = null;
@@ -238,6 +238,14 @@ export class InputManager {
   private onLockChange = (): void => {
     const locked = this.canvas !== null && document.pointerLockElement === this.canvas;
     this.pendingLock = false;
+    if (!locked && this.systemUnlock) {
+      this.systemUnlock = false;
+      this.escapeGate = idleEscapeGate;
+      this.acceptLock = false;
+      this.unlockIntent = null;
+      useInputStore.getState().setPointerLocked(false);
+      return;
+    }
     if (locked) {
       if (!this.acceptLock) {
         document.exitPointerLock();
@@ -289,6 +297,18 @@ export class InputManager {
   holdSystem(): void {
     if (this.systemToken !== null) return;
     this.systemToken = this.pushOwner('system');
+  }
+
+  /** D-017. Context loss goes through apply so the pointer, gate, and auto-pin hook all run. */
+  loseContext(): void {
+    this.holdSystem();
+    this.escapeGate = idleEscapeGate;
+    this.systemUnlock = Boolean(document.pointerLockElement);
+    this.cancelPendingLock();
+    this.unlockIntent = null;
+    this.relockAfterToggle = false;
+    if (document.pointerLockElement) document.exitPointerLock();
+    this.apply(reduceShell(this.readModel(), { type: 'blur' }));
   }
 
   releaseSystem(): void {

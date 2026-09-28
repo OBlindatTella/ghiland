@@ -5,7 +5,6 @@ import { useThree } from '@react-three/fiber';
 import { bus } from '@/engine/events/bus';
 import { inputManager } from '@/engine/input/InputManager';
 import { useGlStore } from '@/state/gl';
-import { useInputStore } from '@/state/input';
 
 export function ContextGuard() {
   const gl = useThree((state) => state.gl);
@@ -17,11 +16,7 @@ export function ContextGuard() {
     const onLost = (event: Event) => {
       event.preventDefault();
       useGlStore.getState().lose();
-      inputManager.holdSystem();
-      useInputStore.getState().applyModel(
-        { state: 'RELEASED', relockBlocked: false, showClickToWalk: true },
-        'system',
-      );
+      inputManager.loseContext();
       bus.emit('gl:contextLost', {});
     };
     const onRestored = () => {

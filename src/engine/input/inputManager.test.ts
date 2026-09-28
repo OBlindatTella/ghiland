@@ -246,6 +246,35 @@ describe('shell prep for windows', () => {
     manager.detach();
   });
 
+  it('routes context loss through apply, releases the pointer, and drops a pending lock', () => {
+    const dom = installDom();
+    const manager = new InputManager();
+    useInputStore.setState({ shellState: 'WORLD', owner: 'world', showClickToWalk: false, pointerLocked: true });
+    dom.documentStub.pointerLockElement = dom.canvas;
+    manager.attach(dom.canvas);
+    const during: string[] = [];
+    manager.setBeforeShellChange((from, to) => {
+      during.push(`${from}:${useInputStore.getState().shellState}:${to}`);
+    });
+    manager.loseContext();
+    expect(during).toEqual(['WORLD:WORLD:RELEASED']);
+    expect(useInputStore.getState().shellState).toBe('RELEASED');
+    expect(dom.exits()).toBeGreaterThan(0);
+    dom.documentStub.pointerLockElement = null;
+    dom.fireDoc('pointerlockchange', {});
+    expect(useInputStore.getState().shellState).toBe('RELEASED');
+
+    useInputStore.setState({ shellState: 'SCREEN', owner: 'ui', showClickToWalk: false, relockBlocked: false });
+    dom.fireWindow('keydown', { code: 'KeyQ', repeat: false, preventDefault() {} });
+    manager.loseContext();
+    dom.documentStub.pointerLockElement = dom.canvas;
+    dom.fireDoc('pointerlockchange', {});
+    expect(dom.exits()).toBeGreaterThan(1);
+    expect(useInputStore.getState().shellState).toBe('RELEASED');
+    manager.setBeforeShellChange(null);
+    manager.detach();
+  });
+
   it('takes an empty-world click from the canvas and ignores a window root', () => {
     const dom = installDom();
     const manager = new InputManager();
