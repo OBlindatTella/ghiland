@@ -19,17 +19,7 @@ export function ShellChrome() {
   const showPerf = useSettings((state) => state.showPerfHud);
   const dim = useAppliedQuality((state) => state.dim);
   const active = useSession((state) => state.worldPhase === 'active');
-  const [hintReady, setHintReady] = useState(false);
   const [screenKey, setScreenKey] = useState(() => screenKeyLabel(null));
-
-  useEffect(() => {
-    if (!active || !showHint) {
-      setHintReady(false);
-      return;
-    }
-    const id = window.setTimeout(() => setHintReady(true), 600);
-    return () => window.clearTimeout(id);
-  }, [active, showHint]);
 
   useEffect(() => {
     document.body.dataset.shell = shell;
@@ -69,11 +59,11 @@ export function ShellChrome() {
       <Shelf />
       <SettingsPanel />
       <RestoringVeil />
-      {active && showHint && hintReady ? (
+      {active && showHint ? (
         <p
           role="status"
           aria-live="polite"
-          className="pointer-events-none absolute bottom-16 left-1/2 z-30 -translate-x-1/2 rounded-full bg-[#141413]/90 px-4 py-2 text-[13px] leading-5 text-[#f2f0eb]"
+          className="ghiland-hint pointer-events-none absolute bottom-16 left-1/2 z-30 -translate-x-1/2 rounded-full bg-[#141413]/90 px-4 py-2 text-[13px] leading-5 text-[#f2f0eb]"
         >
           Click to walk · {screenKey} Screen
         </p>
