@@ -1,5 +1,6 @@
 import type { WorldAudioSpec } from '@/contracts/audio';
 import type { AcousticPortal, WorldZone } from '@/contracts/environment';
+import { fillColouredNoise } from '@/engine/audio/noise';
 import { bus } from '@/engine/events/bus';
 import { distanceToOpenPortal, occlusionCutoff, zoneAt } from '@/engine/audio/occlusion';
 import { useAppliedQuality } from '@/state/appliedQuality';
@@ -34,20 +35,13 @@ function squared(value: number): number {
   return value * value;
 }
 
-function colouredNoise(ctx: AudioContext, seconds: number, colour: number, rateHz: number): AudioBuffer {
-  const length = Math.floor(ctx.sampleRate * seconds);
-  const buffer = ctx.createBuffer(2, length, ctx.sampleRate);
-  for (let channel = 0; channel < 2; channel += 1) {
-    const data = buffer.getChannelData(channel);
-    let held = 0;
-    for (let i = 0; i < length; i += 1) {
-      const white = Math.random() * 2 - 1;
-      held = held * colour + white * (1 - colour);
-      const swell = 0.72 + 0.28 * Math.sin((Math.PI * 2 * i) / (ctx.sampleRate * rateHz) + channel * 0.6);
-      data[i] = held * swell;
-    }
+function defer(task: () => void): () => void {
+  if (typeof window.requestIdleCallback === 'function') {
+    const id = window.requestIdleCallback(() => task());
+    return () => window.cancelIdleCallback(id);
   }
-  return buffer;
+  const id = window.setTimeout(task, 0);
+  return () => window.clearTimeout(id);
 }
 
 export class AudioEngine {
@@ -229,18 +223,35 @@ export class AudioEngine {
     gain.connect(this.ambient);
     const now = ctx.currentTime;
     gain.gain.setTargetAtTime(gainValue, now, Math.max(0.05, fadeMs / 3000));
+    let cancelNoise = () => {};
+    let dead = false;
     const procedural = () => {
-      if (id === 'wind') {
+      if (dead) return;
+      const wind = id === 'wind';
+      if (wind) {
         character.type = 'bandpass';
         character.frequency.value = 640;
         character.Q.value = 0.35;
-        this.startBuffer(ctx, colouredNoise(ctx, 12, 0.92, 13), character);
       } else {
         character.type = 'lowpass';
         character.frequency.value = 2400;
         character.Q.value = 0.5;
-        this.startBuffer(ctx, colouredNoise(ctx, 12, 0.985, 8.5), character);
       }
+      const colour = wind ? 0.92 : 0.985;
+      const rateHz = wind ? 13 : 8.5;
+      cancelNoise = defer(() => {
+        if (dead) return;
+        const length = Math.floor(ctx.sampleRate * 12);
+        const left = new Float32Array(length);
+        const right = new Float32Array(length);
+        void fillColouredNoise([left, right], ctx.sampleRate, colour, rateHz, () => dead).then((ok) => {
+          if (!ok || dead) return;
+          const buffer = ctx.createBuffer(2, length, ctx.sampleRate);
+          buffer.copyToChannel(left, 0);
+          buffer.copyToChannel(right, 1);
+          this.startBuffer(ctx, buffer, character);
+        });
+      });
     };
     if (src) {
       character.type = 'lowpass';
@@ -249,7 +260,16 @@ export class AudioEngine {
     } else {
       procedural();
     }
-    return { id, filter: occlusion, gain, base: gainValue, stop: () => undefined };
+    return {
+      id,
+      filter: occlusion,
+      gain,
+      base: gainValue,
+      stop: () => {
+        dead = true;
+        cancelNoise();
+      },
+    };
   }
 
   private startBuffer(ctx: AudioContext, buffer: AudioBuffer, destination: AudioNode): void {
