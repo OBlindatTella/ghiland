@@ -4,6 +4,7 @@ import { defaultBindings } from '@/engine/input/bindings';
 import { KeyState } from '@/engine/input/keyState';
 import { ownerForShell, OwnerStack } from '@/engine/input/ownerStack';
 import { requestCanvasPointerLock } from '@/engine/input/pointerLock';
+import { idleEscapeGate, onBrowserEscapeUnlock, onEscapeKey, type EscapeGate } from '@/engine/input/escapeGate';
 import { classifyLockLoss, reduceShell, type ShellEffect, type ShellModel } from '@/engine/input/shellMachine';
 import { useInputStore } from '@/state/input';
 import { usePerfStore } from '@/state/perf';
@@ -15,6 +16,8 @@ export class InputManager {
   private pendingLock = false;
   private unlockIntent: 'toggle' | null = null;
   private lockGeneration = 0;
+  private escapeGate: EscapeGate = idleEscapeGate;
+  private escapeReset = 0;
 
   attach(canvas: HTMLElement): () => void {
     this.detach();
@@ -111,7 +114,10 @@ export class InputManager {
     if (event.code === 'KeyQ') {
       this.apply(reduceShell(this.readModel(), { type: 'toggleScreen' }));
     } else if (event.code === 'Escape') {
-      this.apply(reduceShell(this.readModel(), { type: 'escape' }));
+      const next = onEscapeKey(this.escapeGate, document.pointerLockElement !== null);
+      this.escapeGate = next.gate;
+      this.scheduleEscapeReset();
+      if (next.apply) this.apply(reduceShell(this.readModel(), { type: 'escape' }));
     } else if (event.code === 'Backquote') {
       usePerfStore.getState().toggle();
     }
@@ -149,9 +155,23 @@ export class InputManager {
       focused: document.hasFocus(),
     });
     this.unlockIntent = null;
+    if (reason === 'escape') {
+      this.escapeGate = onBrowserEscapeUnlock(this.escapeGate);
+      this.scheduleEscapeReset();
+    }
     this.apply(reduceShell(this.readModel(), { type: 'pointerLockLost', reason }));
     useInputStore.getState().setPointerLocked(false);
   };
+
+  private scheduleEscapeReset(): void {
+    if (!this.escapeGate.seenWhileLocked && !this.escapeGate.swallowNext) return;
+    const generation = this.escapeReset + 1;
+    this.escapeReset = generation;
+    window.setTimeout(() => {
+      if (generation !== this.escapeReset) return;
+      this.escapeGate = idleEscapeGate;
+    }, 200);
+  }
 
   private onLockError = (): void => {
     if (!this.pendingLock) return;

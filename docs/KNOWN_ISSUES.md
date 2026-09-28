@@ -24,5 +24,6 @@ Alpha 0.1 steps 0 and 1 only. Items below are expected gaps or deliberate deviat
 ## Browser
 
 - A rejected `requestPointerLock` is not retried. If `{ unadjustedMovement: true }` throws or rejects for a reason other than a denied gesture, the lock helper tries once more without that option.
+- Esc while locked is coalesced. Chrome may fire the Escape key and `pointerlockchange` in either order; one press opens SCREEN, and a later Esc leaves SCREEN.
 - Firefox's pointer-lock banner, layout-map key labels, and non-Chromium smoke tests are out of scope for this step.
 - Back/Forward changes the URL and keeps the session in the world. The canvas is not duplicated.
