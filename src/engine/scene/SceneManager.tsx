@@ -8,6 +8,7 @@ import { audioEngine } from '@/engine/audio/engine';
 import { disposeObject3D } from '@/engine/scene/dispose';
 import { StableFrames } from '@/engine/scene/StableFrames';
 import { FirstPersonController } from '@/engine/player/FirstPersonController';
+import { registerRayBlockers } from '@/engine/windows/crosshair';
 import { resolveEyeHeight } from '@/engine/player/movement';
 import { qualityProfiles } from '@/engine/quality/profiles';
 import { useAppliedQuality } from '@/state/appliedQuality';
@@ -32,6 +33,13 @@ function WorldHost({
   const onReady = useCallback(() => {
     useSession.getState().setProgress(0.9);
   }, []);
+
+  useEffect(() => {
+    const boxes = colliders
+      .filter((collider) => collider.layers.includes('occluder') || collider.layers.includes('placement'))
+      .map((collider) => collider.box);
+    return registerRayBlockers(boxes);
+  }, [colliders]);
 
   useEffect(() => {
     const root = group.current;

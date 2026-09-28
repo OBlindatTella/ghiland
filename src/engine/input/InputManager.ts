@@ -5,6 +5,7 @@ import { decideKey, isEditableElement } from '@/engine/input/keyRoute';
 import { KeyState } from '@/engine/input/keyState';
 import { ownerForShell, OwnerStack } from '@/engine/input/ownerStack';
 import { requestCanvasPointerLock } from '@/engine/input/pointerLock';
+import { isWindowTarget } from '@/engine/windows/windowTarget';
 import { idleEscapeGate, onBrowserEscapeUnlock, onEscapeKey, onToggleUnlock, type EscapeGate } from '@/engine/input/escapeGate';
 import { classifyLockLoss, reduceShell, type ShellEffect, type ShellModel } from '@/engine/input/shellMachine';
 import { useInputStore } from '@/state/input';
@@ -174,14 +175,14 @@ export class InputManager {
   private onPointerDown = (event: PointerEvent): void => {
     if (!this.gameplayOpen()) return;
     if (useInputStore.getState().shellState === 'WORLD') return;
-    if (isWindowTarget(event.target)) return;
+    if (isWindowTarget(event)) return;
     this.press = { x: event.clientX, y: event.clientY };
   };
 
   private onClick = (event: MouseEvent): void => {
     if (!this.gameplayOpen()) return;
     if (useInputStore.getState().shellState === 'WORLD') return;
-    if (isWindowTarget(event.target)) return;
+    if (isWindowTarget(event)) return;
     const origin = this.press;
     this.press = null;
     if (!origin) return;
@@ -348,11 +349,6 @@ export class InputManager {
     this.lockGeneration += 1;
     this.apply(reduceShell(this.readModel(), { type: 'pointerLockRejected' }));
   };
-}
-
-function isWindowTarget(target: EventTarget | null): boolean {
-  const element = target as { closest?: (selector: string) => unknown } | null;
-  return Boolean(element?.closest?.('[data-ghiland-window]'));
 }
 
 export const inputManager = new InputManager();

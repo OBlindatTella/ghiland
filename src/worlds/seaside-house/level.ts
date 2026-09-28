@@ -34,6 +34,7 @@ function box(
 
 const wall: ColliderLayer[] = ['movement', 'occluder', 'pinSurface'];
 const glass: ColliderLayer[] = ['movement'];
+const surface: ColliderLayer[] = ['placement'];
 const visual: ColliderLayer[] = [];
 
 /**
@@ -58,14 +59,14 @@ const glassColor = '#C5DDE0';
 const railColor = '#D7E6E8';
 
 export const levelBoxes: readonly LevelBox[] = [
-  box('corridor-floor', -1.1, -0.06, -9, 1.1, 0.002, -3.5, visual, corridorFloor),
-  box('corridor-ceiling', -1.1, 2.4, -9, 1.1, 2.52, -3.5, visual, corridorCeiling),
+  box('corridor-floor', -1.1, -0.06, -9, 1.1, 0.002, -3.5, surface, corridorFloor),
+  box('corridor-ceiling', -1.1, 2.4, -9, 1.1, 2.52, -3.5, surface, corridorCeiling),
   box('corridor-west', -1.1 - T, 0, -9, -1.1, 2.4, -3.5, wall, corridorWall),
   box('corridor-east', 1.1, 0, -9, 1.1 + T, 2.4, -3.5, wall, corridorWall),
   box('corridor-south', -1.1 - T, 0, -9 - T, 1.1 + T, 2.4, -9, wall, corridorWall),
 
-  box('living-floor', -7, -0.06, -3.5, 7, 0.002, 4.5, visual, livingFloor),
-  box('living-ceiling', -7, 3.2, -3.5, 7, 3.34, 4.5, visual, livingCeiling),
+  box('living-floor', -7, -0.06, -3.5, 7, 0.002, 4.5, surface, livingFloor),
+  box('living-ceiling', -7, 3.2, -3.5, 7, 3.34, 4.5, surface, livingCeiling),
   box('living-west', -7 - T, 0, -3.5, -7, 3.2, 4.5, wall, livingWall),
   box('living-east', 7, 0, -3.5, 7 + T, 3.2, 4.5, wall, livingWall),
   box('living-back-west', -7 - T, 0, -3.5 - T, -1.1, 3.2, -3.5, wall, livingWall),
@@ -82,7 +83,7 @@ export const levelBoxes: readonly LevelBox[] = [
   box('glass-closed-east', 2, 0, 4.47, 4, 3.2, 4.53, glass, glassColor, 0.2),
   box('glass-closed-east-outer', 4, 0, 4.47, 6, 3.2, 4.53, glass, glassColor, 0.2),
 
-  box('terrace-floor', -7, -0.06, 4.5, 7, 0.002, 9, visual, terraceFloor),
+  box('terrace-floor', -7, -0.06, 4.5, 7, 0.002, 9, surface, terraceFloor),
   box('rail-north', -7, 0, 9, 7, 1.05, 9.06, glass, railColor, 0.32),
   box('rail-west', -7, 0, 4.5, -6.94, 1.05, 9, glass, railColor, 0.32),
   box('rail-east', 7, 0, 4.5, 7.06, 1.05, 9, glass, railColor, 0.32),

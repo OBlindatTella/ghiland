@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { PerspectiveCamera } from 'three';
+import type { AABB } from '@/contracts/math';
 import { raycastCrosshair, type WindowQuad } from '@/engine/windows/crosshair';
+import { seasideColliders } from '@/worlds/seaside-house/level';
 
 function lookingForward(): PerspectiveCamera {
   const camera = new PerspectiveCamera(62, 1, 0.08, 100);
@@ -30,5 +32,23 @@ describe('crosshair raycast', () => {
     const aside: WindowQuad = { ...centre, id: 'aside', position: [3, 1.62, 2], half: { w: 0.2, h: 0.2 } };
     expect(raycastCrosshair(camera, [aside])).toBeNull();
     expect(raycastCrosshair(camera, [aside, centre])).toBe('notes');
+  });
+
+  it('stops at a wall, ignores a window past 25 m, and keeps glass from blocking', () => {
+    const camera = lookingForward();
+    const wall: AABB = { min: [-2, 0, 1], max: [2, 3, 1.2] };
+    expect(raycastCrosshair(camera, [centre], [wall])).toBeNull();
+    const beyond: WindowQuad = { ...centre, id: 'far', position: [0, 1.62, 40] };
+    expect(raycastCrosshair(camera, [beyond], [])).toBeNull();
+    expect(raycastCrosshair(camera, [centre], [])).toBe('notes');
+  });
+
+  it('puts floors, ceilings, and the terrace on the placement layer only', () => {
+    for (const id of ['corridor-floor', 'corridor-ceiling', 'living-floor', 'living-ceiling', 'terrace-floor']) {
+      const collider = seasideColliders.find((item) => item.id === id);
+      expect(collider?.layers).toEqual(['placement']);
+    }
+    const glass = seasideColliders.find((item) => item.id === 'glass-closed-east');
+    expect(glass?.layers).toEqual(['movement']);
   });
 });
