@@ -114,9 +114,11 @@ export class AudioEngine {
       useInputStore.subscribe(() => this.applyDuck(0.4)),
     );
     window.addEventListener('blur', this.onFocus);
+    window.addEventListener('focus', this.onFocus);
     document.addEventListener('visibilitychange', this.onFocus);
     this.unsubs.push(() => {
       window.removeEventListener('blur', this.onFocus);
+      window.removeEventListener('focus', this.onFocus);
       document.removeEventListener('visibilitychange', this.onFocus);
     });
   }
@@ -541,7 +543,11 @@ export class AudioEngine {
     if (document.hidden || !document.hasFocus()) level = DB6;
     else if (useInputStore.getState().shellState === 'RELEASED') level = DB3;
     if (useSettings.getState().muteWhenHidden && document.hidden) level = 0;
-    this.duck.gain.setTargetAtTime(level, ctx.currentTime, Math.max(0.05, seconds));
+    const now = ctx.currentTime;
+    const duration = Math.max(0.05, seconds);
+    this.duck.gain.cancelScheduledValues(now);
+    this.duck.gain.setValueAtTime(this.duck.gain.value, now);
+    this.duck.gain.linearRampToValueAtTime(level, now + duration);
   }
 
   private onFocus = (): void => {
