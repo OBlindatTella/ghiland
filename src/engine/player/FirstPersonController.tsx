@@ -12,6 +12,7 @@ import {
   LOOK_GUARD_MS,
   dampVec2,
   DEFAULT_MOVEMENT,
+  resolveEyeHeight,
   viewToWorld,
   wishVelocity,
   yawFromMouse,
@@ -31,9 +32,11 @@ const LOOK_TAU = 0.04;
 export function FirstPersonController({
   spawn,
   colliders,
+  eyeHeight = resolveEyeHeight(),
 }: {
   spawn: { x: number; y: number; z: number };
   colliders: readonly Collider[];
+  eyeHeight?: number;
 }) {
   const camera = useThree((state) => state.camera);
   const gl = useThree((state) => state.gl);
@@ -111,7 +114,7 @@ export function FirstPersonController({
       pos.current = moved;
     }
 
-    const eye = spawn.y;
+    const eye = eyeHeight;
     camera.position.set(pos.current.x, eye, pos.current.z);
     camera.rotation.order = 'YXZ';
     camera.rotation.y = Math.PI + yaw.current;

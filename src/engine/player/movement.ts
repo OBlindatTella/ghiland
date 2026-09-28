@@ -1,6 +1,10 @@
 import type { MovementSpec } from '@/contracts/input';
 
 /** Aura §5. Shift is strollFast, not a sprint. There is no jump. */
+export function resolveEyeHeight(movement?: Partial<MovementSpec>): number {
+  return movement?.eyeHeight ?? DEFAULT_MOVEMENT.eyeHeight;
+}
+
 export const DEFAULT_MOVEMENT: MovementSpec = {
   walkSpeed: 1.35,
   strollFastSpeed: 2.2,

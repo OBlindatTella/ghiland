@@ -25,10 +25,28 @@ Alpha 0.1 steps 0–4. Items below are expected gaps or deliberate deviations, n
 - Shadows follow the quality tier (off on LOW, a map on MED and above). The greybox is still one directional light, a hemisphere light, and exponential fog.
 - Horizontal collision expands AABBs by the capsule radius (axis-aligned padding) and slides one axis at a time. Vertical motion is locked to the floor because there is no jump and every ceiling is above the 1.75 m capsule.
 - The reveal fin is a greybox box flush with the viewer-right wall, outside x −2…+2 once the capsule radius is included (D-020). It is not Aura's final travertine mesh.
+- Eye height comes from `WorldDefinition.movement.eyeHeight`, falling back to `MovementSpec`'s 1.62 m. Seaside does not override it, so the eye still matches the spawn.
+
+## Contract gaps left from S1-10
+
+These are the review items that are still different from Atlas. The others in that list are aligned: `pushOwner` / `popOwner` are public, Q / Esc / backtick go through the binding table, `pin` includes the `world` owner, perf HUD visibility lives in settings, and the probe publishes metrics to the store instead of writing the DOM.
+
+- Session store field is `worldId`, not Atlas's `currentWorldId`. `phase` is `landing | loading | inWorld`. `worldPhase` and `loadProgress` are present. There is no `selecting` phase: the card click goes straight from landing to loading. Renaming the id would touch every call site and change nothing the player sees.
+- `AppHostApi.emit` is `(type: string, payload: unknown)`. A typed, app-scoped bus belongs with step 6, when an app exists to emit.
+- `state/input.ts` type-imports `ShellModel` from `engine/input/shellMachine`, and the engine imports `state`. The cycle is types only. Moving the shell model into contracts is a wider edit than this pass.
+
+## Deferred from the steps 0–1 review
+
+- S1-14. Nothing fails the build if `three` is imported onto the landing chunk. The graph still keeps it behind the dynamic canvas import. A size-limit check waits until landing-chunk size is measured in CI.
+- S1-15. Collision filtering and the movement loop still allocate each frame. There is no measured cost on the greybox. The obstacle list should be built once per world when furniture arrives.
+- S1-16. After a slide is blocked, velocity stays at the wish speed. Footsteps are not in this build, so a wall does not play a step. Reconcile velocity when audio reads displacement.
+- S1-17. Radius expansion is a square, the timestep is variable and clamped at 50 ms, and the sweep is X then Z. A step cannot tunnel the glass at that clamp. Rounded corners wait for stools and chairs.
+- S1-20. A keyup lost without a window blur (release while a command key is held, some OS shortcuts) can leave that key down. Blur and a hidden tab still clear the set. Not reproduced in this pass.
+- D-021. A window centre must stay at least 0.7 m from the eye, and a placement that cannot is invalid. Windows are not built yet, so there is no placement to enforce.
 
 ## Browser
 
-- A rejected `requestPointerLock` is not retried. If `{ unadjustedMovement: true }` throws or rejects for a reason other than a denied gesture, the lock helper tries once more without that option.
+- A rejected `requestPointerLock` is not retried. If `{ unadjustedMovement: true }` throws or rejects for a reason other than a denied gesture, the lock helper tries once more without that option. A browser that returns no promise is left pending until `pointerlockchange` or `pointerlockerror`.
 - Esc while locked is coalesced. Chrome may fire the Escape key and `pointerlockchange` in either order; one press opens SCREEN, and a later Esc leaves SCREEN.
 - Firefox's pointer-lock banner, layout-map key labels, and non-Chromium smoke tests are out of scope for this step.
 - Back/Forward changes the URL and keeps the session in the world. The canvas is not duplicated.

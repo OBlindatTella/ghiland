@@ -7,6 +7,7 @@ import type { Collider, WorldModule } from '@/contracts/world';
 import { disposeObject3D } from '@/engine/scene/dispose';
 import { StableFrames } from '@/engine/scene/StableFrames';
 import { FirstPersonController } from '@/engine/player/FirstPersonController';
+import { resolveEyeHeight } from '@/engine/player/movement';
 import { qualityProfiles } from '@/engine/quality/profiles';
 import { useAppliedQuality } from '@/state/appliedQuality';
 import { useSession } from '@/state/session';
@@ -17,11 +18,13 @@ function WorldHost({
   spawn,
   colliders,
   quality,
+  eyeHeight,
 }: {
   module: WorldModule;
   spawn: { x: number; y: number; z: number };
   colliders: readonly Collider[];
   quality: QualityProfile;
+  eyeHeight: number;
 }) {
   const group = useRef<Group>(null);
   const Scene = module.Scene;
@@ -43,7 +46,7 @@ function WorldHost({
         quality={quality}
         onReady={onReady}
       />
-      <FirstPersonController spawn={spawn} colliders={colliders} />
+      <FirstPersonController spawn={spawn} colliders={colliders} eyeHeight={eyeHeight} />
       <StableFrames
         onStable={() => {
           useSession.getState().setProgress(1);
@@ -95,6 +98,7 @@ export function SceneManager() {
       quality={qualityProfiles[tier]}
       spawn={{ x, y, z }}
       colliders={definition.collision.colliders}
+      eyeHeight={resolveEyeHeight(definition.movement)}
     />
   );
 }

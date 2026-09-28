@@ -6,12 +6,20 @@ import {
   clampPitch,
   dampVec2,
   DEFAULT_MOVEMENT,
+  resolveEyeHeight,
   viewToWorld,
   wishVelocity,
   yawFromMouse,
 } from '@/engine/player/movement';
 
 const still = { forward: false, back: false, left: false, right: false, strollFast: false };
+
+describe('eye height', () => {
+  it('uses MovementSpec.eyeHeight, then the default', () => {
+    expect(resolveEyeHeight()).toBe(DEFAULT_MOVEMENT.eyeHeight);
+    expect(resolveEyeHeight({ eyeHeight: 1.5 })).toBe(1.5);
+  });
+});
 
 describe('wishVelocity', () => {
   it('uses Aura speeds, including back and strafe multipliers', () => {
