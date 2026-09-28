@@ -19,7 +19,17 @@ export function ShellChrome() {
   const showPerf = useSettings((state) => state.showPerfHud);
   const dim = useAppliedQuality((state) => state.dim);
   const active = useSession((state) => state.worldPhase === 'active');
+  const [hintReady, setHintReady] = useState(false);
   const [screenKey, setScreenKey] = useState(() => screenKeyLabel(null));
+
+  useEffect(() => {
+    if (!active || !showHint) {
+      setHintReady(false);
+      return;
+    }
+    const id = window.setTimeout(() => setHintReady(true), 600);
+    return () => window.clearTimeout(id);
+  }, [active, showHint]);
 
   useEffect(() => {
     document.body.dataset.shell = shell;
@@ -59,7 +69,7 @@ export function ShellChrome() {
       <Shelf />
       <SettingsPanel />
       <RestoringVeil />
-      {active && showHint ? (
+      {active && showHint && hintReady ? (
         <p
           role="status"
           aria-live="polite"

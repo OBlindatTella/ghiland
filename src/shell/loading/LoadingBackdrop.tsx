@@ -44,7 +44,7 @@ export function LoadingBackdrop() {
       style={{
         opacity: fading ? 0 : 1,
         transition: fading ? `opacity ${ARRIVE_MS}ms cubic-bezier(0.2, 0, 0, 1)` : undefined,
-        pointerEvents: fading ? 'none' : 'auto',
+        pointerEvents: 'auto',
       }}
     >
       <div

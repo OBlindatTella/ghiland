@@ -1,10 +1,12 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { InputManager } from '@/engine/input/InputManager';
 import { useInputStore } from '@/state/input';
+import { useSession } from '@/state/session';
 
 type Listener = (event: Event) => void;
 
 function installDom() {
+  useSession.setState({ phase: 'inWorld', worldPhase: 'active' });
   const windowListeners = new Map<string, Set<Listener>>();
   const docListeners = new Map<string, Set<Listener>>();
   const canvasListeners = new Map<string, Set<Listener>>();
@@ -68,6 +70,32 @@ function installDom() {
     },
   };
 }
+
+describe('arrival gate', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    useInputStore.getState().reset();
+    useSession.setState({ phase: 'landing', worldId: null, worldPhase: 'idle', loadProgress: 0 });
+  });
+
+  it('ignores keys and the pointer until the world is active', () => {
+    const dom = installDom();
+    useSession.setState({ worldPhase: 'loading', phase: 'loading' });
+    const manager = new InputManager();
+    manager.attach(dom.canvas);
+    dom.fireWindow('keydown', { code: 'KeyQ', repeat: false, preventDefault() {} });
+    expect(useInputStore.getState().shellState).toBe('RELEASED');
+    dom.fireCanvas('pointerdown', { clientX: 4, clientY: 4, target: {} });
+    dom.fireCanvas('click', { clientX: 4, clientY: 4, target: {} });
+    expect(dom.requestPointerLock).not.toHaveBeenCalled();
+
+    useSession.setState({ worldPhase: 'active' });
+    dom.fireCanvas('pointerdown', { clientX: 4, clientY: 4, target: {} });
+    dom.fireCanvas('click', { clientX: 4, clientY: 4, target: {} });
+    expect(dom.requestPointerLock).toHaveBeenCalledTimes(1);
+    manager.detach();
+  });
+});
 
 describe('iframe focus', () => {
   afterEach(() => {

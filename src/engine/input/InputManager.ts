@@ -8,6 +8,7 @@ import { requestCanvasPointerLock } from '@/engine/input/pointerLock';
 import { idleEscapeGate, onBrowserEscapeUnlock, onEscapeKey, onToggleUnlock, type EscapeGate } from '@/engine/input/escapeGate';
 import { classifyLockLoss, reduceShell, type ShellEffect, type ShellModel } from '@/engine/input/shellMachine';
 import { useInputStore } from '@/state/input';
+import { useSession } from '@/state/session';
 import { useSettings } from '@/state/settings';
 import { useScreenStore } from '@/state/screen';
 
@@ -84,7 +85,13 @@ export class InputManager {
   }
 
   clickEmptyWorld(): void {
+    if (!this.gameplayOpen()) return;
     this.apply(reduceShell(this.readModel(), { type: 'clickEmptyWorld' }));
+  }
+
+  /** Loading and the arrival fade ignore keys, clicks, and pointer lock. */
+  private gameplayOpen(): boolean {
+    return useSession.getState().worldPhase === 'active';
   }
 
   /** D-017. Runs before the store write so a carried window can pin on the way out of WORLD. */
@@ -124,7 +131,7 @@ export class InputManager {
 
   private requestLock(): void {
     const canvas = this.canvas;
-    if (!canvas || this.pendingLock) return;
+    if (!canvas || this.pendingLock || !this.gameplayOpen()) return;
     if (document.pointerLockElement === canvas) {
       if (this.unlockIntent === 'toggle') {
         this.relockAfterToggle = true;
@@ -165,12 +172,14 @@ export class InputManager {
   }
 
   private onPointerDown = (event: PointerEvent): void => {
+    if (!this.gameplayOpen()) return;
     if (useInputStore.getState().shellState === 'WORLD') return;
     if (isWindowTarget(event.target)) return;
     this.press = { x: event.clientX, y: event.clientY };
   };
 
   private onClick = (event: MouseEvent): void => {
+    if (!this.gameplayOpen()) return;
     if (useInputStore.getState().shellState === 'WORLD') return;
     if (isWindowTarget(event.target)) return;
     const origin = this.press;
@@ -183,6 +192,7 @@ export class InputManager {
   };
 
   private onKeyDown = (event: KeyboardEvent): void => {
+    if (!this.gameplayOpen()) return;
     const editable = isEditableElement(event.target) || isEditableElement(document.activeElement);
     const decision = decideKey(
       event.code,
