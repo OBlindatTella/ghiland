@@ -24,6 +24,7 @@ interface SettingsStore extends SettingsData {
   setReduceMotion: (reduceMotion: boolean) => void;
   setMuteWhenHidden: (muteWhenHidden: boolean) => void;
   setLastAutoTier: (tier: QualityTier) => void;
+  setAutoCeiling: (ceiling: SettingsData['autoCeiling']) => void;
   togglePerf: () => void;
 }
 
@@ -46,11 +47,12 @@ export const useSettings = create<SettingsStore>()(
       toggleMuted: () => set((state) => ({ muted: !state.muted })),
       setSensitivity: (mouseSensitivity) => set((state) => sanitizeSettings({ ...state, mouseSensitivity })),
       setFov: (fovDeg) => set((state) => sanitizeSettings({ ...state, fovDeg })),
-      setQuality: (quality) => set((state) => sanitizeSettings({ ...state, quality })),
+      setQuality: (quality) => set((state) => sanitizeSettings({ ...state, quality, autoCeiling: null })),
       setInvertY: (invertY) => set({ invertY }),
       setReduceMotion: (reduceMotion) => set({ reduceMotion }),
       setMuteWhenHidden: (muteWhenHidden) => set({ muteWhenHidden }),
       setLastAutoTier: (lastAutoTier) => set({ lastAutoTier }),
+      setAutoCeiling: (autoCeiling) => set({ autoCeiling }),
       togglePerf: () => set((state) => ({ showPerfHud: !state.showPerfHud })),
     }),
     {

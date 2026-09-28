@@ -51,6 +51,29 @@ describe('quality tier hysteresis', () => {
     expect(hold('ULTRA', 90, 8).tier).toBe('ULTRA');
   });
 
+  it('does not retry a tier that failed within 60 seconds (D-022)', () => {
+    let clock = hold('HIGH', 70, 5);
+    expect(clock.tier).toBe('ULTRA');
+    expect(clock.climbed).toBe(true);
+    clock = advance(clock, 40, 31);
+    expect(clock.tier).toBe('HIGH');
+    expect(clock.ceiling).toBe('HIGH');
+    clock = advance(clock, 70, 40);
+    expect(clock.tier).toBe('HIGH');
+    expect(clock.changed).toBe(false);
+  });
+
+  it('remembers a tier only after it has held for 60 seconds', () => {
+    let clock = initialAutoClock('HIGH');
+    let remembered: string | null = null;
+    for (let t = 0; t < 62; t += 0.25) {
+      clock = stepAutoQuality(clock, 55, 0.25);
+      if (clock.remember) remembered = clock.remember;
+    }
+    expect(remembered).toBe('HIGH');
+    expect(clock.tier).toBe('HIGH');
+  });
+
   it('prefers the last good tier, otherwise a weak GPU starts low', () => {
     expect(heuristicTier({ renderer: 'NVIDIA', cores: 4, lastGood: 'HIGH' })).toBe('HIGH');
     expect(heuristicTier({ renderer: 'ANGLE (SwiftShader)', cores: 8, deviceMemory: 8 })).toBe('LOW');

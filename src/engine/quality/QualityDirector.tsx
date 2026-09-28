@@ -7,7 +7,7 @@ import { Bloom, EffectComposer, EffectComposerContext, SMAA, ToneMapping } from 
 import { COMPOSER_TONE_MODE, readComposerTone } from '@/engine/quality/toneState';
 import { composerGpuBytes, releaseComposerTargets, trackGpuBytes, trackedGpuBytes } from '@/engine/quality/gpuMemory';
 import { bus } from '@/engine/events/bus';
-import { heuristicTier, initialAutoClock, stepAutoQuality, type AutoClock } from '@/engine/quality/autoQuality';
+import { heuristicTier, initialAutoClock, stepAutoQuality, ceilingStillValid, type AutoClock } from '@/engine/quality/autoQuality';
 import { qualityProfiles } from '@/engine/quality/profiles';
 import type { QualityProfile } from '@/contracts/quality';
 import { perfSample, usePerfStore } from '@/state/perf';
@@ -29,19 +29,26 @@ export function QualityDirector() {
   const applied = useAppliedQuality((state) => state.tier);
   const profile = qualityProfiles[applied];
   const clock = useRef<AutoClock>(initialAutoClock('HIGH'));
+  const rendererName = useRef('');
 
   useEffect(() => {
     const debug = gl.getContext().getExtension('WEBGL_debug_renderer_info');
-    const renderer = debug ? String(gl.getContext().getParameter(debug.UNMASKED_RENDERER_WEBGL)) : '';
     const nav = navigator as Navigator & { deviceMemory?: number };
+    const renderer = debug ? String(gl.getContext().getParameter(debug.UNMASKED_RENDERER_WEBGL)) : '';
+    rendererName.current = renderer;
+    const settings = useSettings.getState();
+    const now = Date.now();
+    const ceiling = ceilingStillValid(settings.autoCeiling, renderer, now);
     const tier = heuristicTier({
       renderer,
       cores: navigator.hardwareConcurrency || 4,
       deviceMemory: nav.deviceMemory,
-      lastGood: useSettings.getState().lastAutoTier,
+      lastGood: settings.lastAutoTier,
+      ceiling: settings.autoCeiling,
+      now,
     });
     usePerfStore.getState().setAutoTier(tier);
-    clock.current = initialAutoClock(tier);
+    clock.current = initialAutoClock(tier, ceiling ?? 'ULTRA');
   }, [gl]);
 
   useEffect(() => {
@@ -112,11 +119,22 @@ export function QualityDirector() {
   useFrame((_, dt) => {
     if (useSettings.getState().quality !== 'AUTO' || useGlStore.getState().lost) return;
     if (useSession.getState().worldPhase !== 'active' || perfSample.fps <= 0) return;
+    const previousCeiling = clock.current.ceiling;
     const next = stepAutoQuality(clock.current, perfSample.fps, dt);
     clock.current = next;
+    if (next.remember) {
+      const tier = next.remember;
+      window.setTimeout(() => useSettings.getState().setLastAutoTier(tier), 0);
+    }
     if (!next.changed) return;
     usePerfStore.getState().setAutoTier(next.tier);
-    useSettings.getState().setLastAutoTier(next.tier);
+    if (next.ceiling !== previousCeiling) {
+      const ceiling = next.ceiling;
+      const renderer = rendererName.current;
+      window.setTimeout(() => {
+        useSettings.getState().setAutoCeiling({ tier: ceiling, renderer, at: Date.now() });
+      }, 0);
+    }
   });
 
   return <PostStack profile={profile} />;
