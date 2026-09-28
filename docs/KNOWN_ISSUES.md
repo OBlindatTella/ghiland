@@ -24,7 +24,7 @@ Alpha 0.1 steps 0–4. Items below are expected gaps or deliberate deviations, n
 - Sea and wind are procedural Web Audio beds (`src: ''`). The two-element media crossfade is in place for a later file. Gulls are one CC0 clip. See `docs/AUDIO_CREDITS.md`. Freesound picks were skipped because they need a login.
 - Shadows follow the quality tier (off on LOW, a map on MED and above). The greybox is still one directional light, a hemisphere light, and exponential fog.
 - Horizontal collision expands AABBs by the capsule radius (axis-aligned padding) and slides one axis at a time. Vertical motion is locked to the floor because there is no jump and every ceiling is above the 1.75 m capsule.
-- The reveal fin is a greybox box just inside the living room, offset to the right, so the left side of the corridor stays walkable. It is not Aura's final travertine mesh.
+- The reveal fin is a greybox box flush with the viewer-right wall, outside x −2…+2 once the capsule radius is included (D-020). It is not Aura's final travertine mesh.
 
 ## Browser
 

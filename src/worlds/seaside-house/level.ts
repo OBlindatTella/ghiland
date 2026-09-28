@@ -71,7 +71,8 @@ export const levelBoxes: readonly LevelBox[] = [
   box('living-back-east', 1.1, 0, -3.5 - T, 7 + T, 3.2, -3.5, wall, livingWall),
   box('living-header', -1.1, 2.4, -3.5 - T, 1.1, 3.2, -3.5, wall, livingWall),
 
-  box('fin', -2.4, 0, -3.25, -0.15, 2.8, -2.8, wall, finColor),
+  // D-020: expanded by the 0.3 m radius, this stays outside x −2..+2 and off the open panels (x 0..+4).
+  box('fin', -7, 0, -3.25, -2.35, 2.8, -2.8, wall, finColor),
 
   box('pier-west', -7, 0, 4.38, -6, 3.2, 4.62, wall, livingWall),
   box('pier-east', 6, 0, 4.38, 7, 3.2, 4.62, wall, livingWall),

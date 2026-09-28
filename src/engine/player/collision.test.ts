@@ -90,7 +90,7 @@ describe('seaside greybox collision', () => {
     expect(x).toBeCloseTo(0.7, 1);
   });
 
-  it('stops a straight walk from spawn on the fin, then lets a left slide through', () => {
+  it('walks straight from spawn past the reveal point to the glass', () => {
     let x = 0;
     let z = SPAWN.z;
     for (let i = 0; i < 200; i += 1) {
@@ -98,22 +98,19 @@ describe('seaside greybox collision', () => {
       x = next.x;
       z = next.z;
     }
-    expect(z).toBeLessThan(-2.5);
+    expect(z).toBeGreaterThan(4);
+    expect(Math.abs(x)).toBeLessThan(0.05);
+  });
 
-    for (let i = 0; i < 40; i += 1) {
-      const next = slideMove(x, z, 0.08, 0.02, body, seasideColliders);
-      x = next.x;
-      z = next.z;
-    }
-    expect(x).toBeGreaterThan(0.3);
-
-    for (let i = 0; i < 400; i += 1) {
-      const next = slideMove(x, z, 0, 0.08, body, seasideColliders);
-      x = next.x;
-      z = next.z;
-    }
-    expect(z).toBeGreaterThan(8.5);
-    expect(z).toBeLessThan(9);
+  it('keeps the fin, including the player radius, outside the centre band', () => {
+    const fin = seasideColliders.find((collider) => collider.id === 'fin');
+    expect(fin).toBeTruthy();
+    if (!fin) return;
+    const expandedMin = fin.box.min[0] - body.radius;
+    const expandedMax = fin.box.max[0] + body.radius;
+    expect(expandedMax <= -2 || expandedMin >= 2).toBe(true);
+    const reveal = slideMove(0, -3, 0, 0, body, seasideColliders);
+    expect(reveal).toEqual({ x: 0, z: -3 });
   });
 
   it('blocks the closed glass and the balustrade', () => {

@@ -67,7 +67,7 @@ Furniture placement: lounge (x +2…+6, viewer left) has a low linen sofa facing
 ### Spawn and the reveal
 - Spawn at (0, eye height, −8.2), facing +Z, in the corridor.
 - Entry transition (ruling, follows Pixel): clicking the Seaside card unlocks browser audio and starts the sea, muffled, under the loading backdrop. There is no black screen. When the scene is ready the backdrop dissolves into the corridor view over about 1 s, so the sound arrives first and the image follows.
-- From spawn you see a vertical sliver of bright sea-light at the end of the corridor, beside a freestanding travertine fin wall at z ≈ −3.5 that blocks the full view. You hear the sea, filtered.
+- From spawn you see a vertical sliver of bright sea-light at the end of the corridor. A travertine fin stands at the room's side, outside x −2…+2 including the player radius (D-020), so it does not block the straight walk or the sea through the open panels. You hear the sea, filtered.
 - About 4 m of walking (3 s) brings you past the fin. The ceiling lifts from 2.4 to 3.2 m, the corridor widens into 14 m of room, and the whole 12 m glass wall opens with the horizon at eye level. Auto-exposure dips as the brightness hits you and then settles. This is the "wow".
 - From the reveal point to the open panel is 8 m, about 6 s at walking speed. The sea gets louder and brighter with every step.
 
