@@ -99,8 +99,6 @@ export function QualityDirector() {
   }, []);
 
   useEffect(() => {
-    const dpr = Math.min(profile.dpr[1], Math.max(profile.dpr[0], window.devicePixelRatio || 1));
-    gl.setPixelRatio(dpr);
     gl.shadowMap.enabled = profile.shadows !== 'off';
     gl.shadowMap.type = profile.shadows === 'soft' ? PCFSoftShadowMap : BasicShadowMap;
     gl.shadowMap.needsUpdate = true;
@@ -188,6 +186,7 @@ function ComposerLifecycle() {
   useEffect(() => {
     let release = () => {};
     const id = window.requestAnimationFrame(() => {
+      composer.setSize(size.width, size.height);
       release = trackGpuBytes(composerGpuBytes(composer));
     });
     return () => {
