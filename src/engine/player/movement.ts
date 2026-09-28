@@ -42,7 +42,18 @@ export function wishVelocity(input: WishInput, spec: MovementSpec = DEFAULT_MOVE
     z /= len;
   }
   const speed = input.strollFast ? spec.strollFastSpeed : spec.walkSpeed;
-  return { x: x * speed, z: z * speed };
+  let vx = x * speed;
+  let vz = z * speed;
+  const backpedal = input.back && !input.forward;
+  if (backpedal) {
+    const cap = speed * spec.backMultiplier;
+    const magnitude = Math.hypot(vx, vz);
+    if (magnitude > cap) {
+      vx *= cap / magnitude;
+      vz *= cap / magnitude;
+    }
+  }
+  return { x: vx, z: vz };
 }
 
 /**

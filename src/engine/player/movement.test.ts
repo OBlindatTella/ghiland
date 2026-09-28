@@ -34,6 +34,10 @@ describe('wishVelocity', () => {
     expect(Math.hypot(diagonal.x, diagonal.z)).toBeCloseTo(1.35, 5);
     const strollDiagonal = wishVelocity({ ...still, forward: true, left: true, strollFast: true });
     expect(Math.hypot(strollDiagonal.x, strollDiagonal.z)).toBeCloseTo(2.2, 5);
+    const backDiagonal = wishVelocity({ ...still, back: true, right: true });
+    const backSpeed = 1.35 * DEFAULT_MOVEMENT.backMultiplier;
+    expect(Math.hypot(backDiagonal.x, backDiagonal.z)).toBeLessThanOrEqual(backSpeed + 1e-6);
+    expect(Math.hypot(backDiagonal.x, backDiagonal.z)).toBeCloseTo(backSpeed, 5);
   });
 });
 
