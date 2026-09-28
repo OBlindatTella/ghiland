@@ -18,6 +18,9 @@ export class InputManager {
   private owners = new OwnerStack('ui');
   private canvas: HTMLElement | null = null;
   private pendingLock = false;
+  private acceptLock = false;
+  /** pointerlockerror events to ignore while the unadjustedMovement retry is in flight. */
+  private lockErrorsToIgnore = 0;
   /** Context loss and other system exits must not be classified as an Esc unlock. */
   private systemUnlock = false;
   /** A second Q arrived while the first Q's exit was still in flight. */

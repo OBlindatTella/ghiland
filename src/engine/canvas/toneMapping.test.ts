@@ -17,7 +17,7 @@ function toneModes(node: ReactNode): number[] {
 
 describe('AgX through the composer', () => {
   it('applies AgX on the composer while the renderer tone mapping is off', () => {
-    const composer = new EffectComposer(null);
+    const composer = new EffectComposer(undefined);
     const effect = new ToneMappingEffect({ mode: COMPOSER_TONE_MODE });
     const pass = new EffectPass(new PerspectiveCamera(), effect);
     composer.passes.push(pass);

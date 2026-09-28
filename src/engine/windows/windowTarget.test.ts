@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { isWindowTarget } from '@/engine/windows/windowTarget';
 
-const windowNode = { closest: (selector: string) => (selector === '[data-ghiland-window]' ? {} : null) };
-const plain = { closest: () => null };
+const windowNode = { closest: (selector: string) => (selector === '[data-ghiland-window]' ? {} : null) } as unknown as EventTarget;
+const plain = { closest: () => null } as unknown as EventTarget;
 
 describe('isWindowTarget', () => {
   it('matches a window on the target, the composed path, or the element under the pointer', () => {
