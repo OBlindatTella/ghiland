@@ -287,6 +287,7 @@ describe('shell prep for windows', () => {
     manager.loseContext();
     expect(during).toEqual(['WORLD:WORLD:RELEASED']);
     expect(useInputStore.getState().shellState).toBe('RELEASED');
+    expect(useInputStore.getState().pointerLocked).toBe(false);
     expect(dom.exits()).toBeGreaterThan(0);
     dom.documentStub.pointerLockElement = null;
     dom.fireDoc('pointerlockchange', {});

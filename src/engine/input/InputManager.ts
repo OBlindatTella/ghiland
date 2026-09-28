@@ -332,6 +332,7 @@ export class InputManager {
     this.unlockIntent = null;
     this.relockAfterToggle = false;
     if (document.pointerLockElement) document.exitPointerLock();
+    useInputStore.getState().setPointerLocked(false);
     this.apply(reduceShell(this.readModel(), { type: 'blur' }));
   }
 

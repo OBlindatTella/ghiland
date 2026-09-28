@@ -74,3 +74,4 @@ These were not cheap enough to take in this pass, or a ruling already closed the
 - Composer disposal does not call `EffectComposer.dispose()`, because that also disposes the shared fullscreen geometry. Passes and render targets are released on rebuild.
 - An Esc swallow that never meets its key expires after 2 s, so a 500 ms hitch still counts as one press.
 - M toggles mute from the Screen as well as the world, so a slider click does not swallow it.
+- Losing the WebGL context shows the Restoring veil and returns the shell to RELEASED. The next frame can throw `Cannot read properties of null (reading 'alpha')` once, from the composer reading a context that is already gone. In automated Chrome, `document.exitPointerLock()` during that loss did not clear `pointerLockElement`; the app still clears its own lock flag and calls `exitPointerLock`.
