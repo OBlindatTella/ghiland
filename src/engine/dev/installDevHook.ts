@@ -1,9 +1,12 @@
 import { audioEngine } from '@/engine/audio/engine';
+import { runCameraPath, type CameraStop } from '@/engine/dev/cameraPath';
 import { readLiveComposer, readTrackedGpuBytes } from '@/engine/quality/QualityDirector';
 import { queuePlayerTransform } from '@/engine/player/playerCommand';
 import { playerRef, type PlayerSnapshot } from '@/engine/player/playerRef';
+import type { QualitySetting } from '@/contracts/quality';
 import { useInputStore } from '@/state/input';
 import { useSession } from '@/state/session';
+import { useSettings } from '@/state/settings';
 
 /** Development, or a production build started with NEXT_PUBLIC_GHILAND_TEST_HOOKS=1. Off by default. */
 export function devHooksEnabled(): boolean {
@@ -24,6 +27,8 @@ declare global {
       getGpuMemory: () => { bytes: number; textures: number; geometries: number };
       getComposer: () => ReturnType<typeof readLiveComposer>;
       setPlayer: (snapshot: PlayerSnapshot) => void;
+      runCameraPath: (stops: CameraStop[]) => () => void;
+      setQuality: (quality: QualitySetting) => void;
     };
   }
 }
@@ -61,5 +66,7 @@ export function installDevHook(
       return { bytes: readTrackedGpuBytes(), textures: info.textures, geometries: info.geometries };
     },
     getComposer: () => readLiveComposer(getRendererInfo?.().toneMapping ?? 0),
+    runCameraPath: (stops) => runCameraPath(stops),
+    setQuality: (quality) => useSettings.getState().setQuality(quality),
   };
 }
