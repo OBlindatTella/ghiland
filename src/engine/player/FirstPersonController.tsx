@@ -16,6 +16,7 @@ import {
 } from '@/engine/player/movement';
 import { playerRef } from '@/engine/player/playerRef';
 import { useInputStore } from '@/state/input';
+import { useSettings } from '@/state/settings';
 
 const BODY: Body = {
   radius: DEFAULT_MOVEMENT.capsule.radius,
@@ -52,8 +53,12 @@ export function FirstPersonController({
       const scaledY = clampLookDelta(event.movementY, lookAvgY.current);
       lookAvgX.current = scaledX.average;
       lookAvgY.current = scaledY.average;
-      targetYaw.current += scaledX.delta * LOOK_SENSITIVITY;
-      targetPitch.current = clampPitch(targetPitch.current - scaledY.delta * LOOK_SENSITIVITY);
+      const sensitivity = useSettings.getState().mouseSensitivity;
+      const invert = useSettings.getState().invertY ? -1 : 1;
+      targetYaw.current += scaledX.delta * LOOK_SENSITIVITY * sensitivity;
+      targetPitch.current = clampPitch(
+        targetPitch.current - scaledY.delta * LOOK_SENSITIVITY * sensitivity * invert,
+      );
     };
     window.addEventListener('mousemove', onMove);
     return () => window.removeEventListener('mousemove', onMove);

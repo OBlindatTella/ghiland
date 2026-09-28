@@ -5,7 +5,10 @@ import { Canvas, useThree } from '@react-three/fiber';
 import { ACESFilmicToneMapping } from 'three';
 import { installDevHook } from '@/engine/dev/installDevHook';
 import { PerfProbe } from '@/engine/perf/PerfProbe';
+import { ContextGuard } from '@/engine/quality/ContextGuard';
+import { QualityDirector } from '@/engine/quality/QualityDirector';
 import { SceneManager } from '@/engine/scene/SceneManager';
+import { useGlStore } from '@/state/gl';
 import { useSession } from '@/state/session';
 
 let canvasMounts = 0;
@@ -31,10 +34,11 @@ function CanvasLifecycle() {
 }
 
 export function CanvasRoot() {
+  const lost = useGlStore((state) => state.lost);
   return (
     <div className="absolute inset-0">
       <Canvas
-        frameloop="always"
+        frameloop={lost ? 'never' : 'always'}
         dpr={[1, 1.5]}
         shadows={false}
         gl={{
@@ -57,6 +61,8 @@ export function CanvasRoot() {
       >
         <CanvasLifecycle />
         <SceneManager />
+        <QualityDirector />
+        <ContextGuard />
         <PerfProbe />
       </Canvas>
     </div>

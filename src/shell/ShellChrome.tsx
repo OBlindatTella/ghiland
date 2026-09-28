@@ -4,14 +4,18 @@ import { useEffect, useRef } from 'react';
 import { PerfHud } from '@/engine/perf/PerfHud';
 import { inputManager } from '@/engine/input/InputManager';
 import { Shelf } from '@/shell/launcher/Shelf';
+import { SettingsPanel } from '@/shell/screen/SettingsPanel';
+import { RestoringVeil } from '@/shell/screen/RestoringVeil';
+import { useAppliedQuality } from '@/state/appliedQuality';
 import { useInputStore } from '@/state/input';
-import { usePerfStore } from '@/state/perf';
 import { useSession } from '@/state/session';
+import { useSettings } from '@/state/settings';
 
 export function ShellChrome() {
   const shell = useInputStore((state) => state.shellState);
   const showHint = useInputStore((state) => state.showClickToWalk);
-  const showPerf = usePerfStore((state) => state.visible);
+  const showPerf = useSettings((state) => state.showPerfHud);
+  const dim = useAppliedQuality((state) => state.dim);
   const active = useSession((state) => state.worldPhase === 'active');
   const press = useRef<{ x: number; y: number } | null>(null);
 
@@ -44,7 +48,13 @@ export function ShellChrome() {
           }}
         />
       ) : null}
+      <div
+        className="pointer-events-none absolute inset-0 z-20 bg-[#1c1814]"
+        style={{ opacity: dim ? 0.45 : 0, transition: 'opacity 200ms linear' }}
+      />
       <Shelf />
+      <SettingsPanel />
+      <RestoringVeil />
       {active && showHint ? (
         <p
           role="status"

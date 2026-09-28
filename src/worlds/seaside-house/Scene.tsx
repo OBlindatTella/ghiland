@@ -13,8 +13,10 @@ function sunPosition(elevationDeg: number, azimuthDeg: number, distance: number)
 
 function AabbMesh({
   item,
+  shadows,
 }: {
   item: (typeof levelBoxes)[number];
+  shadows: boolean;
 }) {
   const width = item.box.max[0] - item.box.min[0];
   const height = item.box.max[1] - item.box.min[1];
@@ -22,6 +24,8 @@ function AabbMesh({
   const transparent = item.opacity < 1;
   return (
     <mesh
+      castShadow={shadows && !transparent}
+      receiveShadow={shadows}
       position={[
         (item.box.min[0] + item.box.max[0]) / 2,
         (item.box.min[1] + item.box.max[1]) / 2,
@@ -48,6 +52,7 @@ export function SeasideHouseScene({ onReady, quality }: WorldSceneProps) {
   }, [onReady, quality]);
 
   const sun = sunPosition(12, 22, 40);
+  const shadows = quality.shadows !== 'off';
   const opaque = levelBoxes.filter((item) => item.opacity >= 1);
   const transparent = levelBoxes.filter((item) => item.opacity < 1);
 
@@ -56,16 +61,23 @@ export function SeasideHouseScene({ onReady, quality }: WorldSceneProps) {
       <color attach="background" args={['#E7C7A4']} />
       <fogExp2 attach="fog" args={['#E7C7A4', 0.011]} />
       <hemisphereLight args={['#F4E0C4', '#7A6552', 0.55]} />
-      <directionalLight position={sun} intensity={2.6} color="#FFC98F" />
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, SEA_Y, 80]}>
+      <directionalLight
+        position={sun}
+        intensity={2.6}
+        color="#FFC98F"
+        castShadow={shadows}
+        shadow-mapSize-width={quality.shadowMapSize || 1024}
+        shadow-mapSize-height={quality.shadowMapSize || 1024}
+      />
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, SEA_Y, 80]} receiveShadow={shadows}>
         <planeGeometry args={[520, 460]} />
         <meshStandardMaterial color="#1E6A72" roughness={0.42} metalness={0.04} />
       </mesh>
       {opaque.map((item) => (
-        <AabbMesh key={item.id} item={item} />
+        <AabbMesh key={item.id} item={item} shadows={shadows} />
       ))}
       {transparent.map((item) => (
-        <AabbMesh key={item.id} item={item} />
+        <AabbMesh key={item.id} item={item} shadows={shadows} />
       ))}
     </>
   );

@@ -16,6 +16,14 @@
   font-display: swap;
 }
 
+@font-face {
+  font-family: 'Atkinson Hyperlegible Mono';
+  src: url('/fonts/atkinson-hyperlegible-mono-400.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
 html,
 body {
   height: 100%;
@@ -24,6 +32,10 @@ body {
   background: #1c1814;
   color: #f2f0eb;
   font-family: 'Atkinson Hyperlegible', system-ui, sans-serif;
+}
+
+.font-mono {
+  font-family: 'Atkinson Hyperlegible Mono', ui-monospace, monospace;
 }
 
 @keyframes ghiland-shelf-in {

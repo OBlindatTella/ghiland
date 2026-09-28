@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { SeasidePoster } from '@/shell/landing/posters';
 import { useSession } from '@/state/session';
+import { useSettings } from '@/state/settings';
 
 const ARRIVE_MS = 1200;
 
@@ -69,7 +70,10 @@ export function LoadingBackdrop() {
         <button
           type="button"
           className="absolute bottom-16 left-1/2 -translate-x-1/2 rounded-[6px] border border-white/10 bg-[#141413]/90 px-3 py-2 text-[13px] leading-5 text-[#f2f0eb]"
-          onClick={() => useSession.getState().requestLow()}
+          onClick={() => {
+            useSession.getState().requestLow();
+            useSettings.getState().setQuality('LOW');
+          }}
         >
           Try Low quality
         </button>

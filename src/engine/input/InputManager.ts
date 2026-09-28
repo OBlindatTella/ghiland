@@ -7,7 +7,7 @@ import { requestCanvasPointerLock } from '@/engine/input/pointerLock';
 import { idleEscapeGate, onBrowserEscapeUnlock, onEscapeKey, type EscapeGate } from '@/engine/input/escapeGate';
 import { classifyLockLoss, reduceShell, type ShellEffect, type ShellModel } from '@/engine/input/shellMachine';
 import { useInputStore } from '@/state/input';
-import { usePerfStore } from '@/state/perf';
+import { useSettings } from '@/state/settings';
 import { useScreenStore } from '@/state/screen';
 
 export class InputManager {
@@ -19,6 +19,7 @@ export class InputManager {
   private lockGeneration = 0;
   private escapeGate: EscapeGate = idleEscapeGate;
   private escapeReset = 0;
+  private systemToken: number | null = null;
 
   attach(canvas: HTMLElement): () => void {
     this.detach();
@@ -128,7 +129,7 @@ export class InputManager {
       const stack = useScreenStore.getState().stack;
       if (!stack.includes('text') && !stack.includes('settings')) useScreenStore.getState().push('launcher');
     } else if (event.code === 'Backquote') {
-      usePerfStore.getState().toggle();
+      useSettings.getState().togglePerf();
     }
   };
 
@@ -171,6 +172,17 @@ export class InputManager {
     this.apply(reduceShell(this.readModel(), { type: 'pointerLockLost', reason }));
     useInputStore.getState().setPointerLocked(false);
   };
+
+  holdSystem(): void {
+    if (this.systemToken !== null) return;
+    this.systemToken = this.owners.push('system');
+  }
+
+  releaseSystem(): void {
+    if (this.systemToken === null) return;
+    this.owners.pop(this.systemToken);
+    this.systemToken = null;
+  }
 
   private scheduleEscapeReset(): void {
     if (!this.escapeGate.seenWhileLocked && !this.escapeGate.swallowNext) return;

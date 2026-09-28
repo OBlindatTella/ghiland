@@ -1,4 +1,10 @@
-import type { QualityProfile, QualityTier } from '@/contracts/quality';
+import type { PerfBudget, QualityProfile, QualityTier } from '@/contracts/quality';
+
+/** Atlas §6, with HIGH GPU memory at 384 MB (D-018). */
+export const perfBudgets: Record<'LOW' | 'HIGH', PerfBudget> = {
+  LOW: { maxDrawCalls: 80, maxTriangles: 250_000, maxGpuMemoryMB: 128, maxJsHeapMB: 300, targetFps: 30 },
+  HIGH: { maxDrawCalls: 150, maxTriangles: 750_000, maxGpuMemoryMB: 384, maxJsHeapMB: 400, targetFps: 60 },
+};
 
 const shared = {
   drawDistance: 500,

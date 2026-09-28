@@ -8,6 +8,7 @@ import { disposeObject3D } from '@/engine/scene/dispose';
 import { StableFrames } from '@/engine/scene/StableFrames';
 import { FirstPersonController } from '@/engine/player/FirstPersonController';
 import { qualityProfiles } from '@/engine/quality/profiles';
+import { useAppliedQuality } from '@/state/appliedQuality';
 import { useSession } from '@/state/session';
 import { getWorld } from '@/worlds/registry';
 
@@ -53,6 +54,7 @@ function WorldHost({
 
 export function SceneManager() {
   const worldId = useSession((state) => state.worldId);
+  const tier = useAppliedQuality((state) => state.tier);
   const [module, setModule] = useState<WorldModule | null>(null);
 
   useEffect(() => {
@@ -89,7 +91,7 @@ export function SceneManager() {
   return (
     <WorldHost
       module={module}
-      quality={qualityProfiles.HIGH}
+      quality={qualityProfiles[tier]}
       spawn={{ x, y, z }}
       colliders={definition.collision.colliders}
     />
