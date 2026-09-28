@@ -51,7 +51,7 @@ export function SeasideHouseScene({ onReady, quality }: WorldSceneProps) {
     onReady();
   }, [onReady]);
 
-  const sun = sunPosition(12, 22, 40);
+  const sun = sunPosition(12, -22, 40);
   const shadows = quality.shadows !== 'off';
   const opaque = levelBoxes.filter((item) => item.opacity >= 1);
   const transparent = levelBoxes.filter((item) => item.opacity < 1);

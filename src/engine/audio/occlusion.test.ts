@@ -5,7 +5,7 @@ import { distanceToOpenPortal, occlusionCutoff, zoneAt } from '@/engine/audio/oc
 const portal: AcousticPortal = {
   id: 'open-glass',
   between: ['interior', 'terrace'],
-  bounds: { min: [-4, 0, 4.4], max: [0, 3.2, 4.6] },
+  bounds: { min: [0, 0, 4.4], max: [4, 3.2, 4.6] },
   open: true,
 };
 
@@ -17,7 +17,7 @@ const zones: WorldZone[] = [
 describe('portal occlusion', () => {
   it('is quietest deep in the corridor and open on the terrace', () => {
     const far = distanceToOpenPortal(0, -8.2, [portal]);
-    const near = distanceToOpenPortal(-2, 4.5, [portal]);
+    const near = distanceToOpenPortal(2, 4.5, [portal]);
     expect(far).toBeGreaterThan(8);
     expect(near).toBeLessThan(0.2);
     expect(occlusionCutoff(near, 3000, 900, 8, false)).toBeGreaterThan(2500);

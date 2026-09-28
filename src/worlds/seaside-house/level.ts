@@ -37,9 +37,10 @@ const glass: ColliderLayer[] = ['movement'];
 const visual: ColliderLayer[] = [];
 
 /**
- * Seaside House greybox in Aura's frame: metres, Y up, +Z toward the sea.
+ * Seaside House greybox in three.js coordinates (D-019): metres, Y up, +Z toward the sea.
+ * Facing +Z, the viewer's left is +X. Aura's authored X values are negated.
  * Origin is the centre of the living-room back wall (z = -3.5).
- * Spawn (0, 1.62, -8.2) faces +Z.
+ * Spawn (0, 1.62, -8.2) faces +Z. Open panels are x 0..+4.
  */
 export const SPAWN: { x: number; y: number; z: number } = { x: 0, y: 1.62, z: -8.2 };
 export const SEA_Y = -6;
@@ -70,14 +71,14 @@ export const levelBoxes: readonly LevelBox[] = [
   box('living-back-east', 1.1, 0, -3.5 - T, 7 + T, 3.2, -3.5, wall, livingWall),
   box('living-header', -1.1, 2.4, -3.5 - T, 1.1, 3.2, -3.5, wall, livingWall),
 
-  box('fin', 0.15, 0, -3.25, 2.4, 2.8, -2.8, wall, finColor),
+  box('fin', -2.4, 0, -3.25, -0.15, 2.8, -2.8, wall, finColor),
 
   box('pier-west', -7, 0, 4.38, -6, 3.2, 4.62, wall, livingWall),
   box('pier-east', 6, 0, 4.38, 7, 3.2, 4.62, wall, livingWall),
-  box('glass-closed-w', -6, 0, 4.47, -4, 3.2, 4.53, glass, glassColor, 0.2),
-  box('glass-closed-0', 0, 0, 4.47, 2, 3.2, 4.53, glass, glassColor, 0.2),
-  box('glass-closed-2', 2, 0, 4.47, 4, 3.2, 4.53, glass, glassColor, 0.2),
   box('glass-closed-4', 4, 0, 4.47, 6, 3.2, 4.53, glass, glassColor, 0.2),
+  box('glass-closed-0', -2, 0, 4.47, 0, 3.2, 4.53, glass, glassColor, 0.2),
+  box('glass-closed-2', -4, 0, 4.47, -2, 3.2, 4.53, glass, glassColor, 0.2),
+  box('glass-closed-6', -6, 0, 4.47, -4, 3.2, 4.53, glass, glassColor, 0.2),
 
   box('terrace-floor', -7, -0.06, 4.5, 7, 0.002, 9, visual, terraceFloor),
   box('rail-north', -7, 0, 9, 7, 1.05, 9.06, glass, railColor, 0.32),
