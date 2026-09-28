@@ -55,6 +55,9 @@ function installDom() {
     fireWindow(type: string, event: object) {
       fire(windowListeners, type, event);
     },
+    fireDoc(type: string, event: object) {
+      fire(docListeners, type, event);
+    },
   };
 }
 
@@ -81,6 +84,26 @@ describe('iframe focus', () => {
     dom.fireWindow('blur', {});
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(useInputStore.getState().shellState).toBe('RELEASED');
+    manager.detach();
+  });
+});
+
+describe('pointer lock without a promise', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    useInputStore.getState().reset();
+  });
+
+  it('counts pointerlockerror when requestPointerLock returns undefined', () => {
+    const dom = installDom();
+    const manager = new InputManager();
+    useInputStore.setState({ shellState: 'SCREEN', owner: 'ui', showClickToWalk: false, relockBlocked: false });
+    manager.attach(dom.canvas);
+    dom.fireWindow('keydown', { code: 'KeyQ', repeat: false, preventDefault() {} });
+    dom.fireDoc('pointerlockerror', {});
+    expect(useInputStore.getState().showClickToWalk).toBe(true);
+    expect(useInputStore.getState().relockBlocked).toBe(true);
+    expect(useInputStore.getState().shellState).toBe('SCREEN');
     manager.detach();
   });
 });

@@ -111,7 +111,9 @@ export class InputManager {
       this.lockGeneration += 1;
       this.apply(reduceShell(this.readModel(), { type: 'pointerLockRejected' }));
     };
-    void requestCanvasPointerLock(canvas).then(
+    const outcome = requestCanvasPointerLock(canvas);
+    if (outcome === 'event') return;
+    void outcome.then(
       () => {
         if (generation !== this.lockGeneration) return;
         this.pendingLock = false;
