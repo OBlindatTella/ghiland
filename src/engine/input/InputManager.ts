@@ -256,6 +256,7 @@ export class InputManager {
     }
     if (locked) {
       if (!this.acceptLock) {
+        this.systemUnlock = true;
         document.exitPointerLock();
         return;
       }
@@ -297,6 +298,7 @@ export class InputManager {
 
   private applyEscape(): void {
     if (useInputStore.getState().shellState === 'SCREEN' && !useScreenStore.getState().pop().release) {
+      this.cancelPendingLock();
       return;
     }
     this.apply(reduceShell(this.readModel(), { type: 'escape' }));
