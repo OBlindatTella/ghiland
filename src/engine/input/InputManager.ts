@@ -1,6 +1,7 @@
-import type { Action } from '@/contracts/input';
+import type { Action, InputOwner } from '@/contracts/input';
 import { bus } from '@/engine/events/bus';
 import { defaultBindings } from '@/engine/input/bindings';
+import { decideKey, isEditableElement } from '@/engine/input/keyRoute';
 import { KeyState } from '@/engine/input/keyState';
 import { ownerForShell, OwnerStack } from '@/engine/input/ownerStack';
 import { requestCanvasPointerLock } from '@/engine/input/pointerLock';
@@ -44,6 +45,14 @@ export class InputManager {
     document.removeEventListener('pointerlockerror', this.onLockError);
     this.canvas = null;
     this.pendingLock = false;
+  }
+
+  pushOwner(owner: InputOwner): number {
+    return this.owners.push(owner);
+  }
+
+  popOwner(token: number): void {
+    this.owners.pop(token);
   }
 
   isActionDown(action: Action): boolean {
@@ -110,12 +119,24 @@ export class InputManager {
   }
 
   private onKeyDown = (event: KeyboardEvent): void => {
-    this.keys.keyDown(event.code);
-    if (event.code.startsWith('Arrow') || event.code === 'Space') event.preventDefault();
-    if (event.repeat) return;
-    if (event.code === 'KeyQ') {
+    const editable = isEditableElement(event.target) || isEditableElement(document.activeElement);
+    const decision = decideKey(
+      event.code,
+      editable,
+      this.owners.current(),
+      document.pointerLockElement !== null,
+      event.repeat,
+    );
+    if (decision.track) this.keys.keyDown(event.code);
+    if (decision.preventDefault) event.preventDefault();
+    if (decision.blurEditable) {
+      const active = document.activeElement as { blur?: () => void } | null;
+      active?.blur?.();
+      return;
+    }
+    if (decision.action === 'toggleScreen') {
       this.apply(reduceShell(this.readModel(), { type: 'toggleScreen' }));
-    } else if (event.code === 'Escape') {
+    } else if (decision.action === 'escape') {
       const next = onEscapeKey(this.escapeGate, document.pointerLockElement !== null);
       this.escapeGate = next.gate;
       this.scheduleEscapeReset();
@@ -125,13 +146,13 @@ export class InputManager {
         }
         this.apply(reduceShell(this.readModel(), { type: 'escape' }));
       }
-    } else if (event.code === 'Slash' && useInputStore.getState().shellState === 'SCREEN') {
+    } else if (decision.action === 'toggleMute') {
+      useSettings.getState().toggleMuted();
+    } else if (decision.action === 'togglePerfHud') {
+      useSettings.getState().togglePerf();
+    } else if (!editable && !event.repeat && event.code === 'Slash' && useInputStore.getState().shellState === 'SCREEN') {
       const stack = useScreenStore.getState().stack;
       if (!stack.includes('text') && !stack.includes('settings')) useScreenStore.getState().push('launcher');
-    } else if (event.code === 'KeyM' && useInputStore.getState().shellState === 'WORLD') {
-      useSettings.getState().toggleMuted();
-    } else if (event.code === 'Backquote') {
-      useSettings.getState().togglePerf();
     }
   };
 
@@ -177,12 +198,12 @@ export class InputManager {
 
   holdSystem(): void {
     if (this.systemToken !== null) return;
-    this.systemToken = this.owners.push('system');
+    this.systemToken = this.pushOwner('system');
   }
 
   releaseSystem(): void {
     if (this.systemToken === null) return;
-    this.owners.pop(this.systemToken);
+    this.popOwner(this.systemToken);
     this.systemToken = null;
   }
 
