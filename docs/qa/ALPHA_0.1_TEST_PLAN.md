@@ -1,5 +1,5 @@
 # Ghiland Alpha 0.1: QA & Performance Test Plan
-Author: Sentinel (QA, Performance & Product Critic) · Status: DRAFT v0.2, proposal for Ghiland Master / Francesco · 2026-09-28 (v0.2 folds in Plan items 13–22, D-010…D-015)
+Author: Sentinel (QA, Performance & Product Critic) · Status: DRAFT v0.3, proposal for Ghiland Master / Francesco · 2026-09-28 (v0.3 folds in Plan items 23–29, D-016…D-018; all cross-spec conflicts resolved)
 Scope: Alpha 0.1, one world (Seaside House). This is Phase C of the roadmap, prepared before Phase B so Forge knows what the build will be judged on.
 Every number in this document is a **PROPOSAL awaiting confirmation**. Sentinel reports problems and doesn't redesign. Where specs still disagree after Master's synthesis, this plan records the conflict and doesn't pick a winner.
 
@@ -10,20 +10,21 @@ Every number in this document is a **PROPOSAL awaiting confirmation**. Sentinel 
 | Source | Status when read (2026-09-28, 22:26–22:33) | Used for |
 |---|---|---|
 | docs/GHILAND_STATE.md | Phase A complete and synthesised; waiting for the repo choice before Phase B | Milestone, success test, stack, deferred list (mobile, multiplayer, WebXR, integrations are out of scope) |
-| docs/ALPHA_0.1_PLAN.md | Master synthesis, items 1–22. **Wins over the Phase A docs on conflict** | Conflict resolutions 1–12, rulings 13–22 (anchors, pinned scale, occlusion layers, entry, foliage AA, audio streaming, key hints, QA gates, hero composition, sound assets), build order, greybox checkpoint |
-| docs/DECISIONS.md | D-001 … D-015 | D-001 preview cards · D-002 app strategies · D-003 DOM windows · D-004 `Q` · D-005 carry/pin/pick up · D-006 SCREEN pauses movement · D-007 no jump/sprint · D-008 unlit content · D-009 scope · D-010 anchors/glass/pinned scale · D-011 single-page entry · D-012 foliage AA + streamed beds · D-013 QA gates · D-014 hero anchor + Notes 440×560 · **D-015 hardware override** |
-| docs/phase-a/ATLAS_ARCHITECTURE.md | Approved, amended through Plan 13–20 (read 22:35 rev) | Single-page `<GhilandApp/>`, collider layers, placement rule, 520 px/m, window modes, input owners, EnvironmentState, tiers + composer MSAA, perf probe, budgets, streamed beds |
-| docs/phase-a/AURA_WORLDS.md | Approved (read 22:38 rev) | Layout (open panels x 0…+4, D-019), `hero-sea` anchor, spawn/reveal, light, audio (beds stream), camera numbers, UI-in-world rules, budgets, "never" list |
+| docs/ALPHA_0.1_PLAN.md | Master synthesis, items 1–29. **Wins over the Phase A docs on conflict** | Resolutions 1–12, rulings 13–22, rulings 23–29 (constant pinned scale, one window per anchor, placement/table/glass rules, FOV, lock loss while carrying, context loss + mute + UI sounds + captions, GPU budget), build order |
+| docs/DECISIONS.md | D-001 … D-018 | … D-015 hardware override · **D-016** constant pinned scale, one window per anchor, no pinning past movement colliders · **D-017** FOV 55–75°, auto-pin on lock loss, context-loss veil, `M` mutes, UI sounds + Interface slider · **D-018** HIGH GPU memory 384 MB, LOW 128 MB |
+| docs/phase-a/ATLAS_ARCHITECTURE.md | Approved, amended through Plan 29 (read 22:50 rev) | Single-page `<GhilandApp/>`, collider layers, `resolvePlacement`, anchor occupancy, 520 px/m, window modes (incl. lock-loss auto-pin), input owners + `toggleMute`, `settings.fovDeg`, `ContextGuard`, tiers + composer MSAA, budgets, audio engine + mute gain |
+| docs/phase-a/AURA_WORLDS.md | Approved (read 22:38 rev) | Layout (open panels x −4…0), `hero-sea` anchor, spawn/reveal, light, audio (beds stream), camera numbers, UI-in-world rules, budgets, "never" list |
 | docs/phase-a/PIXEL_UI_SYSTEM.md | Approved, Rev 2 (read 22:40) | WORLD/SCREEN/RELEASED, keys, Screen, windows, placement incl. anchors, 520 px/m, Notes 440×560, hero-sea size cap, QWERTY-label fallback, a11y baseline |
 | aura/atmosphere-foundations-v0.md | Earlier Aura proposal, superseded | Only where Pixel still cites it (flagged) |
+| Code: github.com/OBlindatTella/ghiland | **Steps 0–1 merged** in PR #1 "Greybox Seaside walk and WORLD/SCREEN/RELEASED input" (merged 2026-09-28 23:26, merge commit `eb5c545`) | Scaffold, contracts, greybox from Aura's dimensions, first-person controller, WORLD/SCREEN/RELEASED, `` ` `` perf readout (fps/draws/triangles), 35 Vitest tests. Per the PR, it was verified in headed Chrome against `pnpm dev` only. The repo carries its own copy of `docs/qa/`; this workspace file is the working version |
 
-(phase-a/ was empty when v0.1 was started; the specs, the synthesis and the rulings landed during drafting. v0.2 is based on the files as read between 22:39 and 22:41.)
+(phase-a/ was empty when v0.1 was started; the specs and rulings landed during drafting. v0.3 is based on the files as read at 23:26–23:30.)
 
 Precedence used here: ALPHA_0.1_PLAN.md / DECISIONS.md > Atlas / Aura / Pixel. Expectations cite `[D-00x]`, `[Plan #n]`, `[Atlas §x]`, `[Aura §x]`, `[Pixel §x]`. Items still open are marked `OPEN: X-nn`. Behavior no document covers is marked `PENDING SPEC: <owner>`. Sentinel's own expectations ("no crash", "no silent data loss") are quality floors, not design choices.
 
 ### 0.1 Cross-spec conflicts and gaps: status
 
-Resolved items keep a residual note where Sentinel still sees a testable risk. Each ruling (Plan 13–21, D-010…D-015) has a dedicated verification test in section 4.7 (RUL-xx).
+All cross-spec conflicts are resolved as of v0.3. Resolved items keep a residual note where Sentinel still sees a testable risk. Each ruling has a verification test in section 4.7 (RUL-13…RUL-21 for Plan #13–21, RUL-23…RUL-29 for Plan #23–29).
 
 | ID | Issue | Status | Tests |
 |---|---|---|---|
@@ -32,7 +33,7 @@ Resolved items keep a residual note where Sentinel still sees a testable risk. E
 | X-03 | Pinned-window occlusion | **RESOLVED** raycast fade against `occluder`-layer colliders only; glass, curtains and plants never occlude [Plan #6, #15, D-010]. Residual: Aura §6 still says furniture occludes, but Atlas layers give furniture no `occluder` (Plan wins: furniture doesn't occlude) | RUL-15, GP-11, WIN-21 |
 | X-04 | Hero pin spot reachability | **RESOLVED** anchor snap within 1.5 m, glass never a snap surface, `hero-sea` authored [Plan #13, #21, D-010, D-014] | RUL-13, RUL-21, GP-10 |
 | X-05 | Speeds, sprint, jump | **RESOLVED** [D-007] | MOV-03/16 |
-| X-06 | FOV setting | **Partly resolved**: Plan #14 accepts text size at "the 75° FOV max", which implies a 55–75° setting (Atlas stores FOV), but Pixel §7 still defers the FOV slider to 0.2. Needs a one-line confirmation | MOV-12, SCR-12, RUL-14 |
+| X-06 | FOV setting | **RESOLVED** ships at 55–75°, default 62°, live, no remount; pinned scale doesn't change with FOV; lower readability at high FOV accepted [Plan #26, D-017, Atlas §6] | RUL-26, MOV-17 |
 | X-07 | Idle breathing | Resolved: 2 s [Aura §5] | MOV-13 |
 | X-08 | Tab hidden audio | Resolved: 6 dB fade over 400 ms [Atlas §7]. Residual: Pixel's "Mute when tab is hidden" toggle wording | AUD-10 |
 | X-09 | Entry flow | **RESOLVED** Pixel's single page; card click unlocks audio; sea starts at once under the sharpening backdrop; no Enter page, no black screen; URL follows via `pushState` [Plan #16, D-011, Atlas §1] | RUL-16, GP-1..4 |
@@ -41,12 +42,12 @@ Resolved items keep a residual note where Sentinel still sees a testable risk. E
 | X-12 | Decoded audio memory | **RESOLVED** long beds stream through media elements; only one-shots and wave variations are decoded; 64 MB cap stays [Plan #18, D-012] | RUL-18 |
 | X-13 | px → metres | **RESOLVED, superseded** 520 px/m [Plan #14, D-010] | RUL-14 |
 | X-14 | Pinned text legibility | **RESOLVED** 520 px/m targets ≥ 14 px body text at 1080p from 1.75 m (predicted 14.8 px); Sentinel measures in the step-7 build [Plan #14] | RUL-14, A11Y-05 |
-| X-15 | Carried window when lock is lost (blur / tab hidden → RELEASED) | **OPEN** (minor): not addressed by rulings 13–22. Floor in DES-03 | DES-03/04/16 |
+| X-15 | Carried window when lock is lost | **RESOLVED** auto-pins as float where it is, shows its pin tag; never lost or left on the camera [Plan #27, D-017] | RUL-27, DES-03 |
 | X-16 | Pinned persistence | **RESOLVED** [D-009]. Residual: localStorage ~5 MB quota | WIN-17, DES-08 |
-| X-17 | Unspecified: context-loss recovery, mobile behavior, UI sound design, explicit mute, captions | **OPEN** (gaps, not conflicts): not addressed by rulings 13–22 | BRK-01/12, AUD-09/15, A11Y-06 |
-| X-18 | **New, from Pixel Rev 2:** at `hero-sea` a window larger than 0.85×1.08 m is scaled down to fit. A resized Notes (e.g. 560×640) would land at ~659 px/m, so body text at 1.75 m ≈ **11.7 px**, below the 14 px ruling | **OPEN** | RUL-14c, RUL-21 |
-| X-19 | **New:** behavior when a second window is pinned to an occupied anchor (up to 4 single-instance apps could all snap to `hero-sea`) isn't specified | **OPEN** | RUL-13g |
-| X-20 | **New (minor):** placement details differ. Horizontal surfaces: Pixel "stands tilted 12°" vs Atlas "snap flat using the hit normal". Aiming through glass: Pixel treats a glass hit as "nothing, float"; Atlas ignores glass in the raycast, so the ray can hit a pin surface *behind* the glass (e.g. a terrace table within 3 m) and pin the window outside | **OPEN** | RUL-13e/f, WIN-06 |
+| X-17 | Context loss, mute, UI sounds, captions (mobile) | **RESOLVED** "Restoring" veil, wait for `webglcontextrestored`, reload offered after 5 s with stores flushed; `M` mutes in WORLD plus a Settings toggle; UI sounds on by default with an "Interface" slider; captions deferred as a known limitation [Plan #28, D-017, Atlas §6/§7]. Residual: mobile behavior still unspecified (mobile is out of scope; observe only, BRK-12) | RUL-28, DES-23, BRK-01, AUD-09/15, A11Y-06 |
+| X-18 | Hero-sea cap vs 14 px | **RESOLVED** 520 px/m everywhere; content is never scaled down; the cap only sets the default size at `hero-sea`; a user-enlarged window pins at full physical size [Plan #23, D-016]. Residual: an enlarged window at `hero-sea` may cover the open panels; it's accepted by the ruling, but RUL-23 records it for the critique | RUL-23, RUL-21 |
+| X-19 | Occupied anchor | **RESOLVED** one window per anchor; the preview shows it as taken; the next pin falls back to surface or float [Plan #24, D-016] | RUL-24 |
+| X-20 | Table pose; rays through glass | **RESOLVED** upright on tables, bottom edge on the surface, tilted ~10° back, never flat; the placement ray stops at any movement collider; hitting glass floats on the player's side at `min(1.6, d_hit − 0.3)` m; nothing pins where the player can't walk [Plan #25, D-016, Atlas §2.4] | RUL-25 |
 
 
 ## 1. Severity rules and issue reporting
@@ -130,7 +131,7 @@ Protocol:
 | **Long tasks** after interactive | 0 > 50 ms while walking | — | Atlas §6 | PerformanceObserver('longtask') | DevTools, PerfProbe |
 | **Draw calls** (worst V1–V7) | **≤ 150** | Aura ≤ 120 | Atlas HIGH (Plan #20) | `renderer.info.render.calls`, `autoReset = false`, manual per-frame reset (composer passes counted) | PerfHud, Spector.js |
 | **Triangles** in view | **≤ 750k** | Aura ≤ 400k | Atlas HIGH | `renderer.info.render.triangles` | PerfHud, Spector.js |
-| **GPU memory: textures + render targets** (estimated) | **≤ 256 MB**, including the composer's MSAA 4× targets | Aura textures ≤ 150 MB | Atlas HIGH; Plan #17 ("MSAA targets stay inside the texture budget") | estimator sums textures (w×h×bpp or KTX2 block size ×1.33) **plus render targets** (samples × w × h × bytes, colour + depth); cross-check with Chrome Task Manager "GPU memory". Sentinel estimate: MSAA 4× at 1080p/DPR 1 with half-float buffers is roughly 100–130 MB on its own, about 2.25× that at DPR 1.5 | Estimator (requested in PerfHud), Spector.js |
+| **GPU memory: textures + render targets** (estimated) | **≤ 384 MB at HIGH on the RTX 3060 tier**, including the composer's MSAA 4× targets [D-018] | Aura textures ≤ 150 MB. LOW: ≤ 128 MB, no MSAA (informational, 2.3) | Plan #29, D-018, Atlas §6 | estimator sums textures (w×h×bpp or KTX2 block size ×1.33) **plus render targets** (samples × w × h × bytes, colour + depth); cross-check with Chrome Task Manager "GPU memory". Sentinel estimate: MSAA 4× at 1080p/DPR 1 with half-float buffers ≈ 100–130 MB, so textures ≤ 150 MB + targets leaves ~100 MB headroom at 1080p/DPR 1 | Estimator (requested in PerfHud), Spector.js |
 | **Decoded audio memory** | **≤ 64 MB**; streamed beds must not show up as `AudioBuffer`s | Atlas estimate ≈ 19 MB; > 32 MB is flagged for investigation | Plan #18, Atlas §7 | Σ AudioBuffer bytes (hook) + source-type list | Hook, DevTools Memory |
 | **Simultaneous voices** | ≤ 16 | — | Aura §4 | active sources | Hook |
 | **Pinned windows** | with 8 visible pinned windows (V7) the FPS and 1% low gates still hold | — | Atlas §4/§6 | V7 run | rAF sampler, long tasks |
@@ -143,7 +144,7 @@ Protocol:
 | **Asset payload** | first playable ≤ 25 MB; full world ≤ 60 MB; card media ≤ 300 KB each | — | Atlas §6, Aura §2, Pixel §4 | HAR | Playwright, Network panel |
 | **JS bundle (gzip)** | landing ≤ 150 KB, no three.js; engine ≤ 300 KB; Seaside ≤ 100 KB; each app ≤ 50 KB; **world route total ≤ 600 KB** | — | Atlas §6 | `next build` + analyzer; CI check | @next/bundle-analyzer, size-limit |
 | **Audio start latency** | sea audible ≤ 500 ms after the Seaside card click (cold cache, streamed bed); `AudioContext` running ≤ 100 ms after the click | — | Plan #16, D-011 | timestamps at click / `resume()` / media `playing` event + output latency; loopback recording | Hook logs, recording |
-| **UI sound latency** (if UI sounds ship) | ≤ 50 ms | — | X-17 | same | same |
+| **UI sound latency** (on by default) | ≤ 50 ms | — | Plan #28 | same | same |
 | **UI responsiveness** | INP ≤ 200 ms; Notes key→glyph ≤ 50 ms at 10k chars and at 1 MB; overlay drag 1:1 in the same frame | — | Pixel §3.4 | web-vitals, Event Timing, 240 fps video | web-vitals, DevTools |
 
 Failure → severity (GATING tier): miss by ≤ 20% = MINOR; > 20% = MAJOR; avg < 40 FPS = BLOCKER.
@@ -152,9 +153,9 @@ Failure → severity (GATING tier): miss by ≤ 20% = MINOR; > 20% = MAJOR; avg 
 
 | Tier | What's recorded | "Degrade gracefully" floor [D-015] (logged `NON-GATING` if missed) |
 |---|---|---|
-| Iris Xe, LOW | Full 2.2 table against Atlas's LOW column: ≤ 80 draw calls, ≤ 250k tris, ≤ 128 MB GPU memory, heap ≤ 300 MB, avg ≥ 30 fps (D-013 default) | Golden path completes; AUTO settles on LOW within 30 s and doesn't flap; avg ≥ 30 fps; no crash, no "Aw, Snap" in 60 min; the reveal, moving water, curtains and full sea soundscape are still present [Aura §2 "never cut"] |
+| Iris Xe, LOW | Full 2.2 table against Atlas's LOW column: ≤ 80 draw calls, ≤ 250k tris, **≤ 128 MB GPU memory with no MSAA** [D-018], heap ≤ 300 MB, avg ≥ 30 fps (D-013 default) | Golden path completes; AUTO settles on LOW within 30 s and doesn't flap; avg ≥ 30 fps; no crash, no "Aw, Snap" in 60 min; the reveal, moving water, curtains and full sea soundscape are still present [Aura §2 "never cut"] |
 | M1/M2, HIGH | FPS, 1% low, load, GPU memory at DPR 2 (Chrome and Safari) | Golden path completes in Chrome |
-| 120/144 Hz uncapped, ULTRA | FPS, ULTRA DPR cap 2.0 respected, GPU memory incl. MSAA at DPR 2 | No tier flapping; frame pacing even |
+| 120/144 Hz uncapped, ULTRA; 1440p at HIGH | FPS, ULTRA DPR cap 2.0 respected, GPU memory incl. MSAA at 1440p and at DPR 2. Sentinel estimate: MSAA targets scale with pixel count, ≈ 180–230 MB at 1440p, so 1440p HIGH may exceed 384 MB | No tier flapping; frame pacing even; record whether AUTO or the DPR range keeps memory under 384 MB |
 
 ## 3. Golden path walkthrough (the success test)
 
@@ -171,7 +172,7 @@ Run on Chrome on the GATING tier (RTX 3060, forced HIGH, 1080p @ 60 Hz), fresh p
 | GP-7 | Summon the Ghiland Screen | `Q` [D-004] or `Esc` from WORLD opens SCREEN: pointer unlocks, world dims 12%, shelf rises (240 ms). `E` on the desk device within 2 m does the same. Nothing depends on hover when the Screen appears. "`Q` your Screen" hint shows after 20 s of walking or near the desk. Hitch ≤ 50 ms | D-004, Pixel §1.2, §2.1–2.2, §5.2 |
 | GP-8 | Open Notes | Notes tile → window grows out of the tile to **440×560**, centred, with keyboard focus in the page. Typing works; `W A S D`, `Q` and `P` type letters and never move the player, close the Screen or pin anything (SCREEN pauses movement) | D-006, D-014, Pixel §1.1, §2.4 |
 | GP-9 | Detach Notes | Drag the title bar off the top or side edge and hold 300 ms. The lift indicator (0.96 scale, stronger shadow) looks clearly different from the snap outline. You're then carrying it: Screen closes, pointer locks, window camera-anchored ~1.1 m ahead with ~150 ms lag, and you can keep walking. Content, caret and scroll kept exactly; the same DOM node, no remount | D-005, Atlas §2.4/§4, Pixel §3.3–3.4 |
-| GP-10 | Pin it near the sea view | Carry it toward the glass. Within 1.5 m of `hero-sea` the 1 px preview outline jumps to the anchor; `P` pins it exactly there (check `E` too, X-02 residual): upright, angled 15° toward the room, ≈ 0.85×1.08 m. Body text ≥ 14 px on screen from 1.75 m (RUL-14). The open panels (x 0…+4), horizon and sun glitter stay unobstructed (RUL-21). Never flat on the glass. Alternative path: pin button or `P` from the overlay while looking at the anchor area | D-010, D-014, Plan #13/#14/#21, Pixel §3.3 |
+| GP-10 | Pin it near the sea view | Carry it toward the glass. Within 1.5 m of `hero-sea` the 1 px preview outline jumps to the anchor; `P` pins it exactly there (check `E` too, X-02 residual): upright, angled 15° toward the room, ≈ 0.85×1.08 m. Body text ≥ 14 px on screen from 1.75 m (RUL-14). The open panels (x −4…0), horizon and sun glitter stay unobstructed (RUL-21). Never flat on the glass. Alternative path: pin button or `P` from the overlay while looking at the anchor area | D-010, D-014, Plan #13/#14/#21, Pixel §3.3 |
 | GP-11 | Keep walking | Walk to the terrace and balustrade, back inside, into the corridor behind the fin, then return. Pass: position unchanged (≤ 1 cm via hook); no swim against the world on fast turns; **stays fully visible from the terrace through the glass** and fades out (~200 ms, never a hard cut) only behind walls and the fin (RUL-15); far card beyond 6 m, live content inside 6 m, no flash; content unchanged; clicking its content from WORLD enters SCREEN focused on it with no camera move, and typing continues; FPS gates hold | D-010, Plan #6/#15, Pixel §3.3, Aura §6 |
 | GP-12 | Reload the page | Notes content is back; the pinned window is restored in the same place, same size, same content [D-009]; player back at spawn (position not persisted) | D-009, Atlas §3, §8 |
 | GP-13 | Reaction | Rubric (section 8) scored at minute 1. Any "it's a website in 3D" reaction recorded verbatim | Section 8 |
@@ -199,11 +200,12 @@ First-time tester target (proposal): GP-1 → GP-11 in ≤ 3 min using only the 
 | MOV-09 | Getting stuck | Corners and gaps: kitchen stools, dining chairs, sofa/coffee table, reading chair, terrace bench, olive planter, lounge chairs, corridor ends. Never stuck (stuck = BLOCKER per 1.1) |
 | MOV-10 | Falling out | Push diagonally into the 1.05 m balustrade at max speed, at 15 fps (CPU throttle), and during a 3 s main-thread stall: never tunnel through or fall to the sea |
 | MOV-11 | Frame-rate independence / dt clamp | Same distance per second at 30/60/144 fps ±5%. Hold `W` through a 3 s stall: no teleport or tunnelling on resume |
-| MOV-12 | Motion-sickness triggers | No head bob (≤ 6 mm step motion) [Aura §5]; FOV 62° vertical default (setting range: X-06); carry lag (150 ms) not nauseating on fast turns; no forced camera moves (clicking a pinned window must not move the camera [Pixel §1.2]); exposure adaptation not strobing. Tester nausea rating 1–5 after 10 min; any forced camera move = MAJOR |
+| MOV-12 | Motion-sickness triggers | No head bob (≤ 6 mm step motion) [Aura §5]; FOV default 62° (extremes in MOV-17); carry lag (150 ms) not nauseating on fast turns; no forced camera moves (clicking a pinned window must not move the camera [Pixel §1.2]); exposure adaptation not strobing. Tester nausea rating 1–5 after 10 min; any forced camera move = MAJOR |
 | MOV-13 | Idle breathing | Starts after 2 s still, ~4 mm at 0.22 Hz [Aura §5]; stops instantly on input; pauses while the Screen is open [Pixel §2.2]; zero with reduce motion [Aura §5, Pixel §7] |
 | MOV-14 | Drag-to-look fallback | Offered after 2 failed lock attempts; hold-left-button drag to look; `Shift`+arrows turn [Pixel §7] |
 | MOV-15 | Sitting | Stretch goal [Aura §5]; test only if it ships |
 | MOV-16 | `Space`, `Ctrl`, `Shift`+`W` in WORLD | No jump, no sprint: `Space`/`Ctrl` do nothing; `Shift` never exceeds 2.2 m/s [D-007] |
+| MOV-17 | **FOV extremes: motion comfort and pinned legibility** [Plan #26, D-017] | Two testers (one motion-sensitive), 10 min each at **55°** and at **75°**: corridor walk, the reveal, strafing at the glass, fast 180° turns, carrying a window. Nausea rating 1–5 per FOV; note edge stretching at 75° and a "tunnel" feel at 55°. Pinned Notes at `hero-sea`: measure body text with the RUL-14 calibration bar at 1.75 m (expected ≈ 17.1 px at 55°, ≈ 11.6 px at 75°, accepted by D-010/D-017), find the distance where it reaches 14 px at 75° (expected ≈ 1.45 m), and have a tester read a 3-line paragraph at 1.75 m at 75°. Pass: nausea ≤ 2/5 at both extremes for the non-sensitive tester (a sensitive tester's ≥ 3 is logged as an observation); FOV change applies live with no remount and no hitch > 50 ms; world and pinned scale unchanged (hook); measured sizes within ±0.5 px of expected. Failing to read at 75° is logged as an accepted limitation, not a defect |
 
 ### 4.2 Ghiland Screen (SCR)
 
@@ -220,7 +222,7 @@ First-time tester target (proposal): GP-1 → GP-11 in ≤ 3 min using only the 
 | SCR-09 | Summon cost | Hitch budget (2.2); scrim 12% (8% at night) [Pixel §6.7] |
 | SCR-10 | Apps and D-002 | Chat mock gives canned/streamed replies, with no network calls to a real model [D-009]; the external-fallback test app shows a card and "Open" opens a new tab; any embed swaps to the external card on a blank-frame timeout [Atlas §2.3] |
 | SCR-11 | Worlds app | Shows the same cards. Choosing Seaside while already in Seaside: `PENDING SPEC: PIXEL` |
-| SCR-12 | Settings app | Changes apply live; sensitivity applies on the next WORLD entry; quality change debounced 400 ms behind a 200 ms fade; persists across reload; FOV control present or absent per X-06 [Pixel §5.1, Atlas §3] |
+| SCR-12 | Settings app | Changes apply live; sensitivity applies on the next WORLD entry; quality change debounced 400 ms behind a 200 ms fade; FOV slider 55–75°, default 62° (RUL-26); Mute toggle and Interface volume (RUL-28); everything persists across reload [Pixel §5.1, Atlas §3] |
 
 ### 4.3 Window lifecycle (WIN)
 
@@ -231,7 +233,7 @@ First-time tester target (proposal): GP-1 → GP-11 in ≤ 3 min using only the 
 | WIN-03 | Snap | Left/right half; top = "large" (safe area − 48 px); 8 px magnets, `Alt` disables them; double-click title toggles |
 | WIN-04 | **Detach vs snap boundary** | 20 trials each of "snap to top" and "detach off top + 300 ms". Misfire ≥ 1/20 = MAJOR |
 | WIN-05 | Carry | Camera-anchored (0, 0, −1.1), 150 ms lag, you keep walking [D-005, Atlas §2.4]; `Q` returns it to the overlay; `P` pins at the crosshair (and `E` if it maps there, X-02 residual); the preview outline matches the final spot; the carried window doesn't clip into walls when you walk up to one (1.1 m offset vs a wall 0.5 m away): record behavior |
-| WIN-06 | Placement rule (general) | Order: anchor within 1.5 m → pin surface (walls, fin, bookshelf face: flat at 1 cm, upright; desk/tables/island: pose per X-20) → float 1.6 m ahead facing you. Glass, curtains and plants are never pin surfaces [Plan #13, Atlas collider layers]. Probe walls, fin, bookshelf, desk, dining table, island, floor (not a pin surface: floats), ceiling, 30–40° angles, inside corners. Anchor-specific cases are in RUL-13 |
+| WIN-06 | Placement rule (general) | Order [Atlas `resolvePlacement`]: ray up to 3 m **stops at the first movement collider** → free anchor within 1.5 m → pin surface (walls, fin, bookshelf face: flat at 1 cm, upright; desk/tables/island: upright, bottom edge on the surface, tilted ~10° back) → float 1.6 m ahead facing you. A non-pin movement collider (glass, balustrade, sofa) as first hit gives a float on the player's side at `min(1.6, d_hit − 0.3)` m. Probe walls, fin, bookshelf, desk, dining table, island, sofa, floor, ceiling, 30–40° angles, inside corners. Ruling-specific cases are in RUL-13/23/24/25 |
 | WIN-07 | Pin from overlay | Pin button or `P` (SCREEN, no text focus) pins where you're looking; typing "p" in Notes never pins |
 | WIN-08 | Grab a pinned window | Look + `E` within 25 m with line of sight: flies to you in 360 ms. Behind a wall or at 26 m: nothing [Pixel §3.3] |
 | WIN-09 | Far card | Swaps beyond 6 m. Walk back and forth across 6.0 m: no flicker (ask for hysteresis if it flickers) |
@@ -260,13 +262,13 @@ First-time tester target (proposal): GP-1 → GP-11 in ≤ 3 min using only the 
 | AUD-06 | Footsteps | 0.7 m stride; oak / teak / near-silent on the rug; settle step on stop; no steps while pushing into a wall without moving |
 | AUD-07 | Room tone | Interior never fully silent [Aura §1] |
 | AUD-08 | Volume | Master and Ambient sliders, v² mapping, no clicks (`setTargetAtTime`), persisted [Atlas §7, Pixel §5.1] |
-| AUD-09 | Mute | No explicit mute control is specified (X-17); Master at 0 = silence with no pop |
+| AUD-09 | Mute | `M` in WORLD and the Settings toggle both flip `muted`; ramp to silence in ~80 ms and back to the exact prior mix, with no pop; the `AudioContext` isn't suspended, so streamed beds stay in sync; the state persists across reload [Plan #28, Atlas §7]. Edge cases in DES-23 |
 | AUD-10 | Tab hidden / RELEASED | Tab hidden or blur: ambience fades 6 dB over 400 ms; RELEASED ducks 3 dB [Atlas §7]. Record what Pixel's "Mute when tab is hidden" toggle actually does (X-08 residual). On return: no burst of queued events, no doubled layers |
 | AUD-11 | Levels | Limiter works; recorded peaks ≤ −1 dBFS; no startlingly loud first second |
 | AUD-12 | Voices | ≤ 16 during a gust + big wave + gull + footsteps at once |
 | AUD-13 | Output device change | Unplug headphones or switch Bluetooth: audio continues or recovers on the next gesture; no uncaught error |
 | AUD-14 | No music by default | Aura §1 "never" list |
-| AUD-15 | UI sounds | Atlas §7 and build step 8 plan event-driven UI sounds (`window:opened` tick), but none are designed: `PENDING SPEC: PIXEL` (X-17) |
+| AUD-15 | UI sounds | On by default, soft and short, on their own "Interface" slider [Plan #28]; latency ≤ 50 ms (2.2); the Interface slider at 0 silences UI sounds but not ambience; `M` silences everything; no UI sound louder than the sea bed at the default mix |
 
 ### 4.5 Loading and transitions (LOAD)
 
@@ -287,7 +289,7 @@ First-time tester target (proposal): GP-1 → GP-11 in ≤ 3 min using only the 
 
 | ID | Test | Trigger | Pass criteria |
 |---|---|---|---|
-| BRK-01 | WebGL context lost | `WEBGL_lose_context.loseContext()` / `restoreContext()`; `chrome://gpucrash` | Floor: no silent white/black screen, Notes not lost. Recovery behavior `PENDING SPEC: ATLAS` (X-17) |
+| BRK-01 | WebGL context lost | `WEBGL_lose_context.loseContext()` / `restoreContext()`; `chrome://gpucrash` | Covered in detail by RUL-28a–d: calm "Restoring" veil, restore returns to RELEASED, reload offered after 5 s, Notes and pinned windows survive |
 | BRK-02 | WebGL disabled | `--disable-webgl`, Firefox `webgl.disabled` | Message, no crash loop |
 | BRK-03 | Tab hidden / restored | 10 s and 10 min; minimise the window | RELEASED, "Click to walk", no auto re-lock [Pixel §1.3]; no teleport; audio per AUD-10 |
 | BRK-04 | Window resize | Continuous drag-resize; half-screen snap | Correct aspect, no stretching; overlay windows clamped back into the safe area |
@@ -298,7 +300,7 @@ First-time tester target (proposal): GP-1 → GP-11 in ≤ 3 min using only the 
 | BRK-09 | Asset 404/500 | `page.route` abort per class: GLB, KTX2, Basis transcoder, HDRI, audio bed, audio one-shot, font, Notes chunk, card media | No uncaught rejection kills the scene; missing audio never blocks the world; a missing transcoder produces a clear error |
 | BRK-10 | No audio device | All outputs disabled before load | World loads, no exception |
 | BRK-11 | Offline mid-session | DevTools offline after the world is live | World keeps running; Notes keeps saving locally |
-| BRK-12 | Mobile/tablet | Open on a phone | Out of scope (deferred). Behavior `PENDING SPEC: PIXEL`; observe and report |
+| BRK-12 | Mobile/tablet | Open on a phone | Out of scope (deferred), and still not specified by any ruling. Observe and report; floor: no crash, no infinite loading |
 | BRK-13 | Storage corruption | Inject invalid JSON, a future `version`, out-of-range volumes, missing fields into `ghiland:settings` / `ghiland:windows` / `ghiland:app:notes` | Corrupt blob moved to `…:corrupt-<ts>`, defaults used, values clamped, no boot crash [Atlas §3] |
 | BRK-14 | Storage unavailable | localStorage throws (blocked site data, Safari private mode quirks); quota full | No crash; the user is told that Notes won't be saved (floor) |
 
@@ -310,15 +312,22 @@ Each Master ruling gets a test that proves the build does what was decided. Inst
 
 | ID | Ruling | Test cases | Pass criteria |
 |---|---|---|---|
-| RUL-13 | **Pin anchors; glass never a snap surface** [Plan #13, D-010] | (a) Pin with the crosshair hit 1.4 m from `hero-sea`. (b) Hit 1.6 m away. (c) Aim at the closed glass panel (x +4…+6) from 1 m, 2 m and 3 m. (d) Aim through the open panels (x 0…+4) at the sea. (e) 50 random pin attempts along the whole glass wall and the glass balustrade. (f) Stand 1 m inside a closed panel and aim at a terrace table or bench within 3 m behind the glass (X-20). (g) Pin a second app to `hero-sea` while Notes occupies it (X-19). (h) Preview outline vs final transform in every case | (a) Snaps to the anchor transform exactly (position ±1 cm, yaw/pitch ±1°). (b) No snap. (c, d) Never flat on glass: floats 1.6 m ahead unless the anchor is within 1.5 m of the float point, in which case it snaps. (e) 0/50 windows flat on or intersecting glass. (f) Record whether it pins outside through the glass (X-20). (g) Behavior per the future ruling; floor: both windows reachable, no z-fighting. (h) Preview = final transform in 100% of cases |
-| RUL-14 | **Pinned readability: ≥ 14 px at 1080p from 1.75 m** [Plan #14, D-010] | Measured in the **step-7 build**. Test build adds a 15 CSS px calibration bar inside Notes content. Hook places the camera 1.75 m in front of the pinned window's centre, head-on, FOV 62°, 1920×1080, DPR 1; screenshot; measure the bar's on-screen height. Repeat at 1.5 m and 2 m, and at FOV 75° if the setting exists (X-06). Read `pxPerMeter` and pinned world size from the window registry. (c) Resize Notes to 560×640 in the overlay, then pin it to `hero-sea` (X-18) | **≥ 14.0 px at 1.75 m** (predicted 14.8). Recorded only: ~17.3 px at 1.5 m, ~13.0 px at 2 m, ~11.6 px at FOV 75° (accepted by the ruling). `pxPerMeter` = 520; default Notes 440×560 pins at 0.85×1.08 m ±2 cm. Text stays sharp closer than 1.73 m, where the content upscales (WIN-19). (c) If text < 14 px after the hero-sea size cap, log against X-18 |
+| RUL-13 | **Pin anchors; glass never a snap surface** [Plan #13, D-010] | (a) Pin with the crosshair hit 1.4 m from `hero-sea`. (b) Hit 1.6 m away. (c) Aim at the closed glass panel (x −6…−4) from 1 m, 2 m and 3 m. (d) Aim through the open panels (x −4…0) at the sea. (e) 50 random pin attempts along the whole glass wall and the glass balustrade. (h) Preview outline vs final transform in every case. Occupied anchors: RUL-24. Rays through glass: RUL-25 | (a) Snaps to the anchor transform exactly (position ±1 cm, yaw/pitch ±1°). (b) No snap. (c) Never flat on glass: float on the player's side ≥ 0.3 m from the glass (RUL-25) unless the free anchor is within 1.5 m. (d) Open panels are no collider, so the ray continues; floats 1.6 m ahead unless the anchor is in range. (e) 0/50 windows flat on, intersecting, or beyond the glass or balustrade. (h) Preview = final transform in 100% of cases |
+| RUL-14 | **Pinned readability: ≥ 14 px at 1080p from 1.75 m** [Plan #14, D-010] | Measured in the **step-7 build**. Test build adds a 15 CSS px calibration bar inside Notes content. Hook places the camera 1.75 m in front of the pinned window's centre, head-on, FOV 62°, 1920×1080, DPR 1; screenshot; measure the bar's on-screen height. Repeat at 1.5 m and 2 m. FOV extremes: MOV-17. Read `pxPerMeter` and the pinned world size from the window registry | **≥ 14.0 px at 1.75 m** (predicted 14.8). Recorded only: ~17.3 px at 1.5 m, ~13.0 px at 2 m. `pxPerMeter` = 520 for every pinned window (anchor, surface, float); default Notes 440×560 pins at 0.85×1.08 m ±2 cm. Text stays sharp closer than 1.73 m, where the content upscales (WIN-19) |
 | RUL-15 | **Occlusion layers: glass blocks movement, never occludes; only opaque architecture occludes** [Plan #15, D-010] | Hook reads pinned-window opacity and camera position. (a) Notes at `hero-sea`, view from 5 terrace positions through closed glass. (b) Walk behind the fin and into the corridor. (c) View past curtains (billowing), olive tree, indoor plants. (d) View past the sofa, kitchen island, dining table. (e) Walk into closed glass panels and the glass balustrade | (a) Opacity 1.0 at every terrace position. (b) Fades to 0 over ~200 ms when fully blocked, back to 1 when visible, never a hard cut, no flicker. (c) Opacity 1.0 (curtains and plants never occlude). (d) Opacity 1.0 (furniture isn't `occluder`; Plan wins over Aura §6's wording). (e) Movement blocked: can't pass closed glass or fall past the balustrade |
 | RUL-16 | **Single-page entry; card click unlocks audio** [Plan #16, D-011] | Cold load, click the Seaside card; record screen + audio at 60 fps; log navigations, `AudioContext.state`, media events. Repeat via `Enter` on the focused card, and via a direct open of `/w/seaside-house` | One document navigation total; no Enter page; `AudioContext` running ≤ 100 ms and sea audible ≤ 500 ms after the click; sea plays under the sharpening backdrop, then the crossfade to the live render with no cut; **no recorded frame is pure black (#000) or near-black full-screen**; landing bundle has no three.js; engine chunk prefetched on idle/hover (network log); first pointer lock comes from the "Click to walk" click |
 | RUL-17 | **Foliage AA: composer MSAA 4× on HIGH/ULTRA, alpha-test + SMAA on LOW/MED** [Plan #17, D-012] | Per tier: Spector.js capture + hook (composer `multisampling`, passes, foliage material flags); screenshots and a slow 10 s pan across the terrace grasses and olive tree at V3/V4; switch tiers LOW→MED→HIGH→ULTRA→LOW live; check DPR on a DPR 3 or zoomed display | HIGH/ULTRA: multisampled render target with 4 samples, `alphaToCoverage` on foliage, no SMAA pass. LOW/MED: `multisampling` 0, `alphaTest` foliage, SMAA pass present, sparser grass (30% / 60%). No visible crawl or shimmer on foliage, bronze frames or the balustrade cap on HIGH (video review); MED edges logged as POLISH if harsh. Tier switch: same WebGL context and canvas element (no `webglcontextlost`, no remount), foliage recompile hitch ≤ 100 ms hidden behind the 200 ms fade. ULTRA DPR ≤ 2.0. GPU memory incl. MSAA targets within 2.2 |
 | RUL-18 | **Audio beds streamed; only one-shots and wave variations decoded; 64 MB cap** [Plan #18, D-012] | Hook lists each playing source and its type; decoded-bytes counter. (a) 20-min listen at the open panel and in the corridor. (b) Hook-seek each bed to 5 s before the end of its file, 5 times. (c) Reload 5×. (d) Slow 4G throttle. (e) Tab hidden 10 min, then return. (f) Firefox and Safari smoke | Sea, wind and room-tone beds are `MediaElementAudioSourceNode`s, never `AudioBuffer`s; decoded bytes ≤ 64 MB (expected ≈ 19 MB). (a) No audible loop (AUD-04). (b) The two-element crossfade (~3 s before the end, equal power) leaves no gap, click or level dip; the recording shows no dropout > 10 ms. (c) The start offset differs across reloads. (d) A stalled stream doesn't glitch the other buses; record any audible dropout. (e) Beds resume in sync, no doubling. (f) Beds play (non-gating). No CORS errors (same origin) |
 | RUL-19 | **Key hints from keymap + `getLayoutMap()`; QWERTY fallback where missing** [Plan #19] | Chromium with US, Italian, AZERTY, QWERTZ layouts; Firefox and Safari with AZERTY. Trigger every hint (`W A S D`, `Q`, `E`, `P`, "Click to walk · Q Screen"). Test build: rebind an action and re-trigger its hint | Chromium: labels match the physical key under the active layout (AZERTY shows Z Q S D, and A for the Screen key; QWERTZ unchanged for W A S D). Italian: W A S D, Q. Rebinding changes the hint (it reads the keymap, not hard-coded text). Firefox/Safari: QWERTY labels shown, recorded as a **known limitation**, not a bug. Bindings work physically on all layouts in all browsers |
 | RUL-20 | **QA gates: Chromium gates; Firefox/Safari smoke-only; dedicated-GPU gating hardware** [Plan #20, D-013, D-015] | Process check at sign-off | Sign-off evidence comes from Chrome and Edge on the GATING tier; Firefox/Safari smoke results attached, issues logged as `NON-GATING`; informational tiers recorded per 2.3 |
-| RUL-21 | **Hero composition** [Plan #21, D-014, D-019] | Hook reads the `hero-sea` transform. Pin default Notes (440×560) there. Screenshots from the reveal point (0, 1.62, −3), the open-panel centre (+2, 1.62, 4.0), and the terrace looking back. Then pin a window larger than the cap | Anchor at ≈ (+5.1, 1.45, 3.9) ±5 cm, 15° toward the room centre ±1°, in front of the closed panel x +4…+6. Pinned size 0.85×1.08 m ±2 cm. From the reveal point and the open-panel centre, the window's screen bounds don't overlap the open-panel region (x 0…+4); horizon and sun glitter (20–25° viewer-right of the view axis) unobstructed. No intersection with the panel frame or curtains. Oversized window scaled down to the cap with aspect kept; text size logged (X-18) |
+| RUL-21 | **Hero composition** [Plan #21, D-014] | Hook reads the `hero-sea` transform. Pin default Notes (440×560) there. Screenshots from the reveal point (0, 1.62, −3), the open-panel centre (−2, 1.62, 4.0), and the terrace looking back | Anchor at ≈ (−5.1, 1.45, 3.9) ±5 cm, 15° toward the room ±1°, in front of the closed panel x −6…−4. Default pinned size 0.85×1.08 m ±2 cm. From the reveal point and the open-panel centre, the window's screen bounds don't overlap the open-panel region (x −4…0); horizon and sun glitter (20–25° right of the view axis) unobstructed. No intersection with the panel frame or curtains. Oversized windows: RUL-23 |
+| RUL-23 | **Constant pinned scale; never scaled down** [Plan #23, D-016] | Resize Notes in the overlay to 440×560 (default), 560×640, 720×900 and to the minimum 320×200; pin each at `hero-sea`, on the back wall, on the dining table and as a float. Read `pxPerMeter`, world size and the calibration bar at 1.75 m. Screenshot the enlarged ones at `hero-sea` from the reveal point | `pxPerMeter` = 520 in every case; world size = px / 520 ±1 cm (e.g. 560×640 → 1.08×1.23 m, 720×900 → 1.38×1.73 m); calibration bar ≥ 14.0 px at 1.75 m for every size; content never scaled to fit. Record (don't fail) whether an enlarged window at `hero-sea` covers the open panels (accepted trade-off, fed into critique C2/C7); record whether a very tall window intersects the floor or ceiling there (floor: no clipping through geometry, else MINOR) |
+| RUL-24 | **One window per anchor** [Plan #24, D-016] | (a) Pin Notes at `hero-sea`, then carry Chat to within 1.5 m of it and watch the preview. (b) Pin Chat there. (c) Pick Notes up with `E`, then pin Chat again. (d) Reload with Notes on the anchor, then try to pin Chat there. (e) Minimize the anchored Notes to its pin tag, then try to pin Chat there | (a) Preview shows the anchor as taken (visibly distinct) and outlines the fallback spot instead. (b) Chat lands on a surface or floats, never on or overlapping the anchor; `placement` = `surface` or `float`. (c) Anchor is free again; Chat snaps. (d) Occupancy survives reload (derived from the persisted `anchorId`). (e) A minimized window still occupies the anchor (record; the pin tag holds its place per Pixel §3.5). In no case do two windows share an anchor or z-fight |
+| RUL-25 | **Table pose; ray stops at movement colliders; glass float ≥ 0.3 m** [Plan #25, D-016] | (a) Pin onto the dining table, desk and kitchen island from 3 standing angles each. (b) From 0.5, 1.0, 1.5 and 2.5 m away, aim at a closed glass panel and pin. (c) Stand 1 m inside a closed panel and aim at a terrace table or bench within 3 m behind the glass. (d) On the terrace, aim over the balustrade at the sea from 0.5 and 1.5 m. (e) Aim at the sofa and pin. (f) 30 random pins near every movement collider, then try to walk to each window | (a) Upright, bottom edge on the surface (±1 cm), tilted 10° ±2° back, facing the player's horizontal position, never flat. (b) Floats on the player's side at `min(1.6, d_hit − 0.3)` m: ≈ 0.2 m at 0.5 m away (record whether that's too close to use, since the formula gives < 0.3 m of distance from the player), 0.7 m at 1.0 m, 1.2 m at 1.5 m, 1.6 m at 2.5 m; always ≥ 0.3 m from the glass. (c) Never pins outside: the ray stops at the glass. (d) Floats on the terrace side, never over the sea. (e) Floats on the player's side of the sofa (not a pin surface). (f) 30/30 windows are on the walkable side and reachable |
+| RUL-26 | **FOV setting 55–75°, default 62°** [Plan #26, D-017] | Settings slider at 55, 62, 75; inject `fovDeg` 40, 90, "abc" into `ghiland:settings`; change FOV while carrying a window and while a pinned window is in view | Camera vertical FOV equals the setting (hook) and applies live without remount; default 62 on a fresh profile; out-of-range or invalid values are clamped/sanitized to 55–75 (or reset to 62) with no crash; carried offset and pinned world size unchanged; persists across reload. Comfort and legibility at the extremes: MOV-17 |
+| RUL-27 | **Lock lost while carrying → auto-pin as float** [Plan #27, D-017] | While carrying: (a) `Esc`. (b) Alt-tab. (c) Switch tabs. (d) Minimise the browser. (e) An OS dialog steals focus. (f) Trigger context loss (RUL-28). (g) Do (a) while walking fast into a wall and while facing the glass at 0.5 m | In every case the window becomes `worldPinned` with `placement` = `float` at its current pose (position ±2 cm), pin tag visible, 520 px/m, never lost, never still attached to the camera after lock returns; the tray lists it. (g) The auto-pin respects the movement-collider rules (not inside the wall, not beyond the glass); record the pose. After re-lock, `E` picks it up again |
+| RUL-28 | **Context-loss veil; `M` mutes; UI sounds + Interface slider; captions deferred** [Plan #28, D-017] | (a) `loseContext()` then `restoreContext()` after 1 s. (b) `loseContext()` with no restore for 10 s. (c) Real GPU crash (`chrome://gpucrash`). (d) Context loss while typing in pinned Notes and while carrying. (e) Mute: covered by AUD-09 and DES-23. (f) UI sounds: AUD-15. (g) Captions | (a) Calm full-screen "Restoring" veil (no error text, no flashing) appears ≤ 200 ms after loss; on restore the veil hides, the scene renders correctly (no black or missing textures, composer targets rebuilt), state is RELEASED with "Click to walk", and the typed Notes text is intact. (b) "Reload" offered at 5 s ±0.5 s; after reload, notes and pinned windows are all present (stores flushed first). (c) Same as (b) or (a), never a white screen. (d) No keystroke lost; the carried window auto-pins as float (RUL-27). (g) No captions in Alpha 0.1 (known limitation, A11Y-06); verify that no speech exists |
+| RUL-29 | **GPU memory: HIGH ≤ 384 MB (RTX 3060 tier), LOW ≤ 128 MB no MSAA** [Plan #29, D-018] | Estimator + Chrome Task Manager at V1–V8 on HIGH (1080p, DPR 1) and LOW; after 10 tier switches; after 60-min soak; the informational 1440p HIGH run | HIGH ≤ 384 MB everywhere including MSAA targets; LOW ≤ 128 MB with `multisampling` = 0; no growth after tier switches (render targets freed); soak end within 5% of the start value. 1440p result recorded (2.3) |
 
 ## 5. Destructive and edge-case tests (DES)
 
@@ -326,7 +335,7 @@ Each Master ruling gets a test that proves the build does what was decided. Inst
 |---|---|---|
 | DES-01 | Key mashing, 60 s, in WORLD, SCREEN and a focused Notes field | No crash, no stuck state, no unintended pin, close or state change |
 | DES-02 | Hold `W A S D` + `Shift` + `Space` + `Q`, release in random order | Correct final state; no drift; no ghost keys |
-| DES-03 | Alt-tab mid-drag (overlay) and **while carrying** | Drag ends cleanly; goes to RELEASED [Atlas §2.5]. Carried window behavior: OPEN X-15 (floor: not lost, still reachable via the tray) |
+| DES-03 | Alt-tab mid-drag (overlay) and **while carrying** | Drag ends cleanly; goes to RELEASED [Atlas §2.5]. Carried window auto-pins as float where it is, with its pin tag (full cases in RUL-27) |
 | DES-04 | Alt-tab while holding `W` | On return the player isn't walking |
 | DES-05 | `Esc` spam: 30 presses in 5 s in WORLD, SCREEN, a focused Notes field and during a drag [Pixel asks] | Ends in a defined state; never cursor-hidden-but-not-looking, or cursor-visible-with-nothing-clickable |
 | DES-06 | Rapid `Q`: 50 toggles in 10 s | Final state matches the last input; no orphan layers; handles lock rejections; counts back to baseline |
@@ -339,13 +348,14 @@ Each Master ruling gets a test that proves the build does what was decided. Inst
 | DES-13 | **AZERTY / non-QWERTY bindings** | Movement on physical ZQSD works on every browser (`code` matching); the Screen key is the physical `KeyQ` position (labelled "A" on AZERTY) and works. Hint labels are covered by RUL-19. Firefox/Safari wrong labels are a known limitation [Plan #19], logged once as `NON-GATING`, not re-reported |
 | DES-14 | **Italian** layout | `W A S D` in place; in Notes, è à ò ù ì and AltGr combos (AltGr+ò = @, AltGr+è = [) type correctly; on Windows AltGr = Ctrl+Alt triggers no shortcut. `/` for the launcher: on Italian "/" is Shift+7 (`Digit7`), so check whether the `/` binding is reachable |
 | DES-15 | German QWERTZ, US-International dead keys | Dead-key sequences type correctly; `F6` on laptops needing `Fn` |
-| DES-16 | Refresh mid-session: mid-type (< 300 ms after the last key), mid-drag, while carrying, while pinned | No crash; the last keystrokes survive (debounce flush on `pagehide`/`visibilitychange`); pinned restored, carried comes back as overlay [D-009, Atlas §3] |
+| DES-16 | Refresh mid-session: mid-type (< 300 ms after the last key), mid-drag, while carrying, while pinned | No crash; the last keystrokes survive (debounce flush on `pagehide`/`visibilitychange`); pinned restored. While carrying: record whether the window comes back as overlay [Atlas §3] or auto-pinned as float (the lock drops at unload, Plan #27); either is acceptable, but it must never be lost |
 | DES-17 | Browser-reserved shortcuts: Ctrl+W/T/N/Tab/L | Never bound [Pixel §1.3]; Ctrl+W right after typing loses nothing (see DES-16) |
 | DES-18 | Drag-select text in Notes and release over the world | Must NOT count as "click on empty world" and re-lock (drag guard) [Pixel §1.2] |
 | DES-19 | Right, middle, back/forward mouse buttons; browser Back | No broken state; Back doesn't silently drop unsaved state |
 | DES-20 | Two Ghiland tabs | No storage corruption (last-write-wins race on `ghiland:app:notes`); audio behavior recorded |
 | DES-21 | Tab switch during load [Pixel asks] | Loading continues; return lands in a correct state; audio per AUD-10 |
 | DES-22 | 8 h idle, tab visible | Responsive; heap in budget; the ambient scheduler hasn't drifted or stacked events |
+| DES-23 | **`M` while typing in Notes** [Plan #28, D-006] | (a) In SCREEN with Notes focused, type "Mmm memo", hold `M` for 2 s (auto-repeat), `Shift+M`, `Ctrl+M`. (b) Same in a pinned Notes after clicking into it from WORLD. (c) During IME composition (Japanese romaji containing m). (d) In SCREEN with no text focus. (e) In RELEASED. (f) `M` in WORLD, then `Q` → open Notes → type "m" → `Esc` → `Q` back to WORLD. (g) Press `M` in WORLD 10× in 2 s. Pass: (a–c) the letters appear in Notes exactly as typed, mute state never changes, no audio dip. (d, e) Behavior recorded (the ruling scopes `M` to WORLD; any mute outside WORLD is logged as MINOR). (f) Mute state set in WORLD persists through SCREEN typing and back, unchanged by typed m's. (g) The final state matches the press count parity, with no pops or stuck partial gain |
 
 ---
 
@@ -374,8 +384,8 @@ Firefox/Safari smoke run (manual unless automation is cheap): load, card click �
 | A11Y-03 | Contrast | Overlay `text-1` ≥ 4.5:1 (spec claims ~11:1), `text-2` ≥ 4.5:1 (claims ~5.5:1) over worst-case white. World windows ≥ 4.5:1 through the emissive clamp, measured from screenshots at the **terrace balustrade spot facing the sun**, the hero spot, and at night after Slow sunset | Pixel §6.7, §7; Aura §6 |
 | A11Y-04 | Reduced motion | OS preference and the in-app toggle: transforms become 120 ms fades, fly-to becomes fade out/in, no idle breathing, walk motion or turn lag | Pixel §6.5, §7; Aura §5 |
 | A11Y-05 | In-world text legibility | Measured per RUL-14 (≥ 14 px body text at 1.75 m, 1080p, FOV 62°). Plus a human check: a tester reads a 3-line Notes paragraph aloud without errors at 1.75 m head-on and at 45° oblique, at `hero-sea` and at the terrace balustrade (brightest spot) | Plan #14, Pixel §6.1, Aura §6 |
-| A11Y-06 | Audio → visual | Alpha audio carries no essential information except possible UI ticks, which have visual equivalents. Captions `PENDING SPEC` (X-17) | — |
-| A11Y-07 | Comfort options | Sensitivity, invert Y and drag-to-look exist; FOV per X-06 | Pixel §5.1, §7 |
+| A11Y-06 | Audio → visual | Alpha 0.1 has no speech; UI sounds have visual equivalents (the action they confirm is visible). **Captions deferred and recorded as a known limitation**, to be revisited for rare-event audio [Plan #28] | Plan #28 |
+| A11Y-07 | Comfort options | Sensitivity, invert Y, drag-to-look and the FOV slider (55–75°) exist; mute via `M` and Settings | Pixel §5.1, §7, D-017 |
 | A11Y-08 | Screen reader (NVDA, VoiceOver) | Each window is `role="region"` with an app-name label; hints announced through a polite live region; Notes is an editable, labelled field. The world not being described is a known limitation | Pixel §7 |
 | A11Y-09 | Photosensitivity | Nothing flashes > 3×/s: lighthouse sweep, sun glitter, spray, bloom, exposure dips | quality floor |
 
@@ -435,23 +445,24 @@ Movement feel and nausea (MOV-12/13); audio by ear (AUD-02/03/04/06/11/13); firs
 - [ ] Preview URL **or** exact run command for a **production** build, plus Node/pnpm versions
 - [ ] Commit SHA, branch, changelog since the last build
 - [ ] Known-issues list (not re-reported, but still counted against exit criteria)
-- [ ] Which spec revisions the build implements, and how it handles the remaining OPEN items (X-06, X-15, X-17, X-18, X-19, X-20)
+- [ ] Which spec revisions and Master rulings (through Plan #29 / D-018) the build implements, plus any deviations (as PR #1 did)
 - [ ] **PerfHud toggle** (Atlas `togglePerfHud`; key documented), off by default, showing FPS, frame-time graph, draw calls, triangles, geometries, textures, estimated texture MB, JS heap, resolved tier and DPR, player position, active voices, input state
 - [ ] Forced quality tier from Settings, plus a URL override for automation
 - [ ] Test hooks in test builds only (inert in prod): `window.__ghiland` with player transform get/set, camera-path runner, renderer.info snapshot, window registry with world transforms and modes, input state, audio context state, decoded audio bytes, ambient event log, `performance.mark` at entry click and `world:entered`
 - [ ] Asset manifest with compressed sizes
 - [ ] Smoke suite passes. Failing GP-1 to GP-5 means the build goes back without a full pass
-- [ ] **Greybox checkpoint (after Forge step 1, per the Master plan):** a reduced entry of URL/command, commit, and a PerfHud with FPS + input state. Sentinel runs MOV-01…MOV-16, SCR-01/02/03, DES-02/04/05/06 and RUL-15e (glass blocks movement), and reports before anything builds on it
-- [ ] **Step-7 build:** RUL-13, RUL-14 (the ruling requires this measurement), RUL-15 and RUL-21 run as soon as carry/pin lands, before the art pass
+- [ ] **Greybox checkpoint: now due.** Steps 0–1 are merged (PR #1, merge commit `eb5c545`, github.com/OBlindatTella/ghiland). Sentinel builds it in **production mode** (`pnpm build && pnpm start`), because the PR was only verified against `pnpm dev`, and runs MOV-01…MOV-16, SCR-01/02/03 (placeholder Screen; the `Esc` ladder is simplified by design per the PR), DES-02/04/05/06, RUL-15e (glass blocks movement), plus a first FPS/draw-call read via the `` ` `` readout on the gating machine. Results reported before step 2 builds on it. MOV-17 and RUL-26 wait for the FOV setting (step 3)
+- [ ] **Step-3/4 builds:** RUL-26 and MOV-17 (FOV), RUL-28a–d (context loss), AUD-09/15 and DES-23 (mute, UI sounds)
+- [ ] **Step-7 build:** RUL-13, RUL-14 (the ruling requires this measurement), RUL-15, RUL-21, RUL-23, RUL-24, RUL-25, RUL-27 run as soon as carry/pin lands, before the art pass
 
 ### 10.2 Exit: Alpha 0.1 sign-off (PROPOSAL)
 
-- [ ] Remaining OPEN items (X-06, X-15, X-17, X-18, X-19, X-20) decided or explicitly deferred by Master, and every `PENDING` expectation filled in and executed
+- [ ] No cross-spec conflicts remain open (all resolved in v0.3). Every `PENDING` expectation filled in and executed; mobile behavior recorded (out of scope)
 - [ ] 0 open BLOCKERs
 - [ ] 0 open MAJORs on golden-path areas (GP steps, MOV-08/09/10/12, WIN-04/05/16/20/21, AUD-01/02/04, LOAD-04); other MAJORs only with an owner and Francesco's written waiver
 - [ ] Golden path 10/10 in Chrome and 3/3 in Edge on the GATING tier. Firefox/Safari smoke results attached (non-gating) [D-013]
 - [ ] Gating budgets (2.2) met in Chrome on the GATING tier at HIGH, plus the FPS/1% low/load subset in Edge (and the thermal run if the reference is a laptop), or waived in writing. Informational tiers recorded per 2.3
-- [ ] All RUL-13…RUL-21 pass, with RUL-14 measured on the step-7 build
+- [ ] All RUL-13…RUL-21 and RUL-23…RUL-29 pass, with RUL-14 measured on the step-7 build
 - [ ] 60-min soak passes (heap, GPU resources, DOM, decoded audio)
 - [ ] Rubric: ≥ 3 first-time testers; average ≥ 3.5 across C1–C6; nothing averaging ≤ 2; C4 ≥ 4 (it is the product thesis); ≥ 2 of 3 complete the golden path in ≤ 3 min with hints only
 - [ ] A11Y-01/02/03/05/09 pass; the rest recorded
@@ -461,45 +472,42 @@ Movement feel and nausea (MOV-12/13); audio by ear (AUD-02/03/04/06/11/13); firs
 
 ## 11. Open questions
 
-Answered since v0.1, so removed: reference hardware (D-015), Firefox/Safari gating (D-013), budgets until measured (Plan #20), entry flow, anchors, pinned scale, occlusion, foliage AA, audio memory, key hints (Plan #13–19).
+Answered and removed: all Master questions from v0.2 (X-06, X-15, X-17, X-18, X-19, X-20 via Plan #23–28), the GPU memory budget (Plan #29), and everything listed in v0.2.
 
 For Francesco:
-1. **Exact reference machine:** do we have an RTX 3060-class machine (desktop or laptop) for the gating runs and the self-hosted perf runner? Desktop or laptop matters for the thermal run.
+1. **Exact reference machine:** do we have an RTX 3060-class machine (desktop or laptop) for the gating runs and the self-hosted perf runner? Desktop or laptop matters for the thermal run. It's needed now that the greybox checkpoint is due.
 2. **Refresh rate:** is "60 fps on HIGH" measured vsync-locked at 60 Hz (as proposed), or must it also hold uncapped on 120/144 Hz monitors?
 3. **Load-time network:** confirm 50 Mbps / 20 ms RTT cold cache as the basis for the 8 s gate.
 4. **First-time testers:** who are the ≥ 3 people, and do you accept the rubric exit bar (average ≥ 3.5, C4 ≥ 4)?
 5. **Waivers:** who can waive a missed budget or an open MAJOR (you, or Master)?
 6. **Accessibility bar:** is screen-reader support in scope for Alpha 0.1, or recorded only?
 
-For Master:
-7. X-06: does the FOV setting (55–75°) ship in Alpha 0.1? Plan #14 implies yes; Pixel §7 says no.
-8. X-18: at `hero-sea`, should an oversized window be scaled down (breaking ≥ 14 px) or keep 520 px/m and overflow the cap?
-9. X-19: what happens when a second window is pinned to an occupied anchor?
-10. X-20: horizontal pin pose (tilted 12° vs flat), and whether a ray through glass may pin on a surface behind it.
-11. X-15 / X-17: carried window on lock loss; context-loss recovery; mobile behavior; UI sounds; mute; captions.
+For Master (small, non-blocking):
+7. Mobile/tablet: what should a phone visitor see? No ruling yet; it's out of scope, so it's observe-only for now.
+8. RUL-25b: at 0.5 m from the glass the float formula puts the window about 0.2 m from the player's eye. Is that intended?
 
 ## SUMMARY
-v0.2 of the Alpha 0.1 QA and performance test plan for Seaside House. It folds in Master's rulings (Plan #13–22, D-010…D-015) and the user's hardware override. All ruled conflicts are now resolved, each with a verification test (RUL-13…RUL-21). Budgets are re-based on a dedicated-GPU gating tier (RTX 3060/3070 class, 1080p, HIGH, 60 fps, 1% low ≥ 50), with Iris Xe and M1 as informational tiers. Chromium gates sign-off; Firefox and Safari are smoke-only. Six minor items remain open, three of them new findings from Pixel Rev 2 and Atlas.
+v0.3 of the Alpha 0.1 QA and performance test plan for Seaside House. Every cross-spec conflict is now resolved by Master (Plan #13–29, D-010…D-018), and each ruling has a verification test (RUL-13…RUL-21, RUL-23…RUL-29). The gating tier is a dedicated GPU (RTX 3060 class, 1080p, HIGH, 60 fps, 1% low ≥ 50, GPU memory ≤ 384 MB); Iris Xe (LOW, ≤ 128 MB, no MSAA) and M1 are informational. Chromium gates sign-off; Firefox and Safari are smoke-only. Steps 0–1 are merged (PR #1), so the greybox checkpoint is due.
 
 ## WHAT WAS DONE
-Read ALPHA_0.1_PLAN.md items 13–22, DECISIONS.md D-010…D-015, and the revised ATLAS_ARCHITECTURE.md (22:35), AURA_WORLDS.md (22:38) and PIXEL_UI_SYSTEM.md Rev 2 (22:40). Moved X-03, X-04, X-09, X-10, X-11, X-12, X-13, X-14 to resolved; added section 4.7 with one test per ruling; rewrote section 2 (gating/informational tiers, GPU memory now includes MSAA render targets), the golden path steps affected (entry, Notes 440×560, anchor pin, glass visibility), the browser matrix, and entry/exit criteria; added section 11 (open questions).
+Read ALPHA_0.1_PLAN.md items 23–29, DECISIONS.md D-016…D-018, the 22:50 Atlas revision and PR #1 on github.com/OBlindatTella/ghiland. Marked X-06, X-15, X-17, X-18, X-19, X-20 resolved; added RUL-23…RUL-29; rewrote RUL-13/14/21, WIN-06, AUD-09/15, BRK-01/12, DES-03/16, A11Y-06/07, SCR-12; added MOV-17 (FOV extremes: comfort and pinned legibility) and DES-23 (`M` while typing in Notes); raised the HIGH GPU memory gate to 384 MB and updated the anti-aliasing buffer risk; scheduled tests by build step; updated the open questions.
 
 ## FILES / SYSTEMS AFFECTED
-docs/qa/ALPHA_0.1_TEST_PLAN.md only. No other files touched.
+/workspace/ghiland/docs/qa/ALPHA_0.1_TEST_PLAN.md only. The repo's copy of `docs/qa/` (from PR #1) isn't updated by this edit.
 
 ## IMPORTANT DECISIONS
-Recorded, not made by Sentinel: D-010…D-015 and Plan #13–22. User override D-015: dedicated-GPU gating tier. Master is being informed, and it's already logged as D-015. Proposed by Sentinel: measure the gating tier on the RTX 3060 (worst in class); gating ceilings = Atlas HIGH (≤ 150 draw calls, ≤ 750k triangles, ≤ 256 MB GPU memory including MSAA targets, heap ≤ 400 MB) with Aura's stricter numbers as non-gating targets; frame-spike, hitch and leak thresholds; RUL tolerances (anchor ±1 cm / ±1°, pinned size ±2 cm); `NON-GATING` tag for Firefox/Safari/informational-tier issues.
+Recorded, not made by Sentinel: Plan #13–29 and D-010…D-018, including the user's hardware override (D-015) and the 384 MB HIGH budget (D-018). Proposed by Sentinel: measure the gating tier on the RTX 3060; the greybox checkpoint runs on a production build; tolerances for new RULs (auto-pin pose ±2 cm, table tilt 10° ±2°, veil ≤ 200 ms, reload offer at 5 s ±0.5 s, FOV-extreme nausea ≤ 2/5); `M` outside WORLD logged as MINOR.
 
 ## RISKS
-- GPU memory: MSAA 4× composer targets likely cost ~100–130 MB at 1080p on their own (Sentinel estimate, half-float buffers), leaving little room under 256 MB for Aura's up-to-150 MB of textures; at DPR > 1 it grows ~2.25× or more.
-- X-18: the hero-sea size cap can push pinned text below the 14 px ruling if the user resized Notes first.
-- X-20: a ray through glass could pin a window outside on the terrace.
-- Streamed beds: a media-element crossfade seam or a slow-network stall could make the sea, the most important sound, glitch (RUL-18).
+- GPU memory: with 384 MB, 1080p/DPR 1 has roughly 100 MB of headroom (textures ≤ 150 MB + MSAA 4× targets ≈ 100–130 MB, Sentinel estimate). Headroom disappears at 1440p or DPR ≥ 1.5 (targets ≈ 180–230 MB or more), so a user with a 1440p monitor at HIGH may exceed the budget unless the DPR range or AUTO compensates.
+- Constant 520 px/m means a user-enlarged Notes at `hero-sea` can cover the open panels and the sea: accepted by the ruling, but it hurts the hero shot (RUL-23).
+- The 0.3 m glass rule can place a float very close to the player's face when pinning right at the glass (RUL-25b).
+- At FOV 75° pinned text drops to ~11.6 px (accepted); users who raise FOV for comfort get a less readable Notes.
 - Real-time sun shadows through the 12 m glass wall plus MSAA 4× may still miss the 1% low ≥ 50 gate on an RTX 3060.
-- Iris Xe users (the non-gating tier) may get a noticeably weaker experience; only "graceful degradation" is required.
+- The step-1 build was verified only on `pnpm dev`; production-mode behavior (and perf) is unverified until the checkpoint.
 
 ## KNOWN LIMITATIONS
-No build exists; nothing has been executed or measured. The docs changed several times during drafting; v0.2 reflects the files as read between 22:39 and 22:41. GPU memory in the browser can only be estimated. The 14 px figure is Atlas's calculation until RUL-14 measures it.
+Nothing has been executed or measured yet; the greybox checkpoint will be the first real run. GPU memory is an in-browser estimate only. Captions are deferred (Plan #28), and mobile is unspecified. v0.3 reflects the docs as read at 23:26–23:30.
 
 ## RECOMMENDED NEXT ACTION
-Francesco answers section 11 questions 1–3 (reference machine, refresh rate, network) so the perf runner can be set up before Forge step 3. Master rules on X-06, X-18, X-19 and X-20 (all touch the pin step of the golden path). Forge ships the PerfHud (with render-target memory), `window.__ghiland` hooks and the Notes calibration bar by step 7. Sentinel runs the greybox checkpoint, then RUL-13/14/15/21 on the step-7 build.
+Sentinel runs the greybox checkpoint on merge commit `eb5c545` (production build, gating machine) and files issues with the template in 1.3. Francesco answers question 1 (reference machine) so the gating runs and perf runner can start. Forge adds the PerfHud GPU-memory estimator, `window.__ghiland` hooks and the Notes calibration bar by steps 3–7, so the RUL tests can be automated.
