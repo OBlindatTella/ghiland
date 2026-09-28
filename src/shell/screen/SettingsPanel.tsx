@@ -85,7 +85,8 @@ function Slider({
 
 export function SettingsPanel() {
   const shell = useInputStore((state) => state.shellState);
-  const open = shell === 'SCREEN' && useScreenStore((state) => state.stack.includes('settings'));
+  const settingsLayer = useScreenStore((state) => state.stack.includes('settings'));
+  const open = shell === 'SCREEN' && settingsLayer;
   const settings = useSettings();
   const autoTier = usePerfStore((state) => state.autoTier);
   const [storageBlocked, setStorageBlocked] = useState(storageWriteFailed);
