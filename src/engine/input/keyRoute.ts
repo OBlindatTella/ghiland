@@ -43,12 +43,13 @@ export function decideKey(
   pointerLocked: boolean,
   repeat: boolean,
   bindings: readonly KeyBinding[] = defaultBindings,
+  composing = false,
 ): KeyDecision {
   if (editable) {
     return {
       track: false,
       preventDefault: false,
-      blurEditable: code === 'Escape' && !repeat,
+      blurEditable: code === 'Escape' && !repeat && !composing,
       action: null,
     };
   }

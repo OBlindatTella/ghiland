@@ -236,6 +236,8 @@ export class InputManager {
       this.owners.current(),
       document.pointerLockElement !== null,
       event.repeat,
+      undefined,
+      event.isComposing || event.keyCode === 229,
     );
     if (decision.track) this.keys.keyDown(event.code);
     if (decision.preventDefault) event.preventDefault();
