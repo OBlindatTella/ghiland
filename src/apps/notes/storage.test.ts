@@ -13,6 +13,7 @@ import {
   parseStoredNote,
   quarantineKey,
   electNotesLeader,
+  notesSaveDelay,
   preferNewerNotes,
   startNotesSession,
   unpackNotes,
@@ -206,15 +207,72 @@ describe('notes storage', () => {
     expect(merged.map((note) => note.body)).toEqual(['new', 'stay']);
   });
 
+  it('commits at least once a second while typing continues', () => {
+    expect(notesSaveDelay(0)).toBe(300);
+    expect(notesSaveDelay(800)).toBe(200);
+    expect(notesSaveDelay(1000)).toBe(0);
+    expect(notesSaveDelay(1500)).toBe(0);
+  });
+
   it('mirrors only dirty notes, clears them after a commit, and removes the mirror when the write fails', async () => {
     vi.resetModules();
     const buckets = new Map<string, Map<string, unknown>>();
     const store = new Map<string, string>();
     let fail = false;
-    vi.stubGlobal('localStorage', {
+    const storageApi = {
+      get length() {
+        return store.size;
+      },
+      key: (index: number) => [...store.keys()][index] ?? null,
       getItem: (key: string) => store.get(key) ?? null,
       setItem: (key: string, value: string) => {
         if (fail) throw new Error('quota');
+        store.set(key, value);
+      },
+      removeItem: (key: string) => {
+        store.delete(key);
+      },
+    };
+    vi.stubGlobal('localStorage', storageApi);
+    installMemoryIdb(buckets);
+    installLocks();
+    const storage = await import('./storage');
+    const mirrorKey = (id: string) => `${storage.NOTES_MIRROR_PREFIX}${id}`;
+    expect(await storage.startNotesSession()).toBe('writer');
+    const saved = { id: 'a', title: 'A', body: 'one', updatedAt: 1 };
+    expect(await storage.saveNotes([saved])).toBe('ok');
+    storage.rememberNotes([{ id: 'a', title: 'A', body: 'one+b', updatedAt: 2 }]);
+    storage.flushNotesMirror();
+    const mirrored = JSON.parse(store.get(mirrorKey('a')) ?? '{}') as { note: { body: string } };
+    expect(mirrored.note.body).toBe('one+b');
+    expect(await storage.saveNotes([{ id: 'a', title: 'A', body: 'one+b', updatedAt: 2 }])).toBe('ok');
+    expect(store.has(mirrorKey('a'))).toBe(false);
+    store.set(mirrorKey('a'), 'stale');
+    fail = true;
+    storage.rememberNotes([{ id: 'a', title: 'A', body: 'x'.repeat(20), updatedAt: 3 }]);
+    storage.flushNotesMirror();
+    expect(store.has(mirrorKey('a'))).toBe(false);
+    fail = false;
+    const small = { id: 'a', title: 'A', body: 'kept', updatedAt: 5 };
+    const huge = { id: 'b', title: 'B', body: 'y'.repeat(1_500_000), updatedAt: 5 };
+    storage.rememberNotes([small, huge]);
+    storage.flushNotesMirror();
+    expect(JSON.parse(store.get(mirrorKey('a')) ?? '{}').note.body).toBe('kept');
+    expect(store.has(mirrorKey('b'))).toBe(false);
+    vi.unstubAllGlobals();
+  });
+
+  it('commits a note over 200k before handing the lock to another tab', async () => {
+    vi.resetModules();
+    const buckets = new Map<string, Map<string, unknown>>();
+    const store = new Map<string, string>();
+    vi.stubGlobal('localStorage', {
+      get length() {
+        return store.size;
+      },
+      key: (index: number) => [...store.keys()][index] ?? null,
+      getItem: (key: string) => store.get(key) ?? null,
+      setItem: (key: string, value: string) => {
         store.set(key, value);
       },
       removeItem: (key: string) => {
@@ -225,23 +283,16 @@ describe('notes storage', () => {
     installLocks();
     const storage = await import('./storage');
     expect(await storage.startNotesSession()).toBe('writer');
-    const saved = { id: 'a', title: 'A', body: 'one', updatedAt: 1 };
-    expect(await storage.saveNotes([saved])).toBe('ok');
-    storage.rememberNotes([{ id: 'a', title: 'A', body: 'one+b', updatedAt: 2 }]);
-    storage.flushNotesMirror();
-    const mirrored = JSON.parse(store.get(storage.NOTES_FLUSH_KEY) ?? '{}') as { notes: { body: string }[] };
-    expect(mirrored.notes.map((note) => note.body)).toEqual(['one+b']);
-    expect(await storage.saveNotes([{ id: 'a', title: 'A', body: 'one+b', updatedAt: 2 }])).toBe('ok');
-    expect(store.has(storage.NOTES_FLUSH_KEY)).toBe(false);
-    store.set(storage.NOTES_FLUSH_KEY, 'stale');
-    fail = true;
-    storage.rememberNotes([{ id: 'a', title: 'A', body: 'x'.repeat(20), updatedAt: 3 }]);
-    storage.flushNotesMirror();
-    expect(store.has(storage.NOTES_FLUSH_KEY)).toBe(false);
-    fail = false;
-    storage.rememberNotes([{ id: 'a', title: 'A', body: 'y'.repeat(250_000), updatedAt: 4 }]);
-    storage.flushNotesMirror();
-    expect(store.has(storage.NOTES_FLUSH_KEY)).toBe(false);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    const body = `marker-${'z'.repeat(300_000)}`;
+    storage.rememberNotes([{ id: 'big', title: 'Big', body, updatedAt: 9 }]);
+    await storage.releaseNotesWriter();
+    expect(storage.notesRole()).toBe('reader');
+    const bucket = buckets.get('ghiland');
+    const record = [...(bucket?.values() ?? [])].find((value) => {
+      return Boolean(value && typeof value === 'object' && 'body' in value && (value as { body: string }).body.startsWith('marker-'));
+    }) as { body: string } | undefined;
+    expect(record?.body).toBe(body);
     vi.unstubAllGlobals();
   });
 

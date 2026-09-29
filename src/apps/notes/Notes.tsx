@@ -12,6 +12,7 @@ import {
   notesLeaderNotice,
   notesRole,
   rememberNotes,
+  notesSaveDelay,
   saveNotes,
   startNotesSession,
   subscribeNotesRole,
@@ -48,6 +49,7 @@ export default function Notes({ windowId, host }: AppProps) {
   const previewRef = useRef(preview);
   const restoreRef = useRef(remembered);
   const saveTimer = useRef(0);
+  const saveArmed = useRef(0);
   const statusText = useRef('');
   const longRef = useRef(false);
 
@@ -65,8 +67,11 @@ export default function Notes({ windowId, host }: AppProps) {
   };
 
   const scheduleSave = () => {
+    const now = Date.now();
+    if (saveArmed.current === 0) saveArmed.current = now;
     window.clearTimeout(saveTimer.current);
     saveTimer.current = window.setTimeout(() => {
+      saveArmed.current = 0;
       if (!ready.current) return;
       void saveNotes(notesRef.current).then((result) => {
         if (result === 'ok') showStatus('Saved');
@@ -74,7 +79,7 @@ export default function Notes({ windowId, host }: AppProps) {
         else if (result === 'readonly') showStatus('');
         else showStatus('This note could not be saved.');
       });
-    }, 300);
+    }, notesSaveDelay(now - saveArmed.current));
   };
 
   useEffect(() => {
