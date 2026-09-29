@@ -38,12 +38,12 @@ export function ContextGuard() {
     keepContextAttributes(gl);
     const onLost = (event: Event) => {
       event.preventDefault();
-      gl.setAnimationLoop(null);
       useGlStore.getState().lose();
       inputManager.loseContext();
       bus.emit('gl:contextLost', {});
     };
     const onRestored = () => {
+      keepContextAttributes(gl);
       useGlStore.getState().restore();
       inputManager.releaseSystem();
       gl.compile(scene, camera);

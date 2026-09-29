@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useContext, useRef } from 'react';
+import { useEffect, useContext, useRef, useState, type ReactElement } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
 import { BasicShadowMap, PCFSoftShadowMap } from 'three';
 import { Bloom, EffectComposer, EffectComposerContext, SMAA, ToneMapping } from '@react-three/postprocessing';
@@ -55,6 +55,7 @@ export function QualityDirector() {
     let generation = 0;
     let booted = false;
     const apply = () => {
+      if (useGlStore.getState().lost && booted) return;
       const next = targetTier();
       const gen = ++generation;
       if (!booted) {
@@ -68,6 +69,7 @@ export function QualityDirector() {
         useAppliedQuality.getState().setDim(true);
         window.setTimeout(() => {
           if (gen !== generation) return;
+          if (useGlStore.getState().lost) return;
           const resolved = targetTier();
           useAppliedQuality.getState().setTier(resolved);
           bus.emit('quality:changed', {
@@ -81,6 +83,9 @@ export function QualityDirector() {
       }, 400);
     };
     apply();
+    const unsubGl = useGlStore.subscribe((state, prev) => {
+      if (prev.lost && !state.lost) apply();
+    });
     const unsubSettings = useSettings.subscribe((state, prev) => {
       if (state.quality !== prev.quality) apply();
     });
@@ -92,6 +97,7 @@ export function QualityDirector() {
     });
     return () => {
       generation += 1;
+      unsubGl();
       unsubSettings();
       unsubPerf();
       unsubSession();
@@ -135,7 +141,36 @@ export function QualityDirector() {
     }
   });
 
-  return <PostStack profile={profile} />;
+  return <FrozenPost profile={profile} />;
+}
+
+/**
+ * While the context is lost, the same composer element is returned so EffectComposer
+ * does not remove and re-add passes. After restore, a new element rebuilds the stack.
+ */
+function FrozenPost({ profile }: { profile: QualityProfile }) {
+  const cache = useRef<{ profile: QualityProfile; generation: number; element: ReactElement } | null>(null);
+  const generation = useRef(0);
+  const [, bump] = useState(0);
+
+  useEffect(() => {
+    return useGlStore.subscribe((state, prev) => {
+      if (!prev.lost || state.lost) return;
+      generation.current += 1;
+      cache.current = null;
+      bump((value) => value + 1);
+    });
+  }, []);
+
+  if (useGlStore.getState().lost && cache.current) return cache.current.element;
+  if (!cache.current || cache.current.profile !== profile || cache.current.generation !== generation.current) {
+    cache.current = {
+      profile,
+      generation: generation.current,
+      element: <PostStack key={generation.current} profile={profile} />,
+    };
+  }
+  return cache.current.element;
 }
 
 /** SMAA on LOW/MED, bloom and MSAA on HIGH/ULTRA, AgX on every tier. */
@@ -186,6 +221,7 @@ function ComposerLifecycle() {
   useEffect(() => {
     let release = () => {};
     const id = window.requestAnimationFrame(() => {
+      if (useGlStore.getState().lost) return;
       composer.setSize(size.width, size.height);
       release = trackGpuBytes(composerGpuBytes(composer));
     });

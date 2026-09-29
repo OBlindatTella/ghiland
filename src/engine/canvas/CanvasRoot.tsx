@@ -14,7 +14,6 @@ import { SceneManager } from '@/engine/scene/SceneManager';
 import { CrosshairRig } from '@/engine/windows/CrosshairRig';
 import { WindowRig } from '@/engine/windows/WindowRig';
 import { ExposureDirector } from '@/engine/environment/ExposureDirector';
-import { useGlStore } from '@/state/gl';
 import { useSession } from '@/state/session';
 
 let canvasMounts = 0;
@@ -48,12 +47,11 @@ function CanvasLifecycle() {
 }
 
 export function CanvasRoot() {
-  const lost = useGlStore((state) => state.lost);
   const tier = useAppliedQuality((state) => state.tier);
   return (
     <div className="absolute inset-0">
       <Canvas
-        frameloop={lost ? 'never' : 'always'}
+        frameloop="always"
         dpr={qualityProfiles[tier].dpr}
         shadows={false}
         gl={{

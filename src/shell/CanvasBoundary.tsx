@@ -1,6 +1,7 @@
 'use client';
 
 import { Component, type ReactNode } from 'react';
+import { useGlStore } from '@/state/gl';
 
 export const CANVAS_FAILURE_MESSAGE =
   "This place needs WebGL2, and this browser couldn't start it.";
@@ -16,10 +17,18 @@ interface BoundaryState {
  * Catches a WebGL2 context failure or a failed engine chunk inside GhilandApp.
  * The canvas lives in the root layout, so a route error boundary would miss it.
  */
+/** A lost context is the veil's job. Replacing the canvas here would make restore impossible. */
+export function isContextLossError(error: unknown): boolean {
+  if (useGlStore.getState().lost) return true;
+  const message = error instanceof Error ? error.message : String(error ?? '');
+  return /getContextAttributes|reading 'alpha'|context lost|webglcontextlost/i.test(message);
+}
+
 export class CanvasBoundary extends Component<{ children: ReactNode }, BoundaryState> {
   state: BoundaryState = { failed: false, webgl: false };
 
   static getDerivedStateFromError(error: unknown): BoundaryState {
+    if (isContextLossError(error)) return { failed: false, webgl: false };
     const message = error instanceof Error ? error.message : String(error ?? '');
     return { failed: true, webgl: /webgl/i.test(message) };
   }

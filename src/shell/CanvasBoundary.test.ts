@@ -1,6 +1,7 @@
 import { createElement } from 'react';
 import { describe, expect, it } from 'vitest';
 import { CANVAS_FAILURE_MESSAGE, CANVAS_RELOAD_MESSAGE, CanvasBoundary } from '@/shell/CanvasBoundary';
+import { useGlStore } from '@/state/gl';
 
 describe('canvas error boundary', () => {
   it('shows a calm message when the canvas fails to start', () => {
@@ -23,5 +24,20 @@ describe('canvas error boundary', () => {
       throw new Error('expected a fallback element');
     }
     expect(JSON.stringify(chunk.props.children)).toContain(CANVAS_RELOAD_MESSAGE);
+  });
+
+  it('keeps the canvas mounted when the error is a lost context', () => {
+    const boundary = new CanvasBoundary({ children: createElement('canvas') });
+    useGlStore.getState().lose();
+    boundary.state = CanvasBoundary.getDerivedStateFromError(
+      new TypeError("Cannot read properties of null (reading 'alpha')"),
+    );
+    expect(boundary.state.failed).toBe(false);
+    expect(boundary.render()).toEqual(createElement('canvas'));
+    useGlStore.setState({ lost: false, lostAt: null });
+    boundary.state = CanvasBoundary.getDerivedStateFromError(
+      new TypeError("Cannot read properties of null (reading 'alpha')"),
+    );
+    expect(boundary.state.failed).toBe(false);
   });
 });
