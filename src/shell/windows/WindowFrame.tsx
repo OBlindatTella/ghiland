@@ -9,6 +9,7 @@ import { bindWindowElement } from '@/engine/windows/domRegistry';
 import { requestDetach, requestPin, requestRecall } from '@/engine/windows/bridge';
 import { closeAppWindow, focusAppWindow, minimizeAppWindow } from '@/shell/windows/commands';
 import { subscribePulse, windowPulsing } from '@/shell/windows/pulse';
+import { useInputStore } from '@/state/input';
 import { useWindows } from '@/state/windows';
 
 const EDGES: ResizeEdge[] = ['n', 's', 'e', 'w', 'ne', 'nw', 'se', 'sw'];
@@ -58,6 +59,10 @@ export function WindowFrame({
     let outsideSince: number | null = null;
     const outside = (next: PointerEvent) => next.clientY <= 0 || next.clientX <= 0 || next.clientX >= window.innerWidth;
     const move = (next: PointerEvent) => {
+      if (next.buttons === 0) {
+        cancel();
+        return;
+      }
       const dx = next.clientX - start.x;
       const dy = next.clientY - start.y;
       if (dx * dx + dy * dy < 16 && outsideSince === null) return;
@@ -71,16 +76,36 @@ export function WindowFrame({
       outsideSince ??= performance.now();
       setLift(true);
     };
-    const up = () => {
-      const held = outsideSince !== null && performance.now() - outsideSince >= 300;
+    let ended = false;
+    const stop = (detach: boolean) => {
+      if (ended) return;
+      ended = true;
+      const held = detach && outsideSince !== null && performance.now() - outsideSince >= 300;
       outsideSince = null;
       setLift(false);
       pointer.removeEventListener('pointermove', move);
       pointer.removeEventListener('pointerup', up);
+      pointer.removeEventListener('pointercancel', cancel);
+      pointer.removeEventListener('lostpointercapture', cancel);
+      window.removeEventListener('keydown', onKey);
+      window.removeEventListener('blur', cancel);
+      unshell();
       if (held) requestDetach(instance.id);
     };
+    const up = () => stop(true);
+    const cancel = () => stop(false);
+    const onKey = (next: KeyboardEvent) => {
+      if (next.code === 'Escape' || next.code === 'KeyQ') cancel();
+    };
+    const unshell = useInputStore.subscribe((state, prev) => {
+      if (state.shellState !== prev.shellState) cancel();
+    });
     pointer.addEventListener('pointermove', move);
     pointer.addEventListener('pointerup', up);
+    pointer.addEventListener('pointercancel', cancel);
+    pointer.addEventListener('lostpointercapture', cancel);
+    window.addEventListener('keydown', onKey);
+    window.addEventListener('blur', cancel);
   };
 
   const onResizeDown = (edge: ResizeEdge) => (event: ReactPointerEvent<HTMLElement>) => {
@@ -90,7 +115,23 @@ export function WindowFrame({
     const start = { x: event.clientX, y: event.clientY, rect: useWindows.getState().windows[instance.id]?.lastScreenRect ?? rect };
     const pointer = event.currentTarget;
     pointer.setPointerCapture(event.pointerId);
+    let ended = false;
+    const end = () => {
+      if (ended) return;
+      ended = true;
+      pointer.removeEventListener('pointermove', move);
+      pointer.removeEventListener('pointerup', end);
+      pointer.removeEventListener('pointercancel', end);
+      pointer.removeEventListener('lostpointercapture', end);
+      window.removeEventListener('keydown', onKey);
+      window.removeEventListener('blur', end);
+      unshell();
+    };
     const move = (next: PointerEvent) => {
+      if (next.buttons === 0) {
+        end();
+        return;
+      }
       const resized = resizeRect(
         start.rect,
         edge,
@@ -102,12 +143,18 @@ export function WindowFrame({
       const fitted = dragRect(resized, 0, 0, bounds());
       useWindows.getState().setRect(instance.id, { ...resized, x: fitted.x, y: fitted.y });
     };
-    const up = () => {
-      pointer.removeEventListener('pointermove', move);
-      pointer.removeEventListener('pointerup', up);
+    const onKey = (next: KeyboardEvent) => {
+      if (next.code === 'Escape' || next.code === 'KeyQ') end();
     };
+    const unshell = useInputStore.subscribe((state, prev) => {
+      if (state.shellState !== prev.shellState) end();
+    });
     pointer.addEventListener('pointermove', move);
-    pointer.addEventListener('pointerup', up);
+    pointer.addEventListener('pointerup', end);
+    pointer.addEventListener('pointercancel', end);
+    pointer.addEventListener('lostpointercapture', end);
+    window.addEventListener('keydown', onKey);
+    window.addEventListener('blur', end);
   };
 
   return (
