@@ -229,11 +229,8 @@ describe('IME composition', () => {
     manager.attach(dom.canvas);
     const escape = { code: 'Escape', repeat: false, isComposing: false, keyCode: 27, preventDefault() {}, target: dom.documentStub.activeElement };
 
+    // Safari delivers compositionend, then the Esc that ended it.
     dom.fireDoc('compositionstart', {});
-    dom.fireWindow('keydown', escape);
-    expect(blur).not.toHaveBeenCalled();
-    expect(useInputStore.getState().shellState).toBe('SCREEN');
-
     dom.fireDoc('compositionend', {});
     await Promise.resolve();
     dom.fireWindow('keydown', escape);

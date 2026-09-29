@@ -151,7 +151,8 @@ export function heuristicTier(input: {
   now?: number;
 }): QualityTier {
   const capped = ceilingStillValid(input.ceiling ?? null, input.renderer, input.now ?? Date.now());
-  if (input.lastGood) return capTier(input.lastGood, capped);
+  // AUTO never selects ULTRA, including a last-good tier saved before the ceiling (D-041).
+  if (input.lastGood) return capTier(capTier(input.lastGood, capped), AUTO_MAX_TIER);
   const renderer = input.renderer.toLowerCase();
   const weak =
     /swiftshader|llvmpipe|basic render|intel\(r\) hd|intel\(r\) uhd|intel\(r\) iris\(r\) xe|mali-4|adreno \(tm\) [345]/.test(renderer) ||
