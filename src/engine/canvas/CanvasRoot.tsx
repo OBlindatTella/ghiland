@@ -32,6 +32,7 @@ function CanvasLifecycle() {
       textures: gl.info.memory.textures,
       geometries: gl.info.memory.geometries,
       toneMapping: gl.toneMapping,
+      programs: gl.info.programs?.length ?? 0,
     }));
     camera.rotation.order = 'YXZ';
     camera.rotation.y = Math.PI;

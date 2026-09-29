@@ -11,6 +11,7 @@ export type ShellEvent =
   | { type: 'toggleScreen' }
   | { type: 'escape' }
   | { type: 'clickEmptyWorld' }
+  | { type: 'carryIntoWorld' }
   | { type: 'blur' }
   | { type: 'tabHidden' }
   | { type: 'pointerLockGained' }
@@ -131,6 +132,13 @@ export function reduceShell(
       }
       return {
         model: { ...model, relockBlocked: false },
+        effects: [{ type: 'requestPointerLock' }],
+      };
+
+    case 'carryIntoWorld':
+      if (model.state === 'WORLD') return none(model);
+      return {
+        model: released,
         effects: [{ type: 'requestPointerLock' }],
       };
 

@@ -11,11 +11,16 @@ export function renderTargetBytes(width: number, height: number, samples: number
   return pixels * 8 + (depth ? pixels * 4 : 0);
 }
 
+const releasedComposers = new WeakSet<object>();
+
 /**
  * Frees this composer's render targets and passes.
  * Does not call `EffectComposer.dispose()`, which also deletes the shared fullscreen geometry.
+ * A second call is a no-op so context loss and the React unmount can both ask.
  */
 export function releaseComposerTargets(composer: ComposerBuffers): void {
+  if (releasedComposers.has(composer)) return;
+  releasedComposers.add(composer);
   for (const pass of [...composer.passes]) pass.dispose();
   composer.passes.length = 0;
   composer.depthRenderTarget?.dispose();

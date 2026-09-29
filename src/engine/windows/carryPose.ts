@@ -17,6 +17,34 @@ interface Spring {
 
 const springs = new Map<string, Spring>();
 
+export interface CarryFrame {
+  id: string;
+  position: [number, number, number];
+}
+
+const TRACE_CAP = 360;
+let traceOn = false;
+const trace: CarryFrame[] = [];
+
+export function setCarryTrace(on: boolean): void {
+  traceOn = on;
+  if (!on) trace.length = 0;
+}
+
+export function noteCarryFrame(id: string, position: readonly number[]): void {
+  if (!traceOn) return;
+  trace.push({ id, position: [position[0] ?? 0, position[1] ?? 0, position[2] ?? 0] });
+  if (trace.length > TRACE_CAP) trace.splice(0, trace.length - TRACE_CAP);
+}
+
+export function readCarryFrames(): CarryFrame[] {
+  return trace.map((frame) => ({ id: frame.id, position: [...frame.position] }));
+}
+
+export function clearCarryFrames(): void {
+  trace.length = 0;
+}
+
 function nlerp(from: Quat, to: Quat, t: number): Quat {
   let bx = to[0];
   let by = to[1];
@@ -73,13 +101,16 @@ export function stepCarry(id: string, target: CarryPose, dt: number): CarryPose 
     springs.set(id, spring);
   }
   let left = total;
-  if (left === 0) return { position: [...spring.position], quaternion: [...spring.quaternion] };
-  while (left > 1e-6) {
-    const step = Math.min(SUBSTEP, left);
-    integrate(spring, target, step);
-    left -= step;
+  if (left > 0) {
+    while (left > 1e-6) {
+      const step = Math.min(SUBSTEP, left);
+      integrate(spring, target, step);
+      left -= step;
+    }
   }
-  return { position: [...spring.position], quaternion: [...spring.quaternion] };
+  const pose: CarryPose = { position: [...spring.position], quaternion: [...spring.quaternion] };
+  noteCarryFrame(id, pose.position);
+  return pose;
 }
 
 export function carryTarget(origin: Vec3, forward: Vec3, quaternion: Quat): CarryPose {

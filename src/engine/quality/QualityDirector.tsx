@@ -5,7 +5,8 @@ import { useFrame, useThree } from '@react-three/fiber';
 import { BasicShadowMap, PCFSoftShadowMap } from 'three';
 import { Bloom, EffectComposer, EffectComposerContext, SMAA, ToneMapping } from '@react-three/postprocessing';
 import { COMPOSER_TONE_MODE, readComposerTone } from '@/engine/quality/toneState';
-import { composerGpuBytes, releaseComposerTargets, shadowMapBytes, trackGpuBytes, trackedGpuBytes } from '@/engine/quality/gpuMemory';
+import { composerGpuBytes, releaseComposerTargets, shadowMapBytes, trackGpuBytes, trackedGpuBytes, type ComposerBuffers } from '@/engine/quality/gpuMemory';
+import { readFps } from '@/engine/quality/fakeFps';
 import { bus } from '@/engine/events/bus';
 import { heuristicTier, initialAutoClock, stepAutoQuality, ceilingStillValid, type AutoClock } from '@/engine/quality/autoQuality';
 import { qualityProfiles } from '@/engine/quality/profiles';
@@ -128,9 +129,11 @@ export function QualityDirector() {
 
   useFrame((_, dt) => {
     if (useSettings.getState().quality !== 'AUTO' || useGlStore.getState().lost) return;
-    if (useSession.getState().worldPhase !== 'active' || perfSample.fps <= 0) return;
+    if (useSession.getState().worldPhase !== 'active') return;
+    const sample = readFps(perfSample.fps);
+    if (!sample.injected && sample.fps <= 0) return;
     const previousCeiling = clock.current.ceiling;
-    const next = stepAutoQuality(clock.current, perfSample.fps, dt);
+    const next = stepAutoQuality(clock.current, sample.fps, dt);
     clock.current = next;
     if (next.remember) {
       const tier = next.remember;
@@ -153,25 +156,22 @@ export function QualityDirector() {
 const MemoPost = memo(PostStack);
 
 /**
- * While the context is lost, the post stack keeps the profile it had and does not
- * re-render, so EffectComposer does not remove and re-add passes. After restore
- * the key changes and the stack builds again.
+ * While the context is lost the post stack unmounts, so its materials and render
+ * targets release against the current program cache. After restore the key changes
+ * and one new stack is built into the replacement cache.
  */
 function FrozenPost({ profile }: { profile: QualityProfile }) {
-  const [held, setHeld] = useState<QualityProfile | null>(null);
+  const lost = useGlStore((state) => state.lost);
   const [generation, setGeneration] = useState(0);
 
   useEffect(() => {
     return useGlStore.subscribe((state, prev) => {
-      if (!prev.lost && state.lost) setHeld(profile);
-      if (prev.lost && !state.lost) {
-        setHeld(null);
-        setGeneration((value) => value + 1);
-      }
+      if (prev.lost && !state.lost) setGeneration((value) => value + 1);
     });
-  }, [profile]);
+  }, []);
 
-  return <MemoPost key={generation} profile={held ?? profile} />;
+  if (lost) return null;
+  return <MemoPost key={generation} profile={profile} />;
 }
 
 /** SMAA on LOW/MED, bloom and MSAA on HIGH/ULTRA, AgX on every tier. */
@@ -204,6 +204,12 @@ export function readLiveComposer(rendererToneMapping: number) {
 
 export function readTrackedGpuBytes(): number {
   return trackedGpuBytes();
+}
+
+/** Context loss and restore both ask. The React unmount asks again; the release is idempotent. */
+export function releaseLiveComposer(): void {
+  if (!liveComposer) return;
+  releaseComposerTargets(liveComposer as ComposerBuffers);
 }
 
 function ComposerLifecycle() {

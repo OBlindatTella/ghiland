@@ -130,6 +130,30 @@ describe('pointer lock without a promise', () => {
     useInputStore.getState().reset();
   });
 
+  it('a detach whose lock is rejected shows Click to walk and the next click locks', () => {
+    const dom = installDom();
+    const manager = new InputManager();
+    useInputStore.setState({ shellState: 'SCREEN', owner: 'ui', showClickToWalk: false, relockBlocked: false });
+    manager.attach(dom.canvas);
+    manager.presentWorld();
+    expect(useInputStore.getState().shellState).toBe('RELEASED');
+    expect(useInputStore.getState().showClickToWalk).toBe(true);
+    expect(dom.requestPointerLock).toHaveBeenCalledTimes(1);
+    dom.fireDoc('pointerlockerror', {});
+    expect(useInputStore.getState().shellState).toBe('RELEASED');
+    expect(useInputStore.getState().showClickToWalk).toBe(true);
+    expect(useInputStore.getState().relockBlocked).toBe(true);
+    expect(dom.requestPointerLock).toHaveBeenCalledTimes(1);
+    dom.fireCanvas('pointerdown', { clientX: 4, clientY: 4, target: {} });
+    dom.fireCanvas('click', { clientX: 4, clientY: 4, target: {} });
+    expect(dom.requestPointerLock).toHaveBeenCalledTimes(2);
+    dom.documentStub.pointerLockElement = dom.canvas;
+    dom.fireDoc('pointerlockchange', {});
+    expect(useInputStore.getState().shellState).toBe('WORLD');
+    expect(useInputStore.getState().showClickToWalk).toBe(false);
+    manager.detach();
+  });
+
   it('counts pointerlockerror when requestPointerLock returns undefined', () => {
     const dom = installDom();
     const manager = new InputManager();
@@ -166,6 +190,39 @@ describe('pointer lock without a promise', () => {
     expect(useInputStore.getState().shellState).toBe('WORLD');
     expect(useInputStore.getState().pointerLocked).toBe(true);
     expect(dom.exits()).toBe(0);
+    manager.detach();
+  });
+});
+
+describe('IME composition', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    useInputStore.getState().reset();
+  });
+
+  it('compositionstart and compositionend keep Escape from blurring or stepping the shell', async () => {
+    const dom = installDom();
+    const manager = new InputManager();
+    const blur = vi.fn();
+    useInputStore.setState({ shellState: 'SCREEN', owner: 'ui', showClickToWalk: false });
+    dom.documentStub.activeElement = { tagName: 'TEXTAREA', blur };
+    manager.attach(dom.canvas);
+    const escape = { code: 'Escape', repeat: false, isComposing: false, keyCode: 27, preventDefault() {}, target: dom.documentStub.activeElement };
+
+    dom.fireDoc('compositionstart', {});
+    dom.fireWindow('keydown', escape);
+    expect(blur).not.toHaveBeenCalled();
+    expect(useInputStore.getState().shellState).toBe('SCREEN');
+
+    dom.fireDoc('compositionend', {});
+    dom.fireWindow('keydown', escape);
+    expect(blur).not.toHaveBeenCalled();
+    expect(useInputStore.getState().shellState).toBe('SCREEN');
+
+    await Promise.resolve();
+    dom.fireWindow('keydown', escape);
+    expect(blur).toHaveBeenCalledTimes(1);
+    expect(useInputStore.getState().shellState).toBe('SCREEN');
     manager.detach();
   });
 });

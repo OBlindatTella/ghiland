@@ -35,6 +35,10 @@ export class InputManager {
   /** Ignore blur and tab-hide caused by our own window.open, so the Web tile stays on SCREEN. */
   private externalOpenUntil = 0;
   private externalHold = false;
+  /** True from compositionstart until compositionend. */
+  private composing = false;
+  /** The Escape that ends a composition must not also blur or step the shell. */
+  private compositionEscape = false;
 
   attach(canvas: HTMLElement): () => void {
     this.detach();
@@ -46,6 +50,8 @@ export class InputManager {
     document.addEventListener('visibilitychange', this.onVisibility);
     document.addEventListener('pointerlockchange', this.onLockChange);
     document.addEventListener('pointerlockerror', this.onLockError);
+    document.addEventListener('compositionstart', this.onCompositionStart);
+    document.addEventListener('compositionend', this.onCompositionEnd);
     canvas.addEventListener('pointerdown', this.onPointerDown);
     canvas.addEventListener('click', this.onClick);
     return () => this.detach();
@@ -59,6 +65,10 @@ export class InputManager {
     document.removeEventListener('visibilitychange', this.onVisibility);
     document.removeEventListener('pointerlockchange', this.onLockChange);
     document.removeEventListener('pointerlockerror', this.onLockError);
+    document.removeEventListener('compositionstart', this.onCompositionStart);
+    document.removeEventListener('compositionend', this.onCompositionEnd);
+    this.composing = false;
+    this.compositionEscape = false;
     this.canvas.removeEventListener('pointerdown', this.onPointerDown);
     this.canvas.removeEventListener('click', this.onClick);
     window.clearTimeout(this.blurTimer);
@@ -124,16 +134,11 @@ export class InputManager {
     this.externalOpenUntil = Date.now() + 500;
   }
 
-  /** Detach closes the Screen and asks for pointer lock. */
+  /** Detach closes the Screen and asks for pointer lock. A denied lock stays RELEASED, still carrying. */
   presentWorld(): void {
     if (!this.gameplayOpen()) return;
-    const state = this.readModel().state;
-    if (state === 'WORLD') return;
-    if (state === 'SCREEN') {
-      this.apply(reduceShell(this.readModel(), { type: 'toggleScreen' }));
-      return;
-    }
-    this.apply(reduceShell(this.readModel(), { type: 'clickEmptyWorld' }));
+    if (this.readModel().state === 'WORLD') return;
+    this.apply(reduceShell(this.readModel(), { type: 'carryIntoWorld' }));
   }
 
   private readModel(): ShellModel {
@@ -231,6 +236,12 @@ export class InputManager {
   private onKeyDown = (event: KeyboardEvent): void => {
     if (!this.gameplayOpen()) return;
     const editable = isEditableElement(event.target) || isEditableElement(document.activeElement);
+    const composing =
+      this.composing ||
+      Boolean(event.isComposing) ||
+      event.keyCode === 229 ||
+      (event.code === 'Escape' && this.compositionEscape);
+    if (event.code === 'Escape') this.compositionEscape = false;
     const decision = decideKey(
       event.code,
       editable,
@@ -238,7 +249,7 @@ export class InputManager {
       document.pointerLockElement !== null,
       event.repeat,
       undefined,
-      event.isComposing || event.keyCode === 229,
+      composing,
     );
     if (decision.track) this.keys.keyDown(event.code);
     if (decision.preventDefault) event.preventDefault();
@@ -275,6 +286,19 @@ export class InputManager {
 
   private onKeyUp = (event: KeyboardEvent): void => {
     this.keys.keyUp(event.code);
+  };
+
+  private onCompositionStart = (): void => {
+    this.composing = true;
+    this.compositionEscape = false;
+  };
+
+  private onCompositionEnd = (): void => {
+    this.composing = false;
+    this.compositionEscape = true;
+    queueMicrotask(() => {
+      this.compositionEscape = false;
+    });
   };
 
   private onBlur = (): void => {

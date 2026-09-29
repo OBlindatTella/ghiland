@@ -5,6 +5,8 @@ import { useThree } from '@react-three/fiber';
 import type { WebGLRenderer } from 'three';
 import { bus } from '@/engine/events/bus';
 import { inputManager } from '@/engine/input/InputManager';
+import { releaseRendererPrograms } from '@/engine/quality/contextRelease';
+import { releaseLiveComposer } from '@/engine/quality/QualityDirector';
 import { useGlStore } from '@/state/gl';
 
 const FALLBACK_ATTRIBUTES: WebGLContextAttributes = {
@@ -36,11 +38,19 @@ export function ContextGuard() {
   useEffect(() => {
     const canvas = gl.domElement;
     keepContextAttributes(gl);
+    const releaseLostGpu = () => {
+      releaseLiveComposer();
+      releaseRendererPrograms(gl);
+    };
     const onLost = (event: Event) => {
       event.preventDefault();
+      releaseLostGpu();
       useGlStore.getState().lose();
       inputManager.loseContext();
       bus.emit('gl:contextLost', {});
+    };
+    const onRestoreBeforeThree = () => {
+      releaseLostGpu();
     };
     const onRestored = () => {
       keepContextAttributes(gl);
@@ -51,9 +61,11 @@ export function ContextGuard() {
       bus.emit('gl:contextRestored', {});
     };
     canvas.addEventListener('webglcontextlost', onLost);
+    canvas.addEventListener('webglcontextrestored', onRestoreBeforeThree, true);
     canvas.addEventListener('webglcontextrestored', onRestored);
     return () => {
       canvas.removeEventListener('webglcontextlost', onLost);
+      canvas.removeEventListener('webglcontextrestored', onRestoreBeforeThree, true);
       canvas.removeEventListener('webglcontextrestored', onRestored);
     };
   }, [gl, scene, camera]);
