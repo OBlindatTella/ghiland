@@ -42,6 +42,18 @@ export function WindowLayer() {
     if (active?.closest?.('[data-ghiland-window]')) active.blur();
   }, [visible]);
 
+  useEffect(() => {
+    const node = document.querySelector<HTMLElement>('[data-testid="window-stage"]');
+    if (!node) return;
+    const pin = () => {
+      if (node.scrollTop !== 0) node.scrollTop = 0;
+      if (node.scrollLeft !== 0) node.scrollLeft = 0;
+    };
+    node.addEventListener('scroll', pin);
+    pin();
+    return () => node.removeEventListener('scroll', pin);
+  }, []);
+
   const open = Object.values(windows)
     .filter((item) => item.state !== 'minimized')
     .sort((a, b) => a.z - b.z);

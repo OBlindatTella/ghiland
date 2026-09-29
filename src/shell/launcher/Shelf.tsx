@@ -62,7 +62,7 @@ export function Shelf() {
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (focused) ref.current?.focus();
+    if (focused) ref.current?.focus({ preventScroll: true });
   }, [focused]);
 
   if (shell !== 'SCREEN') return null;
@@ -75,10 +75,10 @@ export function Shelf() {
     const index = buttons.indexOf(document.activeElement as HTMLButtonElement);
     if (event.key === 'ArrowRight' && index >= 0) {
       event.preventDefault();
-      buttons[Math.min(buttons.length - 1, index + 1)]?.focus();
+      buttons[Math.min(buttons.length - 1, index + 1)]?.focus({ preventScroll: true });
     } else if (event.key === 'ArrowLeft' && index >= 0) {
       event.preventDefault();
-      buttons[Math.max(0, index - 1)]?.focus();
+      buttons[Math.max(0, index - 1)]?.focus({ preventScroll: true });
     }
   };
 

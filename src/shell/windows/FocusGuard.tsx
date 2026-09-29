@@ -40,15 +40,15 @@ export function FocusGuard() {
       const active = document.activeElement;
       if (!(active instanceof Node) || !root.contains(active)) {
         event.preventDefault();
-        (event.shiftKey ? last : first).focus();
+        (event.shiftKey ? last : first).focus({ preventScroll: true });
         return;
       }
       if (!event.shiftKey && active === last) {
         event.preventDefault();
-        first.focus();
+        first.focus({ preventScroll: true });
       } else if (event.shiftKey && active === first) {
         event.preventDefault();
-        last.focus();
+        last.focus({ preventScroll: true });
       }
     };
     const onFocus = (event: FocusEvent) => {

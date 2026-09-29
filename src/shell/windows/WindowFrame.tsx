@@ -56,7 +56,7 @@ export function WindowFrame({
     focusAppWindow(instance.id);
     const start = { x: event.clientX, y: event.clientY, rect };
     const pointer = event.currentTarget;
-    pointer.closest('article')?.focus();
+    pointer.closest('article')?.focus({ preventScroll: true });
     pointer.setPointerCapture(event.pointerId);
     let origin = rect;
     let outsideSince: number | null = null;

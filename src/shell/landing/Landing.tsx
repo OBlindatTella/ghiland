@@ -23,7 +23,7 @@ export function Landing({
   const previews = worlds.filter((world) => world.status === 'preview');
 
   useEffect(() => {
-    seasideRef.current?.focus();
+    seasideRef.current?.focus({ preventScroll: true });
   }, [preselected]);
 
   return (

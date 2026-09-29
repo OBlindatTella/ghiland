@@ -142,6 +142,7 @@ export default function Notes({ windowId, host }: AppProps) {
       field.setSelectionRange(restore.selectionStart, restore.selectionEnd);
       restoreRef.current = null;
     }
+    if (document.activeElement !== field) field.focus({ preventScroll: true });
   }, [notes, current?.id]);
 
   useEffect(() => {
@@ -280,7 +281,6 @@ export default function Notes({ windowId, host }: AppProps) {
               ref={bodyRef}
               data-testid="notes-body"
               aria-label="Note"
-              autoFocus
               className="min-h-0 flex-1 resize-none bg-transparent px-4 py-3 text-[15px] leading-6 outline-none"
               value={current.body}
               readOnly={role !== 'writer' || problem !== null}
