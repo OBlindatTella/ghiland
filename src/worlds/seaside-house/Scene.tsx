@@ -5,12 +5,16 @@ import { useFrame, useThree } from '@react-three/fiber';
 import {
   Color,
   DirectionalLight,
+  Mesh,
   MeshBasicMaterial,
   MeshStandardMaterial,
   Object3D,
+  PlaneGeometry,
+  Scene,
+  type Camera,
+  type WebGLRenderer,
   type Material,
   type InstancedMesh,
-  type Mesh,
 } from 'three';
 import { trackGpuBytes } from '@/engine';
 import type { WorldSceneProps } from '@/contracts/world';
@@ -20,7 +24,7 @@ import { rockLayout } from './art/rocks';
 import { cloudLayers, curtainSegments, leafCount, oceanSegments, rockDetail, textureSizeForTier, waveCount } from './art/scale';
 import { shadowFrustum } from './art/shadowFit';
 import { createOceanMaterial, createSkyMaterial } from './art/shaders';
-import { cloneRepeat, estimateTextureBytes, seasideMaps, type SeasideMaps } from './art/textures';
+import { cachedTextureSizes, cloneRepeat, estimateTextureBytes, retainTextureSize, seasideMaps, type SeasideMaps } from './art/textures';
 import { FIG_AT, furnitureVisuals, type FurnishMaterial } from './furniture';
 import { levelBoxes, SEA_Y } from './level';
 import { sunDirection } from './sun';
@@ -87,7 +91,7 @@ interface HouseMaterials {
   dispose: () => void;
 }
 
-function buildHouseMaterials(maps: SeasideMaps): HouseMaterials {
+function buildHouseMaterials(maps: SeasideMaps, foliage: 'alphaTest' | 'alphaToCoverage'): HouseMaterials {
   const owned: Material[] = [];
   const mapped = (source: SeasideMaps[keyof SeasideMaps], repeat: [number, number], color: string, roughness: number) => {
     const map = cloneRepeat(source, repeat[0], repeat[1]);
@@ -110,7 +114,8 @@ function buildHouseMaterials(maps: SeasideMaps): HouseMaterials {
   const leafMap = cloneRepeat(maps.leaf, 1, 1);
   const leaf = new MeshStandardMaterial({
     map: leafMap,
-    alphaTest: 0.4,
+    alphaTest: foliage === 'alphaToCoverage' ? 0.35 : 0.4,
+    alphaToCoverage: foliage === 'alphaToCoverage',
     roughness: 0.7,
     metalness: 0,
     side: 2,
@@ -285,14 +290,30 @@ function SolidMesh({
   );
 }
 
+/** Compile the tier variants once during load so an AUTO switch does not hitch on a new program. */
+async function compileTierShaders(gl: WebGLRenderer, camera: Camera): Promise<void> {
+  const probe = new Scene();
+  const geo = new PlaneGeometry(1, 1);
+  const alpha = new MeshStandardMaterial({ alphaTest: 0.4 });
+  const coverage = new MeshStandardMaterial({ alphaTest: 0.35, alphaToCoverage: true });
+  const ocean = createOceanMaterial(5);
+  const sky = createSkyMaterial(3);
+  const curtain = createCurtainMaterial();
+  for (const material of [alpha, coverage, ocean, sky, curtain]) probe.add(new Mesh(geo, material));
+  await gl.compileAsync(probe, camera);
+  geo.dispose();
+  for (const material of [alpha, coverage, ocean, sky, curtain]) material.dispose();
+}
+
 /** Late-afternoon seaside: sky dome, Gerstner water, and furnished rooms. */
 export function SeasideHouseScene({ onReady, quality }: WorldSceneProps) {
   const gl = useThree((state) => state.gl);
   const scene = useThree((state) => state.scene);
+  const camera = useThree((state) => state.camera);
   const ready = useRef(false);
   const size = textureSizeForTier(quality.tier);
   const maps = seasideMaps(size) ?? seasideMaps(1024) ?? seasideMaps(512);
-  const materials = useMemo(() => (maps ? buildHouseMaterials(maps) : null), [maps]);
+  const materials = useMemo(() => (maps ? buildHouseMaterials(maps, quality.foliage) : null), [maps, quality.foliage]);
   const headland = useMemo(() => new MeshStandardMaterial({ color: '#6d6458', roughness: 0.96 }), []);
   const beacon = useMemo(() => new MeshBasicMaterial({ color: '#FFC98F' }), []);
   useEffect(() => () => {
@@ -305,25 +326,46 @@ export function SeasideHouseScene({ onReady, quality }: WorldSceneProps) {
   useEffect(() => {
     scene.background = new Color('#E7C7A4');
     let env: ReturnType<typeof environmentFromSky> | null = null;
-    try {
-      env = environmentFromSky(gl, clouds);
-      scene.environment = env.texture;
-      scene.environmentIntensity = 0.34;
-    } catch {
-      env = null;
-    }
-    if (!ready.current) {
-      ready.current = true;
-      onReady();
-    }
+    let disposed = false;
+    const build = () => {
+      env?.dispose();
+      try {
+        env = environmentFromSky(gl, 2);
+        scene.environment = env.texture;
+        scene.environmentIntensity = 0.34;
+      } catch {
+        env = null;
+      }
+    };
+    build();
+    const onRestore = () => {
+      if (!disposed) build();
+    };
+    gl.domElement.addEventListener('webglcontextrestored', onRestore);
+    let cancelled = false;
+    void compileTierShaders(gl, camera)
+      .catch(() => undefined)
+      .then(() => {
+        if (cancelled || ready.current) return;
+        ready.current = true;
+        onReady();
+      });
     return () => {
+      disposed = true;
+      cancelled = true;
+      gl.domElement.removeEventListener('webglcontextrestored', onRestore);
       env?.dispose();
       if (env && scene.environment === env.texture) scene.environment = null;
     };
-  }, [gl, scene, onReady, clouds]);
+  }, [gl, scene, onReady, camera]);
 
   useEffect(() => () => materials?.dispose(), [materials]);
-  useEffect(() => (maps ? trackGpuBytes(estimateTextureBytes(size)) : undefined), [maps, size]);
+  useEffect(() => {
+    if (!maps) return undefined;
+    retainTextureSize(size);
+    const stillHeld = cachedTextureSizes().filter((key) => key !== size);
+    return trackGpuBytes(estimateTextureBytes(size, stillHeld));
+  }, [maps, size]);
 
   if (!materials) return null;
 

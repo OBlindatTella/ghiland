@@ -10,11 +10,11 @@ export function environmentFromSky(gl: WebGLRenderer, clouds: number): { dispose
   sky.material.side = BackSide;
   probe.add(sky);
   const target = pmrem.fromScene(probe, 0.04, 0.1, 80);
+  pmrem.dispose();
   return {
     texture: target.texture,
     dispose: () => {
       target.dispose();
-      pmrem.dispose();
       sky.geometry.dispose();
       material.dispose();
     },
