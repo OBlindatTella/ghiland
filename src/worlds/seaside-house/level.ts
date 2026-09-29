@@ -1,5 +1,6 @@
 import type { AABB } from '@/contracts/math';
 import type { Collider, ColliderLayer, CollisionSpec } from '@/contracts/world';
+import { furnitureColliders } from './furniture';
 
 export interface LevelBox {
   id: string;
@@ -76,6 +77,9 @@ export const levelBoxes: readonly LevelBox[] = [
   box('living-header', -1.1, 2.4, -3.5 - T, 1.1, 3.2, -3.5, wall, livingWall),
   // D-027. Underside at 2.10 m, above the 1.75 m capsule, so it frames the mouth and does not block the walk.
   box('soffit', -1.1, 2.1, -4.4, 1.1, 2.42, -3.5, visual, smokedOak),
+  // Travertine returns sit on the existing wall ends. Visual only, so they do not narrow the walk.
+  box('jamb-west', -1.28, 0, -3.64, -1.1, 2.4, -3.36, visual, '#E4D3BE'),
+  box('jamb-east', 1.1, 0, -3.64, 1.28, 2.4, -3.36, visual, '#E4D3BE'),
 
   // D-020: expanded by the 0.3 m radius, this stays outside x −2…+2 and off the open panels.
   box('fin', -7, 0, -3.25, -2.35, 2.8, -2.8, wall, finColor),
@@ -97,9 +101,10 @@ export const levelBoxes: readonly LevelBox[] = [
   box('curtain-right', -2.6, 0.05, 4.24, -1.8, 3.15, 4.36, visual, linen, 0.42),
 ];
 
-export const seasideColliders: readonly Collider[] = levelBoxes
-  .filter((item) => item.layers.length > 0)
-  .map((item) => ({ id: item.id, box: item.box, layers: item.layers }));
+export const seasideColliders: readonly Collider[] = [
+  ...levelBoxes.filter((item) => item.layers.length > 0).map((item) => ({ id: item.id, box: item.box, layers: item.layers })),
+  ...furnitureColliders,
+];
 
 export const seasideCollision: CollisionSpec = {
   kind: 'boxes',

@@ -1,13 +1,43 @@
 'use client';
 
 import { useCallback, useEffect } from 'react';
+import type { WindowInstance } from '@/contracts/window';
 import { fitRect } from '@/shell/windows/geometry';
 import { getApp } from '@/apps/registry';
-import { bindGhost, bindStage } from '@/engine/windows/domRegistry';
+import { bindGhost, bindStage, bindWindowElement } from '@/engine/windows/domRegistry';
 import { AppHost } from '@/shell/windows/AppHost';
+import { restoreAppWindow } from '@/shell/windows/commands';
 import { WindowFrame } from '@/shell/windows/WindowFrame';
 import { useInputStore } from '@/state/input';
 import { useWindows } from '@/state/windows';
+
+const PIN_TAG_PX = 42;
+
+function PinTag({ instance, glyph }: { instance: WindowInstance; glyph: string }) {
+  const ref = useCallback(
+    (node: HTMLButtonElement | null) => {
+      bindWindowElement(instance.id, node);
+    },
+    [instance.id],
+  );
+  return (
+    <button
+      ref={ref}
+      type="button"
+      data-ghiland-window={instance.id}
+      data-pin-tag=""
+      aria-label={`Restore ${instance.title}`}
+      className="pointer-events-auto absolute top-0 left-0 flex items-center justify-center rounded-full border border-[#2c261f]/30 text-[18px] leading-none"
+      style={{ width: PIN_TAG_PX, height: PIN_TAG_PX, background: '#B7A894', color: '#2c261f' }}
+      onClick={(event) => {
+        event.stopPropagation();
+        restoreAppWindow(instance.id);
+      }}
+    >
+      {glyph}
+    </button>
+  );
+}
 
 /** Overlay windows stay mounted and are hidden outside SCREEN (D-006). World windows stay projected. */
 export function WindowLayer() {
@@ -42,11 +72,24 @@ export function WindowLayer() {
     if (active?.closest?.('[data-ghiland-window]')) active.blur();
   }, [visible]);
 
+  useEffect(() => {
+    const node = document.querySelector<HTMLElement>('[data-testid="window-stage"]');
+    if (!node) return;
+    const pin = () => {
+      if (node.scrollTop !== 0) node.scrollTop = 0;
+      if (node.scrollLeft !== 0) node.scrollLeft = 0;
+    };
+    node.addEventListener('scroll', pin);
+    pin();
+    return () => node.removeEventListener('scroll', pin);
+  }, []);
+
   const open = Object.values(windows)
     .filter((item) => item.state !== 'minimized')
     .sort((a, b) => a.z - b.z);
   const overlay = open.filter((item) => item.mode.kind === 'overlay');
   const spatial = open.filter((item) => item.mode.kind !== 'overlay');
+  const pinTags = Object.values(windows).filter((item) => item.state === 'minimized' && item.mode.kind === 'worldPinned');
 
   return (
     <>
@@ -72,6 +115,11 @@ export function WindowLayer() {
                 <AppHost app={app} windowId={instance.id} />
               </WindowFrame>
             );
+          })}
+          {pinTags.map((instance) => {
+            const app = getApp(instance.appId);
+            if (!app) return null;
+            return <PinTag key={instance.id} instance={instance} glyph={app.icon} />;
           })}
         </div>
       </div>

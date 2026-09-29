@@ -2,6 +2,9 @@ import type { QualityTier } from '@/contracts/quality';
 
 const ORDER: QualityTier[] = ['LOW', 'MED', 'HIGH', 'ULTRA'];
 
+/** AUTO may use LOW, MED and HIGH. It does not climb to ULTRA (D-041). */
+export const AUTO_MAX_TIER: QualityTier = 'HIGH';
+
 export const AUTO_CEILING_MS = 7 * 24 * 60 * 60 * 1000;
 export const STABLE_HOLD_S = 60;
 
@@ -20,6 +23,8 @@ export interface AutoClock {
   sinceChange: number;
   held: number;
   lowFor: number;
+  /** Time spent under half the tier's target fps. Independent of `lowFor` (D-034). */
+  emergencyFor: number;
   highFor: number;
   /** The previous change was a climb. A drop within 60 s then sets the ceiling. */
   climbed: boolean;
@@ -30,14 +35,15 @@ export interface AutoClock {
   remember: QualityTier | null;
 }
 
-export function initialAutoClock(tier: QualityTier, ceiling: QualityTier = 'ULTRA'): AutoClock {
+export function initialAutoClock(tier: QualityTier, ceiling: QualityTier = AUTO_MAX_TIER): AutoClock {
   return {
     tier,
-    ceiling,
+    ceiling: capTier(ceiling, AUTO_MAX_TIER),
     elapsed: 0,
     sinceChange: 30,
     held: 0,
     lowFor: 0,
+    emergencyFor: 0,
     highFor: 0,
     climbed: false,
     changed: false,
@@ -68,26 +74,32 @@ export function stepAutoQuality(clock: AutoClock, fps: number, dt: number): Auto
   const changes = (clock.changes ?? []).filter((at) => elapsed - at < 300);
   const rateLimited = elapsed >= 60 && changes.length >= 2;
   const targetFps = clock.tier === 'LOW' ? 30 : 60;
-  const emergency = fps < targetFps * 0.5 && lowFor >= 3;
+  const emergencyFor = fps < targetFps * 0.5 ? (clock.emergencyFor ?? 0) + step : 0;
+  const emergency = emergencyFor >= 3;
   const remember = clock.held < STABLE_HOLD_S && held >= STABLE_HOLD_S ? clock.tier : null;
-  if (index > 0 && elapsed >= 3 && ((canChange && !rateLimited && lowFor >= 5) || (rateLimited && emergency))) {
+  const normalDrop = canChange && !rateLimited && lowFor >= 5;
+  // Once the 2-per-5-minute budget is spent, only a 3 s stretch under half the target may demote.
+  const emergencyDrop = rateLimited && emergency;
+  if (index > 0 && elapsed >= 3 && (normalDrop || emergencyDrop)) {
+    const viaEmergency = emergencyDrop;
     const failedClimb = clock.climbed && sinceChange < STABLE_HOLD_S;
     const next = ORDER[index - 1] ?? clock.tier;
     return {
       tier: next,
-      ceiling: failedClimb ? next : clock.ceiling,
+      ceiling: viaEmergency || failedClimb ? next : clock.ceiling,
       elapsed,
       sinceChange: 0,
       held: 0,
       lowFor: 0,
+      emergencyFor: 0,
       highFor: 0,
       climbed: false,
       changed: true,
       remember: null,
-      changes: [...changes, elapsed],
+      changes: viaEmergency ? changes : [...changes, elapsed],
     };
   }
-  if (!rateLimited && canChange && highFor >= 5 && index < ceiling && index < ORDER.length - 1) {
+  if (!rateLimited && canChange && highFor >= 5 && index < ceiling && index < indexOf(AUTO_MAX_TIER)) {
     return {
       tier: ORDER[index + 1] ?? clock.tier,
       ceiling: clock.ceiling,
@@ -95,6 +107,7 @@ export function stepAutoQuality(clock: AutoClock, fps: number, dt: number): Auto
       sinceChange: 0,
       held: 0,
       lowFor: 0,
+      emergencyFor: 0,
       highFor: 0,
       climbed: true,
       changed: true,
@@ -109,6 +122,7 @@ export function stepAutoQuality(clock: AutoClock, fps: number, dt: number): Auto
     sinceChange,
     held,
     lowFor,
+    emergencyFor,
     highFor,
     climbed: clock.climbed,
     changed: false,
@@ -137,12 +151,13 @@ export function heuristicTier(input: {
   now?: number;
 }): QualityTier {
   const capped = ceilingStillValid(input.ceiling ?? null, input.renderer, input.now ?? Date.now());
-  if (input.lastGood) return capTier(input.lastGood, capped);
+  // AUTO never selects ULTRA, including a last-good tier saved before the ceiling (D-041).
+  if (input.lastGood) return capTier(capTier(input.lastGood, capped), AUTO_MAX_TIER);
   const renderer = input.renderer.toLowerCase();
   const weak =
     /swiftshader|llvmpipe|basic render|intel\(r\) hd|intel\(r\) uhd|intel\(r\) iris\(r\) xe|mali-4|adreno \(tm\) [345]/.test(renderer) ||
     input.cores <= 4 ||
     (input.deviceMemory !== undefined && input.deviceMemory <= 4);
   const tier: QualityTier = weak ? 'LOW' : input.cores >= 8 && (input.deviceMemory === undefined || input.deviceMemory >= 8) ? 'HIGH' : 'MED';
-  return capTier(tier, capped);
+  return capTier(capTier(tier, capped), AUTO_MAX_TIER);
 }

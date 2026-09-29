@@ -3,6 +3,7 @@ import { ownerForShell, OwnerStack } from '@/engine/input/ownerStack';
 import { KeyState } from '@/engine/input/keyState';
 import {
   classifyLockLoss,
+  externalOpenKeepsScreen,
   initialShellModel,
   reduceShell,
   type ShellEvent,
@@ -12,6 +13,19 @@ import {
 function apply(model: ShellModel, event: ShellEvent) {
   return reduceShell(model, event);
 }
+
+describe('external window.open', () => {
+  it('keeps SCREEN while the page is hidden after our own open, including a later return', () => {
+    const opened = externalOpenKeepsScreen(1_000, 1_500, false, true);
+    expect(opened.stay).toBe(true);
+    const stillGone = externalOpenKeepsScreen(120_000, 1_500, opened.holding, true);
+    expect(stillGone.stay).toBe(true);
+    const back = externalOpenKeepsScreen(130_000, 1_500, stillGone.holding, false);
+    expect(back.holding).toBe(false);
+    expect(back.stay).toBe(false);
+    expect(externalOpenKeepsScreen(2_000, 1_500, false, true).stay).toBe(false);
+  });
+});
 
 describe('reduceShell', () => {
   it('starts released with the click-to-walk hint', () => {
@@ -117,6 +131,30 @@ describe('reduceShell', () => {
     const again = apply(rejected.model, { type: 'pointerLockRejected' });
     expect(again.effects).toEqual([]);
     expect(again.model.relockBlocked).toBe(true);
+  });
+
+  it('a detach whose lock is rejected stays RELEASED with Click to walk, and the next click may lock', () => {
+    const screen = apply(
+      apply(initialShellModel, { type: 'pointerLockGained' }).model,
+      { type: 'toggleScreen' },
+    ).model;
+    const detach = apply(screen, { type: 'carryIntoWorld' });
+    expect(detach.model.state).toBe('RELEASED');
+    expect(detach.model.showClickToWalk).toBe(true);
+    expect(detach.model.relockBlocked).toBe(false);
+    expect(detach.effects).toEqual([{ type: 'requestPointerLock' }]);
+    const rejected = apply(detach.model, { type: 'pointerLockRejected' });
+    expect(rejected.model.state).toBe('RELEASED');
+    expect(rejected.model.showClickToWalk).toBe(true);
+    expect(rejected.model.relockBlocked).toBe(true);
+    expect(rejected.effects).toEqual([]);
+    const click = apply(rejected.model, { type: 'clickEmptyWorld' });
+    expect(click.model.state).toBe('RELEASED');
+    expect(click.model.relockBlocked).toBe(false);
+    expect(click.effects).toEqual([{ type: 'requestPointerLock' }]);
+    const locked = apply(click.model, { type: 'pointerLockGained' });
+    expect(locked.model.state).toBe('WORLD');
+    expect(locked.model.showClickToWalk).toBe(false);
   });
 
   it('the next click or Q after a rejection is a new gesture and may lock once', () => {

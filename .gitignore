@@ -17,6 +17,10 @@
 /.next/
 /out/
 
+# Copied from three at build time (scripts/copy-decoders.mjs)
+/public/decoders/**/*.js
+/public/decoders/**/*.wasm
+
 # production
 /build
 

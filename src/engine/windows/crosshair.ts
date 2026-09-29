@@ -1,5 +1,5 @@
 import {
-  DoubleSide,
+  FrontSide,
   Mesh,
   MeshBasicMaterial,
   PlaneGeometry,
@@ -16,11 +16,13 @@ export interface WindowQuad {
   quaternion: readonly [number, number, number, number];
   /** Half extents of the quad in metres. */
   half: { w: number; h: number };
+  /** Pin tags face the camera. A wall-facing quad is invisible from behind. */
+  billboard?: boolean;
 }
 
 const raycaster = new Raycaster();
 const ndc = new Vector2(0, 0);
-const mesh = new Mesh(new PlaneGeometry(1, 1), new MeshBasicMaterial({ side: DoubleSide }));
+const mesh = new Mesh(new PlaneGeometry(1, 1), new MeshBasicMaterial({ side: FrontSide }));
 
 /** E pick-up and the crosshair both stop at 25 m. */
 export const CROSSHAIR_RANGE = 25;
@@ -74,7 +76,8 @@ export function raycastCrosshair(
   let closest: { id: string; distance: number } | null = null;
   for (const quad of quads) {
     mesh.position.set(quad.position[0], quad.position[1], quad.position[2]);
-    mesh.quaternion.set(quad.quaternion[0], quad.quaternion[1], quad.quaternion[2], quad.quaternion[3]);
+    if (quad.billboard) mesh.quaternion.copy(camera.quaternion);
+    else mesh.quaternion.set(quad.quaternion[0], quad.quaternion[1], quad.quaternion[2], quad.quaternion[3]);
     mesh.scale.set(quad.half.w * 2, quad.half.h * 2, 1);
     mesh.updateMatrixWorld(true);
     const hit = raycaster.intersectObject(mesh, false)[0];
@@ -96,7 +99,7 @@ export function registerRayBlockers(boxes: readonly AABB[]): () => void {
 
 const quads: WindowQuad[] = [];
 let cameraRef: Camera | null = null;
-const listeners = new Set<(id: string) => void>();
+const listeners = new Set<(id: string, point: { x: number; y: number } | null) => void>();
 
 export function bindCrosshairCamera(camera: Camera | null): void {
   cameraRef = camera;
@@ -138,14 +141,14 @@ export function queryCrosshair(): string | null {
   return raycastCrosshair(cameraRef, quads, blockers);
 }
 
-export function notifyCrosshairClick(): string | null {
+export function notifyCrosshairClick(point?: { x: number; y: number }): string | null {
   const id = queryCrosshair();
   if (!id) return null;
-  for (const listener of listeners) listener(id);
+  for (const listener of listeners) listener(id, point ?? null);
   return id;
 }
 
-export function onCrosshairHit(listener: (id: string) => void): () => void {
+export function onCrosshairHit(listener: (id: string, point: { x: number; y: number } | null) => void): () => void {
   listeners.add(listener);
   return () => {
     listeners.delete(listener);

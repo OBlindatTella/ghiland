@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { closeWindow, emptyWindowBook, migrateWindows, openWindow, setWindowMode, setWindowRect, setWindowState } from '@/shell/windows/model';
+import { closeWindow, emptyWindowBook, migrateWindows, openWindow, restorePinned, setWindowMode, setWindowRect, setWindowState } from '@/shell/windows/model';
+import { fileFromWindows } from '@/shell/windows/persistence';
 
 const viewport = { w: 1280, h: 800 };
 const size = { w: 440, h: 560 };
@@ -135,5 +136,90 @@ describe('window book', () => {
     });
     expect(again.effect).toBe('focus');
     expect(Object.keys(again.book.windows)).toEqual(['a']);
+  });
+
+  it('restores a minimized pinned window at its pin instead of recalling it', () => {
+    const opened = openWindow(emptyWindowBook, {
+      id: 'a',
+      appId: 'notes',
+      title: 'Notes',
+      defaultSize: size,
+      viewport,
+      now: 1,
+    });
+    const pinned = setWindowMode(opened.book, 'a', {
+      kind: 'worldPinned',
+      worldId: 'seaside-house',
+      position: [1, 1.4, 2],
+      quaternion: [0, 0, 0, 1],
+      pxPerMeter: 520,
+      placement: 'float',
+    });
+    const hidden = setWindowState(pinned, 'a', 'minimized');
+    const again = openWindow(hidden, { id: 'x', appId: 'notes', title: 'Notes', defaultSize: size, viewport, now: 2 });
+    expect(again.effect).toBe('focus');
+    expect(again.book.windows.a?.state).toBe('normal');
+    expect(again.book.windows.a?.mode.kind).toBe('worldPinned');
+  });
+
+  it('forgets a recall arm after 10 seconds and after the window is picked up', () => {
+    const opened = openWindow(emptyWindowBook, {
+      id: 'a',
+      appId: 'notes',
+      title: 'Notes',
+      defaultSize: size,
+      viewport,
+      now: 1,
+    });
+    const pinned = setWindowMode(opened.book, 'a', {
+      kind: 'worldPinned',
+      worldId: 'seaside-house',
+      position: [1, 1, 1],
+      quaternion: [0, 0, 0, 1],
+      pxPerMeter: 520,
+      placement: 'float',
+    });
+    const pulse = openWindow(pinned, { id: 'x', appId: 'notes', title: 'Notes', defaultSize: size, viewport, now: 1_000 });
+    expect(pulse.effect).toBe('pulse');
+    const late = openWindow(pulse.book, { id: 'x', appId: 'notes', title: 'Notes', defaultSize: size, viewport, now: 12_000 });
+    expect(late.effect).toBe('pulse');
+    const picked = setWindowMode(late.book, 'a', { kind: 'detached', offset: [0, 0, -1.1], lagMs: 150 });
+    const again = openWindow(picked, { id: 'x', appId: 'notes', title: 'Notes', defaultSize: size, viewport, now: 12_100 });
+    expect(again.effect).toBe('focus');
+  });
+
+  it('keeps a closed app rect and restores a pinned window on its saved rect', () => {
+    const opened = openWindow(emptyWindowBook, {
+      id: 'a',
+      appId: 'notes',
+      title: 'Notes',
+      defaultSize: size,
+      viewport,
+      now: 1,
+      savedRect: { x: 120, y: 80, w: 440, h: 560 },
+    });
+    const moved = setWindowRect(opened.book, 'a', { x: 120, y: 80, w: 440, h: 560 });
+    const previous = fileFromWindows(Object.values(moved.windows));
+    const merged = fileFromWindows([], previous);
+    expect(merged.rects.notes).toEqual({ x: 120, y: 80, w: 440, h: 560 });
+    const restored = restorePinned(
+      emptyWindowBook,
+      [
+        {
+          id: 'a',
+          appId: 'notes',
+          title: 'Notes',
+          worldId: 'seaside-house',
+          w: 440,
+          h: 560,
+          position: [5.1, 1.45, 3.9],
+          quaternion: [0, 0, 0, 1],
+          placement: 'anchor',
+          anchorId: 'hero-sea',
+        },
+      ],
+      merged.rects,
+    );
+    expect(restored.windows.a?.lastScreenRect).toEqual({ x: 120, y: 80, w: 440, h: 560 });
   });
 });

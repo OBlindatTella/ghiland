@@ -4,12 +4,16 @@ import { seasideHouse } from '@/worlds/seaside-house/definition';
 import { sunDirection } from '@/worlds/seaside-house/sun';
 import {
   autoPinPlacement,
+  boundsFromBox,
+  unionPlacementBounds,
   FLOAT_DISTANCE,
   GLASS_CLEARANCE,
   MIN_EYE_DISTANCE,
   physicalSize,
   PX_PER_METER,
   resolvePlacement,
+  SURFACE_OFFSET,
+  type PlacementBounds,
   type PlacementCollider,
   type PlacementQuery,
 } from '@/engine/windows/placement';
@@ -138,10 +142,29 @@ describe('resolvePlacement', () => {
     expect(result.placement).toBe('surface');
     const half = 560 / PX_PER_METER / 2;
     const bottom = result.position[1] - half * Math.cos((10 * Math.PI) / 180);
-    expect(bottom).toBeCloseTo(0.76, 2);
+    expect(bottom).toBeCloseTo(0.78, 2);
     const up = rotate(result.quaternion, [0, 1, 0]);
     expect(up[1]).toBeGreaterThan(0.95);
     expect(up[2]).toBeGreaterThan(0);
+  });
+
+  it('rejects a table pin that overhangs by more than 10% of its width', () => {
+    const table: PlacementCollider = {
+      id: 'coffee-table',
+      box: { min: [0, 0.3, 0], max: [0.4, 0.38, 0.4] },
+      layers: ['movement', 'pinSurface'],
+    };
+    const result = resolvePlacement({
+      ray: { origin: [0.2, 1.4, -0.6], direction: [0, -0.8, 0.6] },
+      colliders: [table],
+      anchors: [],
+      occupied: new Set(),
+      heightPx: 560,
+      widthPx: 440,
+    });
+    expect(result.placement).toBe('surface');
+    expect(result.valid).toBe(false);
+    expect(result.reason).toBe('outOfBounds');
   });
 
   it('keeps Notes at about 0.85 by 1.08 m', () => {
@@ -152,15 +175,218 @@ describe('resolvePlacement', () => {
   });
 });
 
+const houseBounds: PlacementBounds = boundsFromBox([-7, 0, -9], [7, 0, 9], 0, null, 9);
+
+describe('placement bounds', () => {
+  it('keeps a float on the house side of the balustrade', () => {
+    const result = resolvePlacement({
+      ray: { origin: [0, 1.62, 8.7], direction: [0, Math.sin((5 * Math.PI) / 180), Math.cos((5 * Math.PI) / 180)] },
+      colliders,
+      anchors: [],
+      occupied: new Set(),
+      heightPx: 560,
+      bounds: houseBounds,
+    });
+    expect(result.position[2]).toBeLessThanOrEqual(9 - 0.15);
+    expect(result.valid).toBe(false);
+  });
+
+  it('keeps a side-wall pin 1 cm off the wall that was hit', () => {
+    const east: PlacementCollider = {
+      id: 'living-east',
+      box: { min: [7, 0, -3.5], max: [7.2, 3.2, 4.5] },
+      layers: ['movement', 'occluder', 'pinSurface'],
+    };
+    const result = resolvePlacement({
+      ray: { origin: [4, 1.5, 0], direction: [1, 0, 0] },
+      colliders: [east],
+      anchors: [],
+      occupied: new Set(),
+      heightPx: 560,
+      widthPx: 440,
+      bounds: boundsFromBox([-7, 0, -9], [7, 3.2, 9], 0, 3.2, 9),
+    });
+    expect(result.placement).toBe('surface');
+    expect(result.valid).toBe(true);
+    expect(result.position[0]).toBeCloseTo(6.99, 2);
+  });
+
+  it('keeps an east-wall pin in front of the back wall', () => {
+    const east: PlacementCollider = {
+      id: 'living-east',
+      box: { min: [7, 0, -3.5], max: [7.15, 3.2, 4.5] },
+      layers: ['movement', 'occluder', 'pinSurface'],
+    };
+    const back: PlacementCollider = {
+      id: 'living-back-east',
+      box: { min: [1.1, 0, -3.65], max: [7.15, 3.2, -3.5] },
+      layers: ['movement', 'occluder', 'pinSurface'],
+    };
+    const result = resolvePlacement({
+      ray: { origin: [5, 1.5, -3.2], direction: [1, 0, 0] },
+      colliders: [east, back],
+      anchors: [],
+      occupied: new Set(),
+      heightPx: 560,
+      widthPx: 440,
+      bounds: boundsFromBox([-7, 0, -9], [7, 3.2, 9], 0, 3.2, 9),
+    });
+    expect(result.valid).toBe(true);
+    expect(result.placement).toBe('surface');
+    const halfW = 440 / PX_PER_METER / 2;
+    expect(result.position[2] - halfW).toBeGreaterThanOrEqual(-3.5 + 0.01 - 1e-3);
+    expect(result.position[0]).toBeCloseTo(6.99, 2);
+  });
+
+  it('uses the corridor ceiling of 2.4 m, not the merged living-room ceiling', () => {
+    const bounds = unionPlacementBounds(seasideHouse.zones, 0, 9);
+    const corridor = bounds.volumes?.find((volume) => volume.min[2] <= -8 && volume.max[0] <= 1.2);
+    expect(corridor?.ceilingY ?? 0).toBeCloseTo(2.4, 5);
+    expect(bounds.volumes?.some((volume) => (volume.ceilingY ?? 0) > 2.4)).toBe(true);
+    const result = resolvePlacement({
+      ray: { origin: [0, 1.2, -6], direction: [0, 1, 0] },
+      colliders: [],
+      anchors: [],
+      occupied: new Set(),
+      heightPx: 560,
+      bounds,
+    });
+    const half = 560 / PX_PER_METER / 2;
+    expect(result.position[1] + half).toBeLessThanOrEqual(2.4 - 0.02 + 1e-3);
+  });
+
+  it('sits a wall pin 1 cm off the surface and 2 cm clear of the floor', () => {
+    expect(SURFACE_OFFSET).toBeCloseTo(0.01, 5);
+    const result = resolvePlacement({
+      ray: { origin: [0, 0.2, 1], direction: [0, -1, 0] },
+      colliders,
+      anchors: [],
+      occupied: new Set(),
+      heightPx: 560,
+      bounds: boundsFromBox([-7, 0, -9], [7, 0, 9], 0, 3.2, 9),
+    });
+    if (result.placement !== 'anchor') {
+      const half = 560 / PX_PER_METER / 2;
+      expect(result.position[1] - half).toBeGreaterThanOrEqual(0.02 - 1e-4);
+    }
+  });
+});
+
 describe('auto-pin pose', () => {
   it('pulls a carried window back to the player side of the glass', () => {
-    const eye: Vec3 = [3, 1.62, 4];
+    const eye: Vec3 = [3, 1.62, 3.2];
     const beyond: Vec3 = [3, 1.62, 6];
     const result = autoPinPlacement(eye, beyond, [0, 0, 0, 1], colliders);
     expect(result.valid).toBe(true);
     expect(result.placement).toBe('float');
     expect(result.position[2]).toBeLessThan(4.47);
     expect(4.47 - result.position[2]).toBeGreaterThanOrEqual(0.25);
+    expect(result.position[2] - eye[2]).toBeGreaterThanOrEqual(MIN_EYE_DISTANCE - 1e-4);
+  });
+
+  it('is invalid when no float stays 0.7 m out, so the caller can dock it', () => {
+    const eye: Vec3 = [3, 1.62, 4.2];
+    const beyond: Vec3 = [3, 1.62, 6];
+    const result = autoPinPlacement(eye, beyond, [0, 0, 0, 1], colliders, houseBounds);
+    expect(result.valid).toBe(false);
+  });
+
+  it('keeps an east-wall pin 1 cm off the wall and clear of the back wall', () => {
+    const bounds = unionPlacementBounds(seasideHouse.zones, 0, 9);
+    const result = resolvePlacement({
+      ray: { origin: [5, 2.3, -3.2], direction: [1, 0, 0] },
+      colliders,
+      anchors: [],
+      occupied: new Set(),
+      heightPx: 560,
+      widthPx: 440,
+      bounds,
+    });
+    const halfW = 440 / PX_PER_METER / 2;
+    expect(result.placement).toBe('surface');
+    expect(result.valid).toBe(true);
+    expect(result.position[0]).toBeCloseTo(7 - SURFACE_OFFSET, 2);
+    expect(result.position[2] - halfW).toBeGreaterThanOrEqual(-3.5 + 0.02 - 1e-3);
+    const right = rotate(result.quaternion, [1, 0, 0]);
+    const normal = rotate(result.quaternion, [0, 0, 1]);
+    expect(Math.abs(right[2])).toBeGreaterThan(0.9);
+    expect(normal[0]).toBeLessThan(-0.9);
+  });
+
+  it('does not pin the bookshelf or a table side face', () => {
+    const shelf = resolvePlacement({
+      ray: { origin: [6.2, 1.4, -2.2], direction: [0, 0, -1] },
+      colliders,
+      anchors: [],
+      occupied: new Set(),
+      heightPx: 560,
+      widthPx: 440,
+    });
+    expect(shelf.placement).toBe('float');
+    const side = resolvePlacement({
+      ray: { origin: [-5.2, 0.4, 0.5], direction: [0, 0, 1] },
+      colliders,
+      anchors: [],
+      occupied: new Set(),
+      heightPx: 560,
+      widthPx: 440,
+    });
+    expect(side.placement).toBe('float');
+    expect(side.position[2]).toBeLessThan(1.9);
+  });
+
+  it('holds a corridor float under the 2.4 m ceiling and inside the corridor width', () => {
+    const bounds = unionPlacementBounds(seasideHouse.zones, 0, 9);
+    const corridor = bounds.volumes.find((volume) => volume.max[1] === 2.4 && volume.min[2] < -4);
+    expect(corridor?.ceilingY).toBe(2.4);
+    const raised = resolvePlacement({
+      ray: { origin: [0, 1.62, -7], direction: [0, 0.5, 0.5] },
+      colliders,
+      anchors: [],
+      occupied: new Set(),
+      heightPx: 560,
+      widthPx: 440,
+      bounds,
+    });
+    const halfH = 560 / PX_PER_METER / 2;
+    expect(raised.position[1] + halfH).toBeLessThanOrEqual(2.4 - 0.02 + 1e-3);
+    expect(raised.position[0]).toBeGreaterThanOrEqual(-1.1);
+    expect(raised.position[0]).toBeLessThanOrEqual(1.1);
+    const wide = resolvePlacement({
+      ray: { origin: [0, 1.5, -6], direction: [1, 0, 0] },
+      colliders: [],
+      anchors: [],
+      occupied: new Set(),
+      heightPx: 560,
+      widthPx: 440,
+      bounds,
+    });
+    expect(wide.valid).toBe(true);
+    expect(wide.position[0]).toBeLessThanOrEqual(1.1 - 0.02 + 1e-3);
+    expect(wide.position[0]).toBeGreaterThan(0.5);
+    expect(wide.position[2]).toBeCloseTo(-6, 2);
+  });
+
+  it('lets a float aimed through the open panels land on the terrace', () => {
+    const bounds = unionPlacementBounds(seasideHouse.zones, 0, 9);
+    const result = resolvePlacement({
+      ray: { origin: [0, 1.62, 3.2], direction: [0, 0, 1] },
+      colliders,
+      anchors: [],
+      occupied: new Set(),
+      heightPx: 560,
+      bounds,
+    });
+    expect(result.valid).toBe(true);
+    expect(result.position[2]).toBeGreaterThan(4.5);
+    expect(result.position[2]).toBeLessThanOrEqual(8.85);
+  });
+
+  it('does not auto-pin over the sea', () => {
+    const eye: Vec3 = [0, 1.62, 8.7];
+    const beyond: Vec3 = [0, 1.8, 10.4];
+    const result = autoPinPlacement(eye, beyond, [0, 0, 0, 1], colliders, houseBounds);
+    expect(result.position[2]).toBeLessThanOrEqual(9 - 0.15);
   });
 });
 

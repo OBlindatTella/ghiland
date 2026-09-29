@@ -23,7 +23,7 @@ function installDom() {
   };
   let focused = true;
   let exits = 0;
-  const requestPointerLock = vi.fn((_options?: { unadjustedMovement?: boolean }): Promise<void> | undefined => undefined);
+  const requestPointerLock = vi.fn((): Promise<void> | undefined => undefined);
   const canvas = {
     addEventListener: listen(canvasListeners),
     removeEventListener: forget(canvasListeners),
@@ -122,12 +122,56 @@ describe('iframe focus', () => {
     expect(useInputStore.getState().shellState).toBe('RELEASED');
     manager.detach();
   });
+
+  it('does not keep the external-open hold when a popup never hides the page', async () => {
+    vi.useFakeTimers();
+    const dom = installDom();
+    const manager = new InputManager();
+    useInputStore.setState({ shellState: 'WORLD', owner: 'world', showClickToWalk: false });
+    manager.attach(dom.canvas);
+    manager.noteExternalOpen();
+    dom.setFocused(false);
+    dom.fireWindow('blur', {});
+    await vi.advanceTimersByTimeAsync(0);
+    expect(useInputStore.getState().shellState).toBe('RELEASED');
+    useInputStore.setState({ shellState: 'WORLD', owner: 'world', showClickToWalk: false });
+    await vi.advanceTimersByTimeAsync(600);
+    dom.documentStub.hidden = true;
+    dom.fireDoc('visibilitychange', {});
+    expect(useInputStore.getState().shellState).toBe('RELEASED');
+    manager.detach();
+    vi.useRealTimers();
+  });
 });
 
 describe('pointer lock without a promise', () => {
   afterEach(() => {
     vi.unstubAllGlobals();
     useInputStore.getState().reset();
+  });
+
+  it('a detach whose lock is rejected shows Click to walk and the next click locks', () => {
+    const dom = installDom();
+    const manager = new InputManager();
+    useInputStore.setState({ shellState: 'SCREEN', owner: 'ui', showClickToWalk: false, relockBlocked: false });
+    manager.attach(dom.canvas);
+    manager.presentWorld();
+    expect(useInputStore.getState().shellState).toBe('RELEASED');
+    expect(useInputStore.getState().showClickToWalk).toBe(true);
+    expect(dom.requestPointerLock).toHaveBeenCalledTimes(1);
+    dom.fireDoc('pointerlockerror', {});
+    expect(useInputStore.getState().shellState).toBe('RELEASED');
+    expect(useInputStore.getState().showClickToWalk).toBe(true);
+    expect(useInputStore.getState().relockBlocked).toBe(true);
+    expect(dom.requestPointerLock).toHaveBeenCalledTimes(1);
+    dom.fireCanvas('pointerdown', { clientX: 4, clientY: 4, target: {} });
+    dom.fireCanvas('click', { clientX: 4, clientY: 4, target: {} });
+    expect(dom.requestPointerLock).toHaveBeenCalledTimes(2);
+    dom.documentStub.pointerLockElement = dom.canvas;
+    dom.fireDoc('pointerlockchange', {});
+    expect(useInputStore.getState().shellState).toBe('WORLD');
+    expect(useInputStore.getState().showClickToWalk).toBe(false);
+    manager.detach();
   });
 
   it('counts pointerlockerror when requestPointerLock returns undefined', () => {
@@ -166,6 +210,90 @@ describe('pointer lock without a promise', () => {
     expect(useInputStore.getState().shellState).toBe('WORLD');
     expect(useInputStore.getState().pointerLocked).toBe(true);
     expect(dom.exits()).toBe(0);
+    manager.detach();
+  });
+});
+
+describe('IME composition', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    useInputStore.getState().reset();
+  });
+
+  it('compositionstart and compositionend keep Escape from blurring or stepping the shell', async () => {
+    const dom = installDom();
+    const manager = new InputManager();
+    const blur = vi.fn();
+    useInputStore.setState({ shellState: 'SCREEN', owner: 'ui', showClickToWalk: false });
+    dom.documentStub.activeElement = { tagName: 'TEXTAREA', blur };
+    manager.attach(dom.canvas);
+    const escape = { code: 'Escape', repeat: false, isComposing: false, keyCode: 27, preventDefault() {}, target: dom.documentStub.activeElement };
+
+    // Safari delivers compositionend, then the Esc that ended it. No keydown has been seen yet.
+    dom.fireDoc('compositionstart', {});
+    dom.fireDoc('compositionend', {});
+    await Promise.resolve();
+    dom.fireWindow('keydown', escape);
+    expect(blur).not.toHaveBeenCalled();
+    expect(useInputStore.getState().shellState).toBe('SCREEN');
+
+    dom.fireWindow('keydown', escape);
+    expect(blur).toHaveBeenCalledTimes(1);
+    expect(useInputStore.getState().shellState).toBe('SCREEN');
+    manager.detach();
+  });
+
+  it('does not swallow the first Esc after a composing Esc that already arrived', async () => {
+    const dom = installDom();
+    const manager = new InputManager();
+    const blur = vi.fn();
+    useInputStore.setState({ shellState: 'SCREEN', owner: 'ui', showClickToWalk: false });
+    dom.documentStub.activeElement = { tagName: 'TEXTAREA', blur };
+    manager.attach(dom.canvas);
+    const escape = { code: 'Escape', repeat: false, isComposing: false, keyCode: 27, preventDefault() {}, target: dom.documentStub.activeElement };
+
+    dom.fireDoc('compositionstart', {});
+    dom.fireWindow('keydown', { ...escape, isComposing: true, keyCode: 229 });
+    dom.fireDoc('compositionend', {});
+    await Promise.resolve();
+    dom.fireWindow('keydown', escape);
+    expect(blur).toHaveBeenCalledTimes(1);
+    expect(useInputStore.getState().shellState).toBe('SCREEN');
+    manager.detach();
+  });
+
+  it('does not swallow Esc after an IME commit with Enter', async () => {
+    const dom = installDom();
+    const manager = new InputManager();
+    const blur = vi.fn();
+    useInputStore.setState({ shellState: 'SCREEN', owner: 'ui', showClickToWalk: false });
+    dom.documentStub.activeElement = { tagName: 'TEXTAREA', blur };
+    manager.attach(dom.canvas);
+    const escape = { code: 'Escape', repeat: false, isComposing: false, keyCode: 27, preventDefault() {}, target: dom.documentStub.activeElement };
+
+    dom.fireDoc('compositionstart', {});
+    dom.fireWindow('keydown', { code: 'Enter', repeat: false, isComposing: true, keyCode: 229, preventDefault() {}, target: dom.documentStub.activeElement });
+    dom.fireDoc('compositionend', {});
+    await Promise.resolve();
+    dom.fireWindow('keydown', escape);
+    expect(blur).toHaveBeenCalledTimes(1);
+    manager.detach();
+  });
+
+  it('does not swallow a later Escape once the composition flag has expired', async () => {
+    const dom = installDom();
+    const manager = new InputManager();
+    const blur = vi.fn();
+    useInputStore.setState({ shellState: 'SCREEN', owner: 'ui', showClickToWalk: false });
+    dom.documentStub.activeElement = { tagName: 'TEXTAREA', blur };
+    manager.attach(dom.canvas);
+    const escape = { code: 'Escape', repeat: false, isComposing: false, keyCode: 27, preventDefault() {}, target: dom.documentStub.activeElement };
+
+    dom.fireDoc('compositionstart', {});
+    dom.fireDoc('compositionend', {});
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    dom.fireWindow('keydown', escape);
+    expect(blur).toHaveBeenCalledTimes(1);
     manager.detach();
   });
 });
@@ -249,6 +377,38 @@ describe('pending pointer lock', () => {
     dom.documentStub.pointerLockElement = dom.canvas;
     dom.fireDoc('pointerlockchange', {});
     expect(useInputStore.getState().shellState).toBe('WORLD');
+    manager.detach();
+  });
+});
+
+describe('focus loss while already released', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    useInputStore.getState().reset();
+  });
+
+  it('auto-pins on blur, hide, and context loss without a shell change', async () => {
+    const dom = installDom();
+    const manager = new InputManager();
+    useInputStore.setState({ shellState: 'RELEASED', owner: 'world', showClickToWalk: true });
+    manager.attach(dom.canvas);
+    const loss = vi.fn();
+    manager.setOnFocusLoss(loss);
+
+    dom.setFocused(false);
+    dom.fireWindow('blur', {});
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(loss).toHaveBeenCalledTimes(1);
+    expect(useInputStore.getState().shellState).toBe('RELEASED');
+
+    dom.documentStub.hidden = true;
+    dom.fireDoc('visibilitychange', {});
+    expect(loss).toHaveBeenCalledTimes(2);
+
+    manager.loseContext();
+    expect(loss).toHaveBeenCalledTimes(3);
+    expect(useInputStore.getState().shellState).toBe('RELEASED');
+    manager.setOnFocusLoss(null);
     manager.detach();
   });
 });

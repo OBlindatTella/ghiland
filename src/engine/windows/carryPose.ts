@@ -17,6 +17,34 @@ interface Spring {
 
 const springs = new Map<string, Spring>();
 
+export interface CarryFrame {
+  id: string;
+  position: [number, number, number];
+}
+
+const TRACE_CAP = 360;
+let traceOn = false;
+const trace: CarryFrame[] = [];
+
+export function setCarryTrace(on: boolean): void {
+  traceOn = on;
+  if (!on) trace.length = 0;
+}
+
+export function noteCarryFrame(id: string, position: readonly number[]): void {
+  if (!traceOn) return;
+  trace.push({ id, position: [position[0] ?? 0, position[1] ?? 0, position[2] ?? 0] });
+  if (trace.length > TRACE_CAP) trace.splice(0, trace.length - TRACE_CAP);
+}
+
+export function readCarryFrames(): CarryFrame[] {
+  return trace.map((frame) => ({ id: frame.id, position: [...frame.position] }));
+}
+
+export function clearCarryFrames(): void {
+  trace.length = 0;
+}
+
 function nlerp(from: Quat, to: Quat, t: number): Quat {
   let bx = to[0];
   let by = to[1];
@@ -52,14 +80,9 @@ export function clearCarry(id: string): void {
   springs.delete(id);
 }
 
-/** Critically damped follow (Pixel stiffness 260, damping 32). Carry distance stays 1.1 m. */
-export function stepCarry(id: string, target: CarryPose, dt: number): CarryPose {
-  const step = Math.min(0.05, Math.max(0, dt));
-  let spring = springs.get(id);
-  if (!spring) {
-    spring = { position: [...target.position], velocity: [0, 0, 0], quaternion: [...target.quaternion] };
-    springs.set(id, spring);
-  }
+const SUBSTEP = 1 / 60;
+
+function integrate(spring: Spring, target: CarryPose, step: number): void {
   const alpha = 1 - Math.exp(-step / 0.15);
   spring.quaternion = nlerp(spring.quaternion, target.quaternion, alpha);
   for (let axis = 0; axis < 3; axis += 1) {
@@ -67,7 +90,27 @@ export function stepCarry(id: string, target: CarryPose, dt: number): CarryPose 
     spring.velocity[axis] += accel * step;
     spring.position[axis] += spring.velocity[axis] * step;
   }
-  return { position: [...spring.position], quaternion: [...spring.quaternion] };
+}
+
+/** Critically damped follow (Pixel stiffness 260, damping 32). Substepped so 20 fps does not ring. */
+export function stepCarry(id: string, target: CarryPose, dt: number): CarryPose {
+  const total = Math.min(0.05, Math.max(0, dt));
+  let spring = springs.get(id);
+  if (!spring) {
+    spring = { position: [...target.position], velocity: [0, 0, 0], quaternion: [...target.quaternion] };
+    springs.set(id, spring);
+  }
+  let left = total;
+  if (left > 0) {
+    while (left > 1e-6) {
+      const step = Math.min(SUBSTEP, left);
+      integrate(spring, target, step);
+      left -= step;
+    }
+  }
+  const pose: CarryPose = { position: [...spring.position], quaternion: [...spring.quaternion] };
+  noteCarryFrame(id, pose.position);
+  return pose;
 }
 
 export function carryTarget(origin: Vec3, forward: Vec3, quaternion: Quat): CarryPose {

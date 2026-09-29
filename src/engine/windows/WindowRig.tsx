@@ -22,16 +22,17 @@ import { onCrosshairHit, setWindowQuads, type WindowQuad } from '@/engine/window
 import { ghostElement, stageElement, windowElement } from '@/engine/windows/domRegistry';
 import { inputManager } from '@/engine/input/InputManager';
 import { installWindowBridge } from '@/engine/windows/bridge';
-import { physicalSize, rayAabb, resolvePlacement, type PlacementCollider } from '@/engine/windows/placement';
+import { physicalSize, rayAabb, resolvePlacement, unionPlacementBounds, type PlacementBounds, type PlacementCollider } from '@/engine/windows/placement';
 import { blocksOcclusion } from '@/engine/windows/raySets';
 import { cameraStageTransform, projectWindow } from '@/engine/windows/projector';
+import { frontFacesView, windowFrontNormal } from '@/shell/windows/frameBack';
 import { getWorld } from '@/worlds/registry';
 import { useGlStore } from '@/state/gl';
 import { useSession } from '@/state/session';
 import { useWindows } from '@/state/windows';
 
 const FADE_SECONDS = 0.2;
-const occlusion = new Map<string, { target: number; value: number; clock: number }>();
+const occlusion = new Map<string, { target: number; value: number; clock: number; pending: number; pendingCount: number }>();
 const forward = new Vector3();
 
 function colliders(): PlacementCollider[] {
@@ -41,15 +42,38 @@ function colliders(): PlacementCollider[] {
   return world.collision.colliders;
 }
 
+let occluderSource: readonly PlacementCollider[] | null = null;
+let occluderCache: PlacementCollider[] = [];
+
 function occluders(): PlacementCollider[] {
-  return colliders().filter((item) => blocksOcclusion(item.layers));
+  const source = colliders();
+  if (source === occluderSource) return occluderCache;
+  occluderSource = source;
+  occluderCache = source.filter((item) => blocksOcclusion(item.layers));
+  return occluderCache;
 }
 
-function syncQuads(windows: WindowInstance[]): void {
+let quadKey = '';
+
+function syncQuads(windows: WindowInstance[], billboard: readonly [number, number, number, number] | null): void {
+  let key = '';
   const quads: WindowQuad[] = [];
   for (const item of windows) {
-    if (item.mode.kind !== 'worldPinned' || item.state === 'minimized') continue;
+    if (item.mode.kind !== 'worldPinned') continue;
+    if (item.state === 'minimized') {
+      const quaternion = billboard ?? item.mode.quaternion;
+      key += `${item.id}:tag:${item.mode.position[0]},${item.mode.position[1]},${item.mode.position[2]}:${quaternion.join(',')};`;
+      quads.push({
+        id: item.id,
+        position: item.mode.position,
+        quaternion,
+        half: { w: 0.04, h: 0.04 },
+        billboard: true,
+      });
+      continue;
+    }
     const size = physicalSize(item.lastScreenRect.w, item.lastScreenRect.h);
+    key += `${item.id}:${item.mode.position[0]},${item.mode.position[1]},${item.mode.position[2]}:${item.lastScreenRect.w}x${item.lastScreenRect.h};`;
     quads.push({
       id: item.id,
       position: item.mode.position,
@@ -57,7 +81,59 @@ function syncQuads(windows: WindowInstance[]): void {
       half: { w: size.w / 2, h: size.h / 2 },
     });
   }
+  if (key === quadKey) return;
+  quadKey = key;
   setWindowQuads(quads);
+}
+
+function occludedOpacity(
+  id: string,
+  pose: { origin: [number, number, number] } | null,
+  worldPosition: readonly [number, number, number],
+  dt: number,
+): number {
+  const sample = occlusion.get(id) ?? { target: 1, value: 1, clock: 0, pending: 1, pendingCount: 0 };
+  sample.clock += dt;
+  if (sample.clock >= 0.1 && pose) {
+    sample.clock = 0;
+    const dx = worldPosition[0] - pose.origin[0];
+    const dy = worldPosition[1] - pose.origin[1];
+    const dz = worldPosition[2] - pose.origin[2];
+    const span = Math.hypot(dx, dy, dz);
+    const direction: [number, number, number] = span > 1e-4 ? [dx / span, dy / span, dz / span] : [0, 0, -1];
+    let blocked = false;
+    for (const box of occluders()) {
+      if (rayAabb(pose.origin, direction, box.box, span - 0.05)) {
+        blocked = true;
+        break;
+      }
+    }
+    const nextTarget = blocked ? 0 : 1;
+    if (nextTarget === sample.target) sample.pendingCount = 0;
+    else {
+      sample.pending = nextTarget;
+      sample.pendingCount += 1;
+      if (sample.pendingCount >= 2) {
+        sample.target = nextTarget;
+        sample.pendingCount = 0;
+      }
+    }
+  }
+  const step = Math.min(1, dt / FADE_SECONDS);
+  sample.value += (sample.target - sample.value) * step;
+  occlusion.set(id, sample);
+  return sample.value;
+}
+
+const occupiedIds = new Set<string>();
+
+function occupiedAnchors(exceptId: string): Set<string> {
+  occupiedIds.clear();
+  for (const item of Object.values(useWindows.getState().windows)) {
+    if (item.id === exceptId || item.mode.kind !== 'worldPinned' || !item.mode.anchorId) continue;
+    occupiedIds.add(item.mode.anchorId);
+  }
+  return occupiedIds;
 }
 
 function paintGhost(camera: Camera, carried: WindowInstance | null): void {
@@ -74,20 +150,25 @@ function paintGhost(camera: Camera, carried: WindowInstance | null): void {
   }
   const worldId = useSession.getState().worldId;
   const world = worldId ? getWorld(worldId) : undefined;
-  const occupied = new Set<string>();
-  for (const item of Object.values(useWindows.getState().windows)) {
-    if (item.id === carried.id || item.mode.kind !== 'worldPinned' || !item.mode.anchorId) continue;
-    occupied.add(item.mode.anchorId);
-  }
+  const occupied = occupiedAnchors(carried.id);
+  const rail = world?.collision.kind === 'boxes' ? world.collision.colliders.find((item) => item.id === 'rail-north') : undefined;
+  const bounds: PlacementBounds | undefined =
+    world?.collision.kind === 'boxes'
+      ? unionPlacementBounds(world.zones, world.collision.floorY, rail ? rail.box.min[2] : null)
+      : undefined;
   const placement = resolvePlacement({
     ray: { origin: pose.origin, direction: pose.direction },
     colliders: colliders(),
     anchors: world?.pinAnchors ?? [],
     occupied,
     heightPx: carried.lastScreenRect.h,
+    widthPx: carried.lastScreenRect.w,
+    bounds,
   });
-  const projected = projectWindow(camera, placement.position, placement.quaternion);
+  const ghostHalf = physicalSize(carried.lastScreenRect.w, carried.lastScreenRect.h);
+  const projected = projectWindow(camera, placement.position, placement.quaternion, { w: ghostHalf.w / 2, h: ghostHalf.h / 2 });
   ghost.hidden = projected.behind || !projected.object;
+  ghost.style.clipPath = projected.clip ?? '';
   ghost.dataset.valid = placement.valid ? 'true' : 'false';
   ghost.dataset.taken = placement.taken ? 'true' : 'false';
   ghost.dataset.placement = placement.placement;
@@ -133,9 +214,22 @@ export function WindowRig() {
     inputManager.setBeforeShellChange((from, to) => {
       if (from === 'WORLD' && to !== 'WORLD') autoPinCarried();
     });
-    const unhit = onCrosshairHit((id) => focusPinnedFromWorld(id));
-    const unsub = useWindows.subscribe(() => persistWindows());
-    const onHide = () => persistWindows();
+    inputManager.setOnFocusLoss(() => autoPinCarried());
+    const unhit = onCrosshairHit((id, point) => focusPinnedFromWorld(id, point));
+    let persistTimer = 0;
+    const unsub = useWindows.subscribe(() => {
+      window.clearTimeout(persistTimer);
+      persistTimer = window.setTimeout(() => {
+        persistTimer = 0;
+        persistWindows();
+      }, 400);
+    });
+    const flushPersist = () => {
+      window.clearTimeout(persistTimer);
+      persistTimer = 0;
+      persistWindows();
+    };
+    const onHide = () => flushPersist();
     window.addEventListener('pagehide', onHide);
     const ungl = useGlStore.subscribe((state, prev) => {
       if (!state.lost || prev.lost) return;
@@ -153,7 +247,9 @@ export function WindowRig() {
       installWindowBridge(null);
       inputManager.setWindowHooks(null);
       inputManager.setBeforeShellChange(null);
+      inputManager.setOnFocusLoss(null);
       unhit();
+      window.clearTimeout(persistTimer);
       unsub();
       ungl();
       occlusion.clear();
@@ -191,8 +287,8 @@ export function WindowRig() {
     for (const id of occlusion.keys()) {
       if (!live.has(id)) occlusion.delete(id);
     }
-    syncQuads(windows);
     const pose = cameraPoseSafe(camera);
+    syncQuads(windows, pose?.quaternion ?? null);
     let carried: WindowInstance | null = null;
     for (const item of windows) {
       const element = windowElement(item.id);
@@ -200,6 +296,27 @@ export function WindowRig() {
       if (useWindows.getState().closingIds.includes(item.id)) {
         element.style.transition = 'opacity 120ms linear';
         element.style.opacity = '0';
+        continue;
+      }
+      if (item.state === 'minimized' && item.mode.kind === 'worldPinned') {
+        const billboard = pose?.quaternion ?? item.mode.quaternion;
+        const tag = projectWindow(camera, item.mode.position, billboard, { w: 0.04, h: 0.04 });
+        element.style.width = '42px';
+        element.style.height = '42px';
+        element.style.transformOrigin = '0 0';
+        element.style.opacity = '1';
+        element.style.pointerEvents = 'auto';
+        if (!tag.object) {
+          element.style.visibility = 'hidden';
+          element.style.clipPath = '';
+          continue;
+        }
+        element.style.visibility = 'visible';
+        element.style.transform = tag.object;
+        element.style.clipPath = tag.clip ?? '';
+        const faded = occludedOpacity(item.id, pose, item.mode.position, dt);
+        element.style.opacity = String(faded);
+        element.style.pointerEvents = faded > 0.05 ? 'auto' : 'none';
         continue;
       }
       if (item.mode.kind === 'overlay' || item.state === 'minimized') {
@@ -219,45 +336,38 @@ export function WindowRig() {
         worldQuaternion = lagged.quaternion;
       }
       if (!worldPosition || !worldQuaternion) continue;
-      const projected = projectWindow(camera, worldPosition, worldQuaternion);
+      const half = physicalSize(item.lastScreenRect.w, item.lastScreenRect.h);
+      const projected = projectWindow(camera, worldPosition, worldQuaternion, { w: half.w / 2, h: half.h / 2 });
       element.style.width = `${item.lastScreenRect.w}px`;
       element.style.height = `${item.lastScreenRect.h}px`;
       element.style.transformOrigin = '0 0';
       if (!projected.object) {
         element.style.visibility = 'hidden';
+        element.style.clipPath = '';
         continue;
       }
       element.style.visibility = 'visible';
       element.style.transform = projected.object;
+      element.style.clipPath = projected.clip ?? '';
+      if (pose) {
+        const view: [number, number, number] = [
+          worldPosition[0] - pose.origin[0],
+          worldPosition[1] - pose.origin[1],
+          worldPosition[2] - pose.origin[2],
+        ];
+        const front = frontFacesView(windowFrontNormal(worldQuaternion), view);
+        element.style.pointerEvents = front ? 'auto' : 'none';
+        element.toggleAttribute('data-facing-back', !front);
+        element.inert = !front;
+        if (!front && element.contains(document.activeElement)) (document.activeElement as HTMLElement | null)?.blur();
+      } else if (element.inert) {
+        element.inert = false;
+      }
       if (item.mode.kind !== 'worldPinned') {
         element.style.opacity = '1';
         continue;
       }
-      const sample = occlusion.get(item.id) ?? { target: 1, value: 1, clock: 0 };
-      sample.clock += dt;
-      if (sample.clock >= 0.1 && pose) {
-        sample.clock = 0;
-        const delta = [
-          worldPosition[0] - pose.origin[0],
-          worldPosition[1] - pose.origin[1],
-          worldPosition[2] - pose.origin[2],
-        ] as [number, number, number];
-        const span = Math.hypot(delta[0], delta[1], delta[2]);
-        const direction = span > 1e-4 ? [delta[0] / span, delta[1] / span, delta[2] / span] as [number, number, number] : [0, 0, -1] as [number, number, number];
-        let blocked = false;
-        for (const box of occluders()) {
-          const hit = rayAabb(pose.origin, direction, box.box, span - 0.05);
-          if (hit) {
-            blocked = true;
-            break;
-          }
-        }
-        sample.target = blocked ? 0 : 1;
-      }
-      const step = Math.min(1, dt / FADE_SECONDS);
-      sample.value += (sample.target - sample.value) * step;
-      occlusion.set(item.id, sample);
-      element.style.opacity = String(sample.value);
+      element.style.opacity = String(occludedOpacity(item.id, pose, worldPosition, dt));
     }
     paintGhost(camera, carried);
   }, PROJECTOR_FRAME_PRIORITY);

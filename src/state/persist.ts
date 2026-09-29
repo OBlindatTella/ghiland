@@ -23,6 +23,23 @@ function noteWriteFailure(): void {
   for (const listener of failureListeners) listener();
 }
 
+/**
+ * The next `localStorage.setItem` throws `QuotaExceededError` once, then the original write is restored.
+ * Used by the test hook. App writes go through `localStorageAdapter`, which catches this and returns false.
+ */
+export function armQuotaError(): void {
+  if (typeof localStorage === 'undefined' || typeof Storage === 'undefined') return;
+  const proto = Storage.prototype;
+  const original = proto.setItem;
+  let armed = true;
+  proto.setItem = function (this: Storage, key: string, value: string) {
+    if (!armed || this !== localStorage) return original.call(this, key, value);
+    armed = false;
+    proto.setItem = original;
+    throw new DOMException('The quota has been exceeded.', 'QuotaExceededError');
+  };
+}
+
 export const localStorageAdapter: StorageAdapter = {
   get: (key) => {
     try {

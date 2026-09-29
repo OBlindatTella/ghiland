@@ -19,6 +19,23 @@ describe('window projector', () => {
     expect(behind.object).toBeNull();
   });
 
+  it('clips a window when a corner crosses the camera near plane', () => {
+    const camera = new PerspectiveCamera(62, 16 / 9, 0.08, 100);
+    camera.position.set(0, 1.62, 0);
+    camera.lookAt(0, 1.62, 5);
+    camera.updateProjectionMatrix();
+    camera.updateMatrixWorld();
+    const yaw = Math.PI / 2;
+    const quaternion = [0, Math.sin(yaw / 2), 0, Math.cos(yaw / 2)] as [number, number, number, number];
+    const straddling = projectWindow(camera, [0, 1.62, 0.4], quaternion, { w: 1.2, h: 0.3 });
+    expect(straddling.behind).toBe(false);
+    expect(straddling.object).toContain('matrix3d(');
+    expect(straddling.clip).toContain('polygon(');
+    const clear = projectWindow(camera, [0, 1.62, 3], [0, 0, 0, 1], { w: 0.4, h: 0.3 });
+    expect(clear.behind).toBe(false);
+    expect(clear.clip).toBeNull();
+  });
+
   it('keeps the viewport centre in screen pixels, after perspective', () => {
     const camera = new PerspectiveCamera(62, 16 / 9, 0.08, 100);
     camera.position.set(0, 1.62, -8.2);

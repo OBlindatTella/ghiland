@@ -17,7 +17,8 @@ export function CrosshairRig() {
   useEffect(() => {
     const onClick = () => {
       if (document.pointerLockElement !== gl.domElement) return;
-      notifyCrosshairClick();
+      const rect = gl.domElement.getBoundingClientRect();
+      notifyCrosshairClick({ x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 });
     };
     gl.domElement.addEventListener('click', onClick);
     return () => gl.domElement.removeEventListener('click', onClick);

@@ -46,21 +46,27 @@ describe('quality tier hysteresis', () => {
     expect(clock.tier).toBe('MED');
   });
 
-  it('does not step past the ends of the ladder', () => {
+  it('does not step past the ends of the ladder, and AUTO never climbs above HIGH', () => {
     expect(hold('LOW', 10, 8).tier).toBe('LOW');
+    expect(hold('HIGH', 90, 8).tier).toBe('HIGH');
     expect(hold('ULTRA', 90, 8).tier).toBe('ULTRA');
   });
 
   it('does not retry a tier that failed within 60 seconds (D-022)', () => {
-    let clock = hold('HIGH', 70, 5);
-    expect(clock.tier).toBe('ULTRA');
+    let clock = hold('MED', 70, 5);
+    expect(clock.tier).toBe('HIGH');
     expect(clock.climbed).toBe(true);
     clock = advance(clock, 40, 31);
-    expect(clock.tier).toBe('HIGH');
-    expect(clock.ceiling).toBe('HIGH');
+    expect(clock.tier).toBe('MED');
+    expect(clock.ceiling).toBe('MED');
     clock = advance(clock, 70, 40);
-    expect(clock.tier).toBe('HIGH');
+    expect(clock.tier).toBe('MED');
     expect(clock.changed).toBe(false);
+  });
+
+  it('never climbs above HIGH (D-041)', () => {
+    expect(hold('HIGH', 90, 8).tier).toBe('HIGH');
+    expect(heuristicTier({ renderer: 'NVIDIA GeForce RTX 3060', cores: 16, deviceMemory: 32, lastGood: 'ULTRA' })).toBe('HIGH');
   });
 
   it('allows at most two tier changes in five minutes after the first minute, unless fps stays under half the target', () => {
@@ -75,6 +81,19 @@ describe('quality tier hysteresis', () => {
     expect(limited.tier).toBe('MED');
     const emergency = advance(limited, 10, 4);
     expect(emergency.tier).toBe('LOW');
+  });
+
+  it('does not treat 40 fps plus a short dip under half target as an emergency (D-034)', () => {
+    let clock = { ...initialAutoClock('HIGH'), elapsed: 120, sinceChange: 40, changes: [70, 100] };
+    clock = advance(clock, 40, 6);
+    expect(clock.tier).toBe('HIGH');
+    clock = advance(clock, 29, 2.5);
+    expect(clock.tier).toBe('HIGH');
+    expect(clock.changed).toBe(false);
+    clock = advance(clock, 29, 0.6);
+    expect(clock.tier).toBe('MED');
+    expect(clock.ceiling).toBe('MED');
+    expect(clock.changes).toEqual([70, 100]);
   });
 
   it('remembers a tier only after it has held for 60 seconds', () => {

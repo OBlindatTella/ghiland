@@ -4,8 +4,10 @@ import { useCallback, useEffect, useState, type PointerEvent as ReactPointerEven
 import type { AppDefinition } from '@/contracts/app';
 import type { WindowInstance } from '@/contracts/window';
 import { dragRect, resizeRect, type ResizeEdge } from '@/shell/windows/geometry';
+import { frameBackStyle, frameFaceStyle } from '@/shell/windows/frameBack';
 import { frameTint, subscribeFrameTint } from '@/shell/windows/frameTint';
 import { bindWindowElement } from '@/engine/windows/domRegistry';
+import { persistWindows } from '@/engine/windows/actions';
 import { requestDetach, requestPin, requestRecall } from '@/engine/windows/bridge';
 import { closeAppWindow, focusAppWindow, minimizeAppWindow } from '@/shell/windows/commands';
 import { subscribePulse, windowPulsing } from '@/shell/windows/pulse';
@@ -55,7 +57,7 @@ export function WindowFrame({
     focusAppWindow(instance.id);
     const start = { x: event.clientX, y: event.clientY, rect };
     const pointer = event.currentTarget;
-    pointer.closest('article')?.focus();
+    pointer.closest('article')?.focus({ preventScroll: true });
     pointer.setPointerCapture(event.pointerId);
     let origin = rect;
     let outsideSince: number | null = null;
@@ -92,6 +94,7 @@ export function WindowFrame({
       window.removeEventListener('keydown', onKey);
       window.removeEventListener('blur', cancel);
       unshell();
+      persistWindows();
       if (held) requestDetach(instance.id);
     };
     const up = () => stop(true);
@@ -128,6 +131,7 @@ export function WindowFrame({
       window.removeEventListener('keydown', onKey);
       window.removeEventListener('blur', end);
       unshell();
+      persistWindows();
     };
     const move = (next: PointerEvent) => {
       if (next.buttons === 0) {
@@ -175,7 +179,7 @@ export function WindowFrame({
       className="pointer-events-auto absolute"
       style={
         world
-          ? { left: 0, top: 0, width: rect.w, height: rect.h, transformOrigin: '0 0' }
+          ? { left: 0, top: 0, width: rect.w, height: rect.h, transformOrigin: '0 0', transformStyle: 'preserve-3d' as const }
           : { left: rect.x, top: rect.y, width: rect.w, height: rect.h, zIndex: 20 + instance.z, opacity: closing ? 0 : 1, transition: 'opacity 120ms linear' }
       }
       onPointerDown={() => focusAppWindow(instance.id)}
@@ -189,8 +193,9 @@ export function WindowFrame({
           borderColor: focused || pulsing ? '#86bdb2' : 'rgba(255,255,255,0.1)',
           outline: pulsing ? '1px solid #86bdb2' : undefined,
           borderTopColor: focused ? '#86bdb2' : undefined,
-          transform: lift ? 'scale(0.96)' : undefined,
+          transform: lift ? 'scale(0.96)' : 'translateZ(0.4px)',
           boxShadow: world ? 'none' : lift ? '0 18px 40px rgba(0,0,0,0.45)' : '0 8px 24px rgba(0,0,0,0.32)',
+          ...frameFaceStyle,
         }}
       >
           <header
@@ -237,6 +242,21 @@ export function WindowFrame({
           {children}
         </div>
       </div>
+      {world ? (
+        <div
+          data-frame-back=""
+          data-testid="window-back"
+          aria-hidden
+          style={{ ...frameBackStyle, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8, color: '#2c261f' }}
+        >
+          <span data-frame-glyph="" style={{ fontSize: 28, lineHeight: '32px', fontWeight: 600 }}>
+            {app.icon}
+          </span>
+          <span data-frame-title="" style={{ maxWidth: '80%', overflow: 'hidden', textOverflow: 'ellipsis', fontSize: 13, lineHeight: '18px' }}>
+            {instance.title}
+          </span>
+        </div>
+      ) : null}
       {app.window.resizable && !world
         ? EDGES.map((edge) => (
             <div

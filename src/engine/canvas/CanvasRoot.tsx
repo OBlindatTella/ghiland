@@ -7,6 +7,7 @@ import { AudioRig } from '@/engine/audio/AudioRig';
 import { installDevHook } from '@/engine/dev/installDevHook';
 import { qualityProfiles } from '@/engine/quality/profiles';
 import { useAppliedQuality } from '@/state/appliedQuality';
+import { useFrameBudget } from '@/state/frameBudget';
 import { PerfProbe } from '@/engine/perf/PerfProbe';
 import { ContextGuard } from '@/engine/quality/ContextGuard';
 import { QualityDirector } from '@/engine/quality/QualityDirector';
@@ -32,6 +33,7 @@ function CanvasLifecycle() {
       textures: gl.info.memory.textures,
       geometries: gl.info.memory.geometries,
       toneMapping: gl.toneMapping,
+      programs: gl.info.programs?.length ?? 0,
     }));
     camera.rotation.order = 'YXZ';
     camera.rotation.y = Math.PI;
@@ -48,11 +50,12 @@ function CanvasLifecycle() {
 
 export function CanvasRoot() {
   const tier = useAppliedQuality((state) => state.tier);
+  const pixelRatio = useFrameBudget((state) => state.pixelRatio);
   return (
     <div className="absolute inset-0">
       <Canvas
         frameloop="always"
-        dpr={qualityProfiles[tier].dpr}
+        dpr={pixelRatio ?? qualityProfiles[tier].dpr}
         shadows={false}
         gl={{
           antialias: false,

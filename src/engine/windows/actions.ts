@@ -1,13 +1,23 @@
 import type { WindowInstance } from '@/contracts/window';
 import { getWorld } from '@/worlds/registry';
 import { inputManager } from '@/engine/input/InputManager';
+import { caretIndexInField, type CaretPoint } from '@/engine/windows/caret';
 import { carryTarget, clearCarry, readCarry, seedCarry } from '@/engine/windows/carryPose';
 import { cameraPose, queryCrosshair } from '@/engine/windows/crosshair';
-import { autoPinPlacement, resolvePlacement, type PlacementCollider } from '@/engine/windows/placement';
+import { autoPinPlacement, resolvePlacement, unionPlacementBounds, type PlacementBounds, type PlacementCollider } from '@/engine/windows/placement';
 import { fileFromWindows, readWindowsFile, writeWindowsFile } from '@/shell/windows/persistence';
 import { useInputStore } from '@/state/input';
 import { useSession } from '@/state/session';
 import { useWindows } from '@/state/windows';
+
+function placementBounds(): PlacementBounds | undefined {
+  const id = useSession.getState().worldId;
+  if (!id) return undefined;
+  const world = getWorld(id);
+  if (!world || world.collision.kind !== 'boxes') return undefined;
+  const rail = world.collision.colliders.find((item) => item.id === 'rail-north');
+  return unionPlacementBounds(world.zones, world.collision.floorY, rail ? rail.box.min[2] : null);
+}
 
 function worldColliders(): PlacementCollider[] {
   const id = useSession.getState().worldId;
@@ -37,12 +47,16 @@ function detached(): WindowInstance | null {
 }
 
 export function persistWindows(): void {
-  writeWindowsFile(fileFromWindows(Object.values(useWindows.getState().windows)));
+  const previous = readWindowsFile();
+  writeWindowsFile(fileFromWindows(Object.values(useWindows.getState().windows), previous, useSession.getState().worldId));
 }
 
 export function restorePinnedForWorld(worldId: string): void {
   const file = readWindowsFile();
-  useWindows.getState().restoreWorld(file.pinned.filter((item) => item.worldId === worldId));
+  useWindows.getState().restoreWorld(
+    file.pinned.filter((item) => item.worldId === worldId),
+    file.rects,
+  );
 }
 
 function overlayMode(item: WindowInstance): void {
@@ -88,6 +102,8 @@ function pinWindow(id: string): boolean {
     anchors: anchors(),
     occupied: occupied(id),
     heightPx: item.lastScreenRect.h,
+    widthPx: item.lastScreenRect.w,
+    bounds: placementBounds(),
   });
   if (!placement.valid) return false;
   clearCarry(id);
@@ -117,8 +133,13 @@ export function autoPinCarried(): void {
   const carried = readCarry(item.id) ?? (pose ? carryTarget(pose.origin, pose.direction, pose.quaternion) : null);
   if (!carried) return;
   const eye = pose?.origin ?? carried.position;
-  const placement = autoPinPlacement(eye, carried.position, carried.quaternion, worldColliders());
+  const placement = autoPinPlacement(eye, carried.position, carried.quaternion, worldColliders(), placementBounds(), item.lastScreenRect.h);
   clearCarry(item.id);
+  if (!placement.valid) {
+    useWindows.getState().setMode(item.id, { kind: 'overlay', rect: item.lastScreenRect });
+    persistWindows();
+    return;
+  }
   useWindows.getState().setMode(item.id, {
     kind: 'worldPinned',
     worldId,
@@ -156,8 +177,8 @@ export function onInteractKey(): void {
   useWindows.getState().setMode(item.id, { kind: 'detached', offset: [0, 0, -1.1], lagMs: 150 });
 }
 
-/** Aim and click a pinned window: SCREEN, focused, camera stays. */
-export function focusPinnedFromWorld(id: string): void {
+/** Aim and click a pinned window: SCREEN, focused, caret where the click landed. */
+export function focusPinnedFromWorld(id: string, point: CaretPoint | null = null): void {
   const item = useWindows.getState().windows[id];
   if (!item || item.mode.kind !== 'worldPinned') return;
   if (useInputStore.getState().shellState !== 'WORLD') return;
@@ -165,6 +186,10 @@ export function focusPinnedFromWorld(id: string): void {
   inputManager.presentScreen();
   window.setTimeout(() => {
     const field = document.querySelector<HTMLElement>(`[data-ghiland-window="${id}"] textarea, [data-ghiland-window="${id}"] input`);
-    field?.focus();
+    if (!field) return;
+    field.focus({ preventScroll: true });
+    if (!point || !(field instanceof HTMLTextAreaElement || field instanceof HTMLInputElement)) return;
+    const index = caretIndexInField(field, point);
+    if (index !== null) field.setSelectionRange(index, index);
   }, 0);
 }

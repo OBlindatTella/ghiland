@@ -10,7 +10,28 @@ export const ANCHOR_RADIUS = 1.5;
 export const MIN_EYE_DISTANCE = 0.7;
 export const GLASS_CLEARANCE = 0.3;
 export const FLOAT_DISTANCE = 1.6;
-export const SURFACE_OFFSET = 0.005;
+export const SURFACE_OFFSET = 0.01;
+export const EDGE_CLEARANCE = 0.02;
+export const RAIL_CLEARANCE = 0.15;
+
+/** One walkable zone. The ceiling is that zone's own, not the tallest in the house (S6-07). */
+export interface PlacementVolume {
+  min: Vec3;
+  max: Vec3;
+  floorY: number;
+  ceilingY: number | null;
+}
+
+/** Union of the walkable zones. A float may cross from one volume into the next (D-038). */
+export interface PlacementBounds {
+  volumes: readonly PlacementVolume[];
+  floorY: number;
+  railZ: number | null;
+}
+
+export function boundsFromBox(min: Vec3, max: Vec3, floorY: number, ceilingY: number | null, railZ: number | null): PlacementBounds {
+  return { volumes: [{ min, max, floorY, ceilingY }], floorY, railZ };
+}
 export const TABLE_TILT = (10 * Math.PI) / 180;
 
 export interface PlacementCollider {
@@ -45,7 +66,7 @@ export interface Placement {
   quaternion: Quat;
   placement: 'anchor' | 'surface' | 'float';
   anchorId?: string;
-  reason?: 'tooClose';
+  reason?: 'tooClose' | 'outOfBounds';
 }
 
 export interface PlacementQuery {
@@ -55,6 +76,8 @@ export interface PlacementQuery {
   occupied: ReadonlySet<string>;
   /** CSS pixel height, used so a table pose rests its bottom edge on the surface. */
   heightPx: number;
+  widthPx?: number;
+  bounds?: PlacementBounds;
 }
 
 function sub(a: Vec3, b: Vec3): Vec3 {
@@ -63,6 +86,16 @@ function sub(a: Vec3, b: Vec3): Vec3 {
 
 function add(a: Vec3, b: Vec3): Vec3 {
   return [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
+}
+
+function cross(a: Vec3, b: Vec3): Vec3 {
+  return [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+}
+
+function rotateVec(q: Quat, v: Vec3): Vec3 {
+  const u: Vec3 = [q[0], q[1], q[2]];
+  const t = scale(cross(u, v), 2);
+  return add(v, add(scale(t, q[3]), cross(u, t)));
 }
 
 function scale(a: Vec3, s: number): Vec3 {
@@ -80,6 +113,10 @@ function normalize(a: Vec3): Vec3 {
 
 function distance(a: Vec3, b: Vec3): number {
   return length(sub(a, b));
+}
+
+function dot(a: Vec3, b: Vec3): number {
+  return a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
 }
 
 export function yawQuat(yaw: number): Quat {
@@ -237,6 +274,7 @@ export function resolvePlacement(query: PlacementQuery): Placement {
 
   if (hit && hit.collider.layers.includes('pinSurface')) {
     const up = hit.normal[1] > 0.7;
+    // Table side faces are not pin surfaces (Q13). Only an upward face, or a wall/fin (occluder), pins.
     if (up) {
       const half = query.heightPx / PX_PER_METER / 2;
       const face = facingQuat(hit.point, eye);
@@ -244,72 +282,353 @@ export function resolvePlacement(query: PlacementQuery): Placement {
       const back = half * Math.sin(TABLE_TILT);
       const position: Vec3 = [
         hit.point[0] - Math.sin(yaw) * back,
-        hit.point[1] + half * Math.cos(TABLE_TILT),
+        hit.point[1] + EDGE_CLEARANCE + half * Math.cos(TABLE_TILT),
         hit.point[2] - Math.cos(yaw) * back,
       ];
-      return withEyeCheck(
-        {
-          valid: true,
-          taken,
-          position,
-          quaternion: mulQuat(face, pitchQuat(-TABLE_TILT)),
-          placement: 'surface',
-        },
-        eye,
-      );
-    }
-    const position = add(hit.point, scale(hit.normal, SURFACE_OFFSET));
-    return withEyeCheck(
-      {
+      const posed = {
         valid: true,
         taken,
         position,
-        quaternion: quatFromNormal(hit.normal),
-        placement: 'surface',
-      },
-      eye,
-    );
+        quaternion: mulQuat(face, pitchQuat(-TABLE_TILT)),
+        placement: 'surface' as const,
+      };
+      if (tableOverhangs(posed.position, posed.quaternion, half, (query.widthPx ?? 440) / PX_PER_METER / 2, hit.collider.box)) {
+        return { ...posed, valid: false, reason: 'outOfBounds' };
+      }
+      return containPlacement(withEyeCheck(posed, eye), query, hit.collider.id);
+    }
+    if (hit.collider.layers.includes('occluder')) {
+      const position = add(hit.point, scale(hit.normal, SURFACE_OFFSET));
+      return containPlacement(
+        withEyeCheck(
+          {
+            valid: true,
+            taken,
+            position,
+            quaternion: quatFromNormal(hit.normal),
+            placement: 'surface',
+          },
+          eye,
+        ),
+        query,
+        hit.collider.id,
+      );
+    }
   }
 
   let along = FLOAT_DISTANCE;
   if (hit) {
-    const blocked = hit.collider.layers.includes('movement') && !hit.collider.layers.includes('pinSurface');
+    // A table side is movement, not a pin face, so the float stops 0.3 m short (Q13).
+    const tableSide = hit.collider.layers.includes('pinSurface') && hit.normal[1] <= 0.7 && !hit.collider.layers.includes('occluder');
+    const blocked = tableSide || (hit.collider.layers.includes('movement') && !hit.collider.layers.includes('pinSurface'));
     along = blocked ? Math.min(FLOAT_DISTANCE, hit.distance - GLASS_CLEARANCE) : Math.min(FLOAT_DISTANCE, Math.max(0.05, hit.distance - SURFACE_OFFSET));
   }
   const position = add(eye, scale(direction, along));
-  return withEyeCheck(
-    {
-      valid: true,
-      taken,
-      position,
-      quaternion: facingQuat(position, eye),
-      placement: 'float',
-    },
-    eye,
+  return containPlacement(
+    withEyeCheck(
+      {
+        valid: true,
+        taken,
+        position,
+        quaternion: facingQuat(position, eye),
+        placement: 'float',
+      },
+      eye,
+    ),
+    query,
   );
 }
 
+function containPlacement(placement: Placement, query: PlacementQuery, hostId?: string): Placement {
+  const bounds = query.bounds;
+  if (!bounds || placement.placement === 'anchor') return placement;
+  if (placement.placement === 'surface') return containOnSurface(placement, query, bounds, hostId);
+  return containInVolumes(placement, query, bounds);
+}
+
+function horizontalExtents(quaternion: Quat, halfW: number, halfH: number): { x: number; z: number } {
+  const right = rotateVec(quaternion, [1, 0, 0]);
+  const up = rotateVec(quaternion, [0, 1, 0]);
+  return {
+    x: Math.abs(right[0]) * halfW + Math.abs(up[0]) * halfH,
+    z: Math.abs(right[2]) * halfW + Math.abs(up[2]) * halfH,
+  };
+}
+
+function volumeInsets(volume: PlacementVolume, extentX: number, extentZ: number, railZ: number | null) {
+  let maxZ = volume.max[2] - extentZ - EDGE_CLEARANCE;
+  if (railZ !== null && volume.max[2] >= railZ - 0.05) maxZ = Math.min(maxZ, railZ - RAIL_CLEARANCE);
+  return {
+    minX: volume.min[0] + extentX + EDGE_CLEARANCE,
+    maxX: volume.max[0] - extentX - EDGE_CLEARANCE,
+    minZ: volume.min[2] + extentZ + EDGE_CLEARANCE,
+    maxZ,
+  };
+}
+
+function nearestInUnion(x: number, z: number, extentX: number, extentZ: number, bounds: PlacementBounds): { x: number; z: number } | null {
+  let best: { x: number; z: number } | null = null;
+  let bestDist = Infinity;
+  for (const volume of bounds.volumes) {
+    const inset = volumeInsets(volume, extentX, extentZ, bounds.railZ);
+    if (inset.minX > inset.maxX + 1e-6 || inset.minZ > inset.maxZ + 1e-6) continue;
+    const cx = Math.min(inset.maxX, Math.max(inset.minX, x));
+    const cz = Math.min(inset.maxZ, Math.max(inset.minZ, z));
+    const dist = (cx - x) ** 2 + (cz - z) ** 2;
+    if (dist < bestDist - 1e-8) {
+      bestDist = dist;
+      best = { x: cx, z: cz };
+    }
+  }
+  return best;
+}
+
+/** Lowest ceiling among the zone volumes the rectangle crosses. */
+function ceilingFor(x: number, z: number, extentX: number, extentZ: number, bounds: PlacementBounds): number | null {
+  let cap: number | null = null;
+  for (const volume of bounds.volumes) {
+    const overlaps =
+      x + extentX > volume.min[0] &&
+      x - extentX < volume.max[0] &&
+      z + extentZ > volume.min[2] &&
+      z - extentZ < volume.max[2];
+    if (!overlaps || volume.ceilingY === null) continue;
+    cap = cap === null ? volume.ceilingY : Math.min(cap, volume.ceilingY);
+  }
+  return cap;
+}
+
+function containInVolumes(placement: Placement, query: PlacementQuery, bounds: PlacementBounds): Placement {
+  const halfH = query.heightPx / PX_PER_METER / 2;
+  const halfW = (query.widthPx ?? 440) / PX_PER_METER / 2;
+  const extent = horizontalExtents(placement.quaternion, halfW, halfH);
+  const spot = nearestInUnion(placement.position[0], placement.position[2], extent.x, extent.z, bounds);
+  if (!spot) return { ...placement, valid: false, reason: 'outOfBounds' };
+  let y = placement.position[1];
+  const floor = bounds.floorY + EDGE_CLEARANCE + halfH;
+  const ceiling = ceilingFor(spot.x, spot.z, extent.x, extent.z, bounds);
+  if (ceiling === null) y = Math.max(floor, y);
+  else {
+    const maxY = ceiling - EDGE_CLEARANCE - halfH;
+    if (floor > maxY) return { ...placement, position: [spot.x, y, spot.z], valid: false, reason: 'outOfBounds' };
+    y = Math.min(maxY, Math.max(floor, y));
+  }
+  return withEyeCheck({ ...placement, position: [spot.x, y, spot.z] }, query.ray.origin);
+}
+
+function tableOverhangs(position: Vec3, quaternion: Quat, halfH: number, halfW: number, box: AABB): boolean {
+  const right = rotateVec(quaternion, [1, 0, 0]);
+  const up = rotateVec(quaternion, [0, 1, 0]);
+  const bottom = sub(position, scale(up, halfH));
+  const limit = halfW * 2 * 0.1;
+  for (const end of [add(bottom, scale(right, halfW)), add(bottom, scale(right, -halfW))]) {
+    const dx = end[0] < box.min[0] ? box.min[0] - end[0] : end[0] > box.max[0] ? end[0] - box.max[0] : 0;
+    const dz = end[2] < box.min[2] ? box.min[2] - end[2] : end[2] > box.max[2] ? end[2] - box.max[2] : 0;
+    if (Math.hypot(dx, dz) > limit + 1e-4) return true;
+  }
+  return false;
+}
+
+function rectAabb(position: Vec3, right: Vec3, up: Vec3, halfW: number, halfH: number): { min: Vec3; max: Vec3 } {
+  const min: [number, number, number] = [Infinity, Infinity, Infinity];
+  const max: [number, number, number] = [-Infinity, -Infinity, -Infinity];
+  for (const sx of [halfW, -halfW]) {
+    for (const sy of [halfH, -halfH]) {
+      const corner = add(position, add(scale(right, sx), scale(up, sy)));
+      for (let axis = 0; axis < 3; axis += 1) {
+        min[axis] = Math.min(min[axis]!, corner[axis]!);
+        max[axis] = Math.max(max[axis]!, corner[axis]!);
+      }
+    }
+  }
+  return { min, max };
+}
+
+/** Smallest push of interval A out of B. Null when they do not overlap. */
+function axisSeparation(minA: number, maxA: number, minB: number, maxB: number): number | null {
+  if (maxA <= minB + 1e-4 || minA >= maxB - 1e-4) return null;
+  const pushPos = maxB - minA;
+  const pushNeg = minB - maxA;
+  return Math.abs(pushPos) <= Math.abs(pushNeg) ? pushPos : pushNeg;
+}
+
 /**
- * Lock-loss landing (D-017). Always valid: a carried window is never dropped.
- * If the pose is past a movement collider, pull it back to the player's side.
+ * In-plane translation that clears `box` expanded by `margin`.
+ * Null when the yawed footprint misses the box. A zero vector means the
+ * overlap is only along the wall normal, so an in-plane push cannot fix it.
  */
-export function autoPinPlacement(eye: Vec3, pose: Vec3, quaternion: Quat, colliders: readonly PlacementCollider[]): Placement {
+function separateFromBox(
+  position: Vec3,
+  right: Vec3,
+  up: Vec3,
+  halfW: number,
+  halfH: number,
+  box: { min: Vec3; max: Vec3 },
+  margin: number,
+): { right: number; up: number } | null {
+  const rect = rectAabb(position, right, up, halfW, halfH);
+  const pushes = [0, 1, 2].map((axis) =>
+    axisSeparation(rect.min[axis]!, rect.max[axis]!, box.min[axis]! - margin, box.max[axis]! + margin),
+  );
+  if (pushes.some((push) => push === null)) return null;
+  const axes: Vec3[] = [
+    [1, 0, 0],
+    [0, 1, 0],
+    [0, 0, 1],
+  ];
+  let best = Infinity;
+  let alongRight = 0;
+  let alongUp = 0;
+  let found = false;
+  for (let axis = 0; axis < 3; axis += 1) {
+    const push = pushes[axis];
+    if (push === null) continue;
+    const world = scale(axes[axis]!, push);
+    const slideRight = dot(world, right);
+    const slideUp = dot(world, up);
+    if (Math.hypot(slideRight, slideUp) < 1e-4) continue;
+    if (Math.abs(push) < best) {
+      best = Math.abs(push);
+      alongRight = slideRight;
+      alongUp = slideUp;
+      found = true;
+    }
+  }
+  if (!found) return { right: 0, up: 0 };
+  return { right: alongRight, up: alongUp };
+}
+
+function footprintOverlaps(
+  position: Vec3,
+  right: Vec3,
+  up: Vec3,
+  halfW: number,
+  halfH: number,
+  box: { min: Vec3; max: Vec3 },
+  margin: number,
+): boolean {
+  return separateFromBox(position, right, up, halfW, halfH, box, margin) !== null;
+}
+
+/**
+ * Slide a wall pin along its own yaw so the whole footprint stays 1 cm off the
+ * hit wall and 2 cm clear of every other movement or occluder box (S6-08, D-038).
+ */
+function containOnSurface(placement: Placement, query: PlacementQuery, bounds: PlacementBounds, hostId?: string): Placement {
+  const halfH = query.heightPx / PX_PER_METER / 2;
+  const halfW = (query.widthPx ?? 440) / PX_PER_METER / 2;
+  const right = rotateVec(placement.quaternion, [1, 0, 0]);
+  const up = rotateVec(placement.quaternion, [0, 1, 0]);
+  const extent = horizontalExtents(placement.quaternion, halfW, halfH);
+  const obstacles = query.colliders.filter(
+    (collider) => collider.id !== hostId && (collider.layers.includes('movement') || collider.layers.includes('occluder')),
+  );
+  let alongRight = 0;
+  let alongUp = 0;
+  for (let pass = 0; pass < 8; pass += 1) {
+    const position = add(placement.position, add(scale(right, alongRight), scale(up, alongUp)));
+    const ceiling = ceilingFor(position[0], position[2], extent.x, extent.z, bounds);
+    const floor = bounds.floorY + EDGE_CLEARANCE;
+    const cap = ceiling === null ? null : ceiling - EDGE_CLEARANCE;
+    let movedUp = 0;
+    for (const sx of [halfW, -halfW]) {
+      for (const sy of [halfH, -halfH]) {
+        const corner = add(position, add(scale(right, sx), scale(up, movedUp + sy)));
+        if (corner[1] < floor && Math.abs(up[1]) > 0.2) movedUp += (floor - corner[1]) / up[1];
+        if (cap !== null && corner[1] > cap && Math.abs(up[1]) > 0.2) movedUp += (cap - corner[1]) / up[1];
+      }
+    }
+    alongUp += movedUp;
+    const slid = add(placement.position, add(scale(right, alongRight), scale(up, alongUp)));
+    let shifted = Math.abs(movedUp) > 1e-6;
+    for (const obstacle of obstacles) {
+      const sep = separateFromBox(slid, right, up, halfW, halfH, obstacle.box, EDGE_CLEARANCE);
+      if (!sep || (Math.abs(sep.right) < 1e-6 && Math.abs(sep.up) < 1e-6)) continue;
+      alongRight += sep.right;
+      alongUp += sep.up;
+      shifted = true;
+      break;
+    }
+    if (!shifted) break;
+  }
+  const position = add(placement.position, add(scale(right, alongRight), scale(up, alongUp)));
+  for (const obstacle of obstacles) {
+    if (footprintOverlaps(position, right, up, halfW, halfH, obstacle.box, EDGE_CLEARANCE)) {
+      return { ...placement, position, valid: false, reason: 'outOfBounds' };
+    }
+  }
+  return withEyeCheck({ ...placement, position }, query.ray.origin);
+}
+
+/** One volume per walkable zone, each with its own ceiling. The corridor stays at 2.4 m (S6-07, D-038). */
+export function unionPlacementBounds(
+  zones: readonly { bounds: readonly { min: Vec3; max: Vec3 }[] }[],
+  floorY: number,
+  railZ: number | null,
+): PlacementBounds {
+  const volumes: PlacementVolume[] = [];
+  for (const zone of zones) {
+    for (const box of zone.bounds) {
+      volumes.push({
+        min: [box.min[0], box.min[1], box.min[2]],
+        max: [box.max[0], box.max[1], box.max[2]],
+        floorY,
+        ceilingY: box.max[1],
+      });
+    }
+  }
+  if (volumes.length === 0) return boundsFromBox([-7, floorY, -9], [7, 3.2, 9], floorY, 3.2, railZ);
+  return { volumes, floorY, railZ };
+}
+
+/**
+ * Lock-loss landing (D-017, D-038). The nearest float along the view ray that
+ * stays at least 0.7 m out and inside the walkable union. Invalid when none exists;
+ * the caller docks the window back to the Screen instead of dropping it.
+ */
+export function autoPinPlacement(
+  eye: Vec3,
+  pose: Vec3,
+  quaternion: Quat,
+  colliders: readonly PlacementCollider[],
+  bounds?: PlacementBounds,
+  heightPx = 560,
+): Placement {
   const delta = sub(pose, eye);
   const span = length(delta);
   const direction = span > 1e-4 ? scale(delta, 1 / span) : ([0, 0, -1] as Vec3);
-  let position = pose;
   const hit = firstPlacementHit({ origin: eye, direction }, colliders.filter((item) => item.layers.includes('movement')));
-  if (hit && hit.distance < span) {
-    const along = Math.max(0.15, Math.min(span, hit.distance - GLASS_CLEARANCE));
-    position = add(eye, scale(direction, along));
-  }
-  return {
-    valid: true,
-    taken: false,
-    position,
-    quaternion,
-    placement: 'float',
+  const limit = hit ? Math.max(0, hit.distance - GLASS_CLEARANCE) : Math.max(span, FLOAT_DISTANCE);
+  const preferred = hit && hit.distance < span ? Math.min(span, limit) : Math.min(Math.max(span, MIN_EYE_DISTANCE), limit);
+  const query = {
+    ray: { origin: eye, direction },
+    colliders,
+    anchors: [] as PlacementAnchor[],
+    occupied: new Set<string>(),
+    heightPx,
+    bounds,
   };
+  const placeAt = (along: number) =>
+    withEyeCheck(
+      containPlacement(
+        {
+          valid: true,
+          taken: false,
+          position: add(eye, scale(direction, Math.max(0, along))),
+          quaternion,
+          placement: 'float',
+        },
+        query,
+      ),
+      eye,
+    );
+  const fallback = placeAt(preferred);
+  if (fallback.valid && preferred >= MIN_EYE_DISTANCE - 1e-4) return fallback;
+  for (let along = Math.min(limit, FLOAT_DISTANCE); along >= MIN_EYE_DISTANCE - 1e-4; along -= 0.15) {
+    const placed = placeAt(along);
+    if (placed.valid) return placed;
+  }
+  return { ...fallback, valid: false, reason: fallback.reason ?? 'outOfBounds' };
 }
 
 export function physicalSize(widthPx: number, heightPx: number): { w: number; h: number } {

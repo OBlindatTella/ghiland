@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import type { Action } from '@/contracts/input';
 import { audioEngine } from '@/engine/audio/engine';
+import { inputManager } from '@/engine/input/InputManager';
 import { defaultBindings } from '@/engine/input/bindings';
 import { labelForCode } from '@/shell/keyLabel';
 import type { QualitySetting } from '@/contracts/quality';
@@ -182,6 +183,7 @@ export function SettingsPanel() {
         <h2 className="mt-6 text-[12px] leading-4 text-[#f2f0eb]/64">About / credits</h2>
         <ul data-testid="settings-credits" className="mt-2 space-y-2 text-[13px] leading-5 text-[#f2f0eb]/80">
           <li>Ocean. Joseph Sardin, small waves at Houlgate, facing the Channel. CC0.</li>
+          <li>Seaside House sky, water, and rooms are procedural. No third-party meshes or textures.</li>
           <li>
             Wind, by Beeld en Geluid.{' '}
             <a
@@ -189,11 +191,18 @@ export function SettingsPanel() {
               href="https://commons.wikimedia.org/wiki/File:Wind_-_SoundCloud_-_Beeld_en_Geluid.ogg"
               target="_blank"
               rel="noreferrer"
+              onClick={() => inputManager.noteExternalOpen()}
             >
               Wikimedia Commons
             </a>
             .{' '}
-            <a className="underline" href="https://creativecommons.org/licenses/by-sa/3.0/" target="_blank" rel="noreferrer">
+            <a
+              className="underline"
+              href="https://creativecommons.org/licenses/by-sa/3.0/"
+              target="_blank"
+              rel="noreferrer"
+              onClick={() => inputManager.noteExternalOpen()}
+            >
               CC BY-SA 3.0
             </a>
             . Modifications: trim, high-pass, compression, limiting, fades, Opus re-encode. The modified wind.ogg is licensed CC BY-SA 3.0.

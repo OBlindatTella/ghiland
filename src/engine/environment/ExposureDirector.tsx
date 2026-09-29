@@ -4,6 +4,7 @@ import { useRef } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
 import { Vector3 } from 'three';
 import { dampExposure, exposureTarget, zoneAt } from '@/engine/environment/exposure';
+import { exposureSample } from '@/engine/environment/exposureSample';
 import { playerRef } from '@/engine/player/playerRef';
 import { getWorld } from '@/worlds/registry';
 import { useSession } from '@/state/session';
@@ -24,6 +25,8 @@ export function ExposureDirector() {
     const target = exposureTarget(zone, forward.z);
     exposure.current = dampExposure(exposure.current, target, dt);
     gl.toneMappingExposure = exposure.current;
+    exposureSample.exposure = exposure.current;
+    exposureSample.zone = zone;
   });
 
   return null;

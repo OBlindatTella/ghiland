@@ -11,6 +11,7 @@ export type ShellEvent =
   | { type: 'toggleScreen' }
   | { type: 'escape' }
   | { type: 'clickEmptyWorld' }
+  | { type: 'carryIntoWorld' }
   | { type: 'blur' }
   | { type: 'tabHidden' }
   | { type: 'pointerLockGained' }
@@ -51,6 +52,21 @@ const world: ShellModel = {
   relockBlocked: false,
   showClickToWalk: false,
 };
+
+/**
+ * A tab we opened ourselves must not drop SCREEN when the page hides.
+ * `holding` stays set until the page is visible again, so a two-minute trip still returns to SCREEN.
+ */
+export function externalOpenKeepsScreen(
+  now: number,
+  openedUntil: number,
+  holding: boolean,
+  hidden: boolean,
+): { holding: boolean; stay: boolean } {
+  if (!hidden) return { holding: false, stay: false };
+  if (holding || now < openedUntil) return { holding: true, stay: true };
+  return { holding: false, stay: false };
+}
 
 function none(model: ShellModel): { model: ShellModel; effects: ShellEffect[] } {
   return { model, effects: [] };
@@ -116,6 +132,13 @@ export function reduceShell(
       }
       return {
         model: { ...model, relockBlocked: false },
+        effects: [{ type: 'requestPointerLock' }],
+      };
+
+    case 'carryIntoWorld':
+      if (model.state === 'WORLD') return none(model);
+      return {
+        model: released,
         effects: [{ type: 'requestPointerLock' }],
       };
 

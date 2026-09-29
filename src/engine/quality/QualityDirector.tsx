@@ -1,11 +1,14 @@
 'use client';
 
-import { memo, useEffect, useContext, useRef, useState } from 'react';
+import { memo, useEffect, useContext, useMemo, useRef, useState, type ReactElement } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
 import { BasicShadowMap, PCFSoftShadowMap } from 'three';
 import { Bloom, EffectComposer, EffectComposerContext, SMAA, ToneMapping } from '@react-three/postprocessing';
 import { COMPOSER_TONE_MODE, readComposerTone } from '@/engine/quality/toneState';
-import { composerGpuBytes, releaseComposerTargets, shadowMapBytes, trackGpuBytes, trackedGpuBytes } from '@/engine/quality/gpuMemory';
+import { composerGpuBytes, defaultFramebufferBytes, releaseComposerTargets, resolvePresentation, shadowMapBytes, trackGpuBytes, trackedGpuBytes, type ComposerBuffers } from '@/engine/quality/gpuMemory';
+import { estimateTextureBytes } from '@/worlds/seaside-house/art/textures';
+import { textureSizeForTier } from '@/worlds/seaside-house/art/scale';
+import { readFps } from '@/engine/quality/fakeFps';
 import { bus } from '@/engine/events/bus';
 import { heuristicTier, initialAutoClock, stepAutoQuality, ceilingStillValid, type AutoClock } from '@/engine/quality/autoQuality';
 import { qualityProfiles } from '@/engine/quality/profiles';
@@ -14,6 +17,7 @@ import { perfSample, usePerfStore } from '@/state/perf';
 import { useAppliedQuality } from '@/state/appliedQuality';
 import { useGlStore } from '@/state/gl';
 import { useSession } from '@/state/session';
+import { useFrameBudget } from '@/state/frameBudget';
 import { useSettings } from '@/state/settings';
 
 function targetTier(): 'LOW' | 'MED' | 'HIGH' | 'ULTRA' {
@@ -48,7 +52,7 @@ export function QualityDirector() {
       now,
     });
     usePerfStore.getState().setAutoTier(tier);
-    clock.current = initialAutoClock(tier, ceiling ?? 'ULTRA');
+    clock.current = initialAutoClock(tier, ceiling ?? 'HIGH');
   }, [gl]);
 
   useEffect(() => {
@@ -87,7 +91,12 @@ export function QualityDirector() {
       if (prev.lost && !state.lost) apply();
     });
     const unsubSettings = useSettings.subscribe((state, prev) => {
-      if (state.quality !== prev.quality) apply();
+      const selected = state.qualityEpoch !== prev.qualityEpoch;
+      if (state.quality === prev.quality && !selected) return;
+      // A manual tier, or choosing AUTO again, clears the session ceiling (D-034).
+      const tier = state.quality === 'AUTO' ? usePerfStore.getState().autoTier : state.quality;
+      clock.current = initialAutoClock(tier, 'HIGH');
+      apply();
     });
     const unsubPerf = usePerfStore.subscribe((state, prev) => {
       if (state.autoTier !== prev.autoTier) apply();
@@ -108,6 +117,7 @@ export function QualityDirector() {
 
   useEffect(() => {
     gl.shadowMap.enabled = profile.shadows !== 'off';
+    // r186 resolves PCFSoftShadowMap to PCF. The enum is what the profile asks for.
     gl.shadowMap.type = profile.shadows === 'soft' ? PCFSoftShadowMap : BasicShadowMap;
     gl.shadowMap.needsUpdate = true;
   }, [profile, gl]);
@@ -124,9 +134,11 @@ export function QualityDirector() {
 
   useFrame((_, dt) => {
     if (useSettings.getState().quality !== 'AUTO' || useGlStore.getState().lost) return;
-    if (useSession.getState().worldPhase !== 'active' || perfSample.fps <= 0) return;
+    if (useSession.getState().worldPhase !== 'active') return;
+    const sample = readFps(perfSample.fps);
+    if (!sample.injected && sample.fps <= 0) return;
     const previousCeiling = clock.current.ceiling;
-    const next = stepAutoQuality(clock.current, perfSample.fps, dt);
+    const next = stepAutoQuality(clock.current, sample.fps, dt);
     clock.current = next;
     if (next.remember) {
       const tier = next.remember;
@@ -149,35 +161,59 @@ export function QualityDirector() {
 const MemoPost = memo(PostStack);
 
 /**
- * While the context is lost, the post stack keeps the profile it had and does not
- * re-render, so EffectComposer does not remove and re-add passes. After restore
- * the key changes and the stack builds again.
+ * While the context is lost the post stack unmounts, so its materials and render
+ * targets release against the current program cache. After restore the key changes
+ * and one new stack is built into the replacement cache.
  */
 function FrozenPost({ profile }: { profile: QualityProfile }) {
-  const [held, setHeld] = useState<QualityProfile | null>(null);
+  const lost = useGlStore((state) => state.lost);
+  const size = useThree((state) => state.size);
   const [generation, setGeneration] = useState(0);
+  const deviceDpr = typeof window === 'undefined' ? 1 : window.devicePixelRatio || 1;
+  const presentation = useMemo(
+    () =>
+      resolvePresentation({
+        tier: profile.tier,
+        cssWidth: Math.max(1, size.width),
+        cssHeight: Math.max(1, size.height),
+        deviceDpr,
+        dprMin: profile.dpr[0],
+        dprMax: profile.dpr[1],
+        shadowMap: profile.shadowMapSize,
+        textureBytes: estimateTextureBytes(textureSizeForTier(profile.tier)),
+        bloom: profile.postprocessing.bloom,
+      }),
+    [profile, size.width, size.height, deviceDpr],
+  );
+  const samples = profile.multisampling === 0 ? 0 : presentation.samples;
+
+  useEffect(() => {
+    useFrameBudget.getState().setPresentation(presentation);
+  }, [presentation]);
 
   useEffect(() => {
     return useGlStore.subscribe((state, prev) => {
-      if (!prev.lost && state.lost) setHeld(profile);
-      if (prev.lost && !state.lost) {
-        setHeld(null);
-        setGeneration((value) => value + 1);
-      }
+      if (prev.lost && !state.lost) setGeneration((value) => value + 1);
     });
-  }, [profile]);
+  }, []);
 
-  return <MemoPost key={generation} profile={held ?? profile} />;
+  if (lost) return null;
+  return <MemoPost key={generation} profile={profile} samples={samples} />;
 }
 
-/** SMAA on LOW/MED, bloom and MSAA on HIGH/ULTRA, AgX on every tier. */
-export function PostStack({ profile }: { profile: QualityProfile }) {
-  const smaa = profile.postprocessing.smaa;
+/** SMAA without MSAA, bloom kept on HIGH/ULTRA, AgX on every tier (D-041). */
+export function PostStack({ profile, samples = 0 }: { profile: QualityProfile; samples?: 0 | 2 | 4 }) {
+  const msaa = profile.multisampling === 0 ? 0 : samples;
+  const smaa = msaa === 0;
+  const bloom = profile.postprocessing.bloom;
+  const passes: ReactElement[] = [];
+  if (bloom) passes.push(<Bloom key="bloom" intensity={0.12} luminanceThreshold={0.9} mipmapBlur />);
+  if (smaa) passes.push(<SMAA key="smaa" />);
+  passes.push(<ToneMapping key="tone" mode={COMPOSER_TONE_MODE} />);
+  passes.push(<ComposerLifecycle key="life" />);
   return (
-    <EffectComposer multisampling={smaa ? 0 : profile.multisampling} enableNormalPass={false} autoClear>
-      {smaa ? <SMAA /> : <Bloom intensity={0.12} luminanceThreshold={0.9} mipmapBlur />}
-      <ToneMapping mode={COMPOSER_TONE_MODE} />
-      <ComposerLifecycle />
+    <EffectComposer multisampling={msaa} enableNormalPass={false} autoClear>
+      {passes}
     </EffectComposer>
   );
 }
@@ -202,6 +238,12 @@ export function readTrackedGpuBytes(): number {
   return trackedGpuBytes();
 }
 
+/** Context loss and restore both ask. The React unmount asks again; the release is idempotent. */
+export function releaseLiveComposer(): void {
+  if (!liveComposer) return;
+  releaseComposerTargets(liveComposer as unknown as ComposerBuffers);
+}
+
 function ComposerLifecycle() {
   const { composer } = useContext(EffectComposerContext);
   const size = useThree((state) => state.size);
@@ -220,7 +262,9 @@ function ComposerLifecycle() {
     const id = window.requestAnimationFrame(() => {
       if (useGlStore.getState().lost) return;
       composer.setSize(size.width, size.height);
-      release = trackGpuBytes(composerGpuBytes(composer));
+      const pixelsWide = Math.max(1, Math.round(size.width * dpr));
+      const pixelsHigh = Math.max(1, Math.round(size.height * dpr));
+      release = trackGpuBytes(composerGpuBytes(composer) + defaultFramebufferBytes(pixelsWide, pixelsHigh));
     });
     return () => {
       window.cancelAnimationFrame(id);

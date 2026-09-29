@@ -7,7 +7,7 @@ import { ownerForShell, OwnerStack } from '@/engine/input/ownerStack';
 import { requestCanvasPointerLock } from '@/engine/input/pointerLock';
 import { isWindowTarget } from '@/engine/windows/windowTarget';
 import { idleEscapeGate, onBrowserEscapeUnlock, onEscapeKey, onToggleUnlock, type EscapeGate } from '@/engine/input/escapeGate';
-import { classifyLockLoss, reduceShell, type ShellEffect, type ShellModel } from '@/engine/input/shellMachine';
+import { classifyLockLoss, externalOpenKeepsScreen, reduceShell, type ShellEffect, type ShellModel } from '@/engine/input/shellMachine';
 import { useInputStore } from '@/state/input';
 import { useSession } from '@/state/session';
 import { useSettings } from '@/state/settings';
@@ -32,8 +32,22 @@ export class InputManager {
   private blurTimer = 0;
   private press: { x: number; y: number } | null = null;
   private beforeShell: ((from: ShellState, to: ShellState) => void) | null = null;
-  /** Ignore one blur caused by our own window.open, so the Web tile stays on SCREEN. */
+  /** Blur, tab hide, or context loss, including when the shell was already RELEASED (S6-10). */
+  private onFocusLoss: (() => void) | null = null;
+  /** Ignore blur and tab-hide caused by our own window.open, so the Web tile stays on SCREEN. */
   private externalOpenUntil = 0;
+  private externalHold = false;
+  /** True from compositionstart until compositionend. */
+  private composing = false;
+  /** The Escape that ends a composition must not also blur or step the shell. */
+  private compositionEscape = false;
+  private compositionTimer = 0;
+  /**
+   * Key that arrived while a composition was open.
+   * Chrome delivers the composing Escape before compositionend; arming after that swallows the next Esc.
+   * Null means the ending key has not been seen yet (Safari delivers it after compositionend).
+   */
+  private compositionKey: string | null = null;
 
   attach(canvas: HTMLElement): () => void {
     this.detach();
@@ -45,6 +59,8 @@ export class InputManager {
     document.addEventListener('visibilitychange', this.onVisibility);
     document.addEventListener('pointerlockchange', this.onLockChange);
     document.addEventListener('pointerlockerror', this.onLockError);
+    document.addEventListener('compositionstart', this.onCompositionStart);
+    document.addEventListener('compositionend', this.onCompositionEnd);
     canvas.addEventListener('pointerdown', this.onPointerDown);
     canvas.addEventListener('click', this.onClick);
     return () => this.detach();
@@ -58,6 +74,12 @@ export class InputManager {
     document.removeEventListener('visibilitychange', this.onVisibility);
     document.removeEventListener('pointerlockchange', this.onLockChange);
     document.removeEventListener('pointerlockerror', this.onLockError);
+    document.removeEventListener('compositionstart', this.onCompositionStart);
+    document.removeEventListener('compositionend', this.onCompositionEnd);
+    this.composing = false;
+    this.compositionEscape = false;
+    this.compositionKey = null;
+    window.clearTimeout(this.compositionTimer);
     this.canvas.removeEventListener('pointerdown', this.onPointerDown);
     this.canvas.removeEventListener('click', this.onClick);
     window.clearTimeout(this.blurTimer);
@@ -105,6 +127,11 @@ export class InputManager {
     this.beforeShell = hook;
   }
 
+  /** D-038 Q12. Runs on blur, hide, and context loss even when the shell state does not change. */
+  setOnFocusLoss(hook: (() => void) | null): void {
+    this.onFocusLoss = hook;
+  }
+
   private windowHooks: { pin?: () => void; interact?: () => void; recall?: () => void } | null = null;
 
   /** Installed by the window rig. Absent until a world canvas is mounted. */
@@ -123,16 +150,11 @@ export class InputManager {
     this.externalOpenUntil = Date.now() + 500;
   }
 
-  /** Detach closes the Screen and asks for pointer lock. */
+  /** Detach closes the Screen and asks for pointer lock. A denied lock stays RELEASED, still carrying. */
   presentWorld(): void {
     if (!this.gameplayOpen()) return;
-    const state = this.readModel().state;
-    if (state === 'WORLD') return;
-    if (state === 'SCREEN') {
-      this.apply(reduceShell(this.readModel(), { type: 'toggleScreen' }));
-      return;
-    }
-    this.apply(reduceShell(this.readModel(), { type: 'clickEmptyWorld' }));
+    if (this.readModel().state === 'WORLD') return;
+    this.apply(reduceShell(this.readModel(), { type: 'carryIntoWorld' }));
   }
 
   private readModel(): ShellModel {
@@ -228,8 +250,17 @@ export class InputManager {
   };
 
   private onKeyDown = (event: KeyboardEvent): void => {
+    const duringComposition = this.composing || Boolean(event.isComposing) || event.keyCode === 229;
+    if (duringComposition && event.code) this.compositionKey = event.code;
     if (!this.gameplayOpen()) return;
     const editable = isEditableElement(event.target) || isEditableElement(document.activeElement);
+    const composing =
+      duringComposition ||
+      (event.code === 'Escape' && this.compositionEscape);
+    if (this.compositionEscape) {
+      this.compositionEscape = false;
+      window.clearTimeout(this.compositionTimer);
+    }
     const decision = decideKey(
       event.code,
       editable,
@@ -237,7 +268,7 @@ export class InputManager {
       document.pointerLockElement !== null,
       event.repeat,
       undefined,
-      event.isComposing || event.keyCode === 229,
+      composing,
     );
     if (decision.track) this.keys.keyDown(event.code);
     if (decision.preventDefault) event.preventDefault();
@@ -276,27 +307,54 @@ export class InputManager {
     this.keys.keyUp(event.code);
   };
 
+  private onCompositionStart = (): void => {
+    this.composing = true;
+    this.compositionEscape = false;
+    this.compositionKey = null;
+    window.clearTimeout(this.compositionTimer);
+  };
+
+  private onCompositionEnd = (): void => {
+    this.composing = false;
+    const endingKey = this.compositionKey;
+    this.compositionKey = null;
+    window.clearTimeout(this.compositionTimer);
+    // Arm only for the Safari order: no keydown was seen during the composition, so the
+    // ending Escape still follows compositionend. A composing Escape (Chrome) or a commit
+    // via Enter must not arm the flag. It lasts only until the next turn (S6-14).
+    if (endingKey !== null) {
+      this.compositionEscape = false;
+      return;
+    }
+    this.compositionEscape = true;
+    this.compositionTimer = window.setTimeout(() => {
+      this.compositionEscape = false;
+    }, 0);
+  };
+
   private onBlur = (): void => {
     window.clearTimeout(this.blurTimer);
     // Focus moving into an iframe blurs the parent window while document.hasFocus() stays true.
+    // A popup that never hides the page must not stick the external-open hold (S5-15).
     this.blurTimer = window.setTimeout(() => {
       if (!this.canvas) return;
-      if (Date.now() < this.externalOpenUntil) {
-        this.externalOpenUntil = 0;
-        return;
-      }
+      if (this.externalHold) return;
       const active = document.activeElement as { tagName?: string } | null;
       if (document.hasFocus() && active?.tagName === 'IFRAME') return;
       this.keys.clear();
       this.unlockIntent = null;
+      this.onFocusLoss?.();
       this.apply(reduceShell(this.readModel(), { type: 'blur' }));
     }, 0);
   };
 
   private onVisibility = (): void => {
-    if (!document.hidden) return;
+    const held = externalOpenKeepsScreen(Date.now(), this.externalOpenUntil, this.externalHold, document.hidden);
+    this.externalHold = held.holding;
+    if (!document.hidden || held.stay) return;
     this.keys.clear();
     this.unlockIntent = null;
+    this.onFocusLoss?.();
     this.apply(reduceShell(this.readModel(), { type: 'tabHidden' }));
   };
 
@@ -376,6 +434,7 @@ export class InputManager {
     this.relockAfterToggle = false;
     this.releasePointerLock();
     useInputStore.getState().setPointerLocked(false);
+    this.onFocusLoss?.();
     this.apply(reduceShell(this.readModel(), { type: 'blur' }));
   }
 

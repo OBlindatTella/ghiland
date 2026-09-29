@@ -32,7 +32,11 @@ export function FocusGuard() {
       const root = document.querySelector('[data-ghiland-screen]');
       if (!root) return;
       const items = [...root.querySelectorAll<HTMLElement>(FOCUSABLE)].filter(
-        (item) => !item.hidden && item.tabIndex !== -1 && !item.hasAttribute('disabled'),
+        (item) =>
+          !item.hidden &&
+          item.tabIndex !== -1 &&
+          !item.hasAttribute('disabled') &&
+          !item.closest('[data-facing-back], [inert]'),
       );
       if (items.length === 0) return;
       const first = items[0];
@@ -40,20 +44,24 @@ export function FocusGuard() {
       const active = document.activeElement;
       if (!(active instanceof Node) || !root.contains(active)) {
         event.preventDefault();
-        (event.shiftKey ? last : first).focus();
+        (event.shiftKey ? last : first).focus({ preventScroll: true });
         return;
       }
       if (!event.shiftKey && active === last) {
         event.preventDefault();
-        first.focus();
+        first.focus({ preventScroll: true });
       } else if (event.shiftKey && active === first) {
         event.preventDefault();
-        last.focus();
+        last.focus({ preventScroll: true });
       }
     };
     const onFocus = (event: FocusEvent) => {
       syncOwner();
       const windowNode = (event.target as HTMLElement | null)?.closest?.('[data-ghiland-window]');
+      if (windowNode?.hasAttribute('data-facing-back') || windowNode?.hasAttribute('inert')) {
+        (event.target as HTMLElement | null)?.blur();
+        return;
+      }
       const id = windowNode?.getAttribute('data-ghiland-window');
       if (id) focusAppWindow(id);
     };

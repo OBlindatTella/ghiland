@@ -17,7 +17,8 @@ function lookingForward(): PerspectiveCamera {
 const centre: WindowQuad = {
   id: 'notes',
   position: [0, 1.62, 2],
-  quaternion: [0, 0, 0, 1],
+  // Front (local +Z) turned toward the camera on the −Z side.
+  quaternion: [0, 1, 0, 0],
   half: { w: 0.4, h: 0.5 },
 };
 
@@ -32,6 +33,10 @@ describe('crosshair raycast', () => {
     const aside: WindowQuad = { ...centre, id: 'aside', position: [3, 1.62, 2], half: { w: 0.2, h: 0.2 } };
     expect(raycastCrosshair(camera, [aside])).toBeNull();
     expect(raycastCrosshair(camera, [aside, centre])).toBe('notes');
+    const back: WindowQuad = { ...centre, id: 'back', quaternion: [0, 0, 0, 1] };
+    expect(raycastCrosshair(camera, [back])).toBeNull();
+    const tag: WindowQuad = { ...back, id: 'tag', half: { w: 0.04, h: 0.04 }, billboard: true };
+    expect(raycastCrosshair(camera, [tag])).toBe('tag');
   });
 
   it('stops at a wall, ignores a window past 25 m, and keeps glass from blocking', () => {

@@ -39,5 +39,9 @@ describe('canvas error boundary', () => {
       new TypeError("Cannot read properties of null (reading 'alpha')"),
     );
     expect(boundary.state.failed).toBe(false);
+    useGlStore.getState().lose();
+    boundary.state = CanvasBoundary.getDerivedStateFromError(new Error('render blew up'));
+    expect(boundary.state.failed).toBe(true);
+    useGlStore.setState({ lost: false, lostAt: null });
   });
 });

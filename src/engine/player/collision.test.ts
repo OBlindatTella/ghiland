@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Collider } from '@/contracts/world';
 import { slideMove, type Body } from '@/engine/player/collision';
+import { furnitureColliders } from '@/worlds/seaside-house/furniture';
 import { seasideColliders, SPAWN } from '@/worlds/seaside-house/level';
 
 const body: Body = { radius: 0.3, feetY: 0, height: 1.75 };
@@ -122,22 +123,19 @@ describe('seaside greybox collision', () => {
   });
 
   it('slides along a closed panel edge without snagging', () => {
-    // Start within the capsule radius of the east opening corner (expanded x 1.7, z 4.17).
+    // Pressing into the east opening corner must slide along the input, not snap back into the opening.
     let x = 1.69;
     let z = 4.0;
-    let stalled = 0;
-    let edgeX = x;
+    let movedX = 0;
     for (let i = 0; i < 40; i += 1) {
       const next = slideMove(x, z, 0.05, 0.1, body, seasideColliders);
-      if (next.z <= z + 0.001) stalled += 1;
+      expect(next.x).toBeGreaterThanOrEqual(x - 1e-4);
+      movedX += Math.max(0, next.x - x);
       x = next.x;
       z = next.z;
-      if (z <= 4.9) edgeX = Math.max(edgeX, x);
-      if (z > 5) break;
     }
-    expect(stalled).toBe(0);
-    expect(z).toBeGreaterThan(5);
-    expect(edgeX).toBeLessThanOrEqual(1.71);
+    expect(movedX).toBeGreaterThan(0.5);
+    expect(x).toBeGreaterThan(2);
   });
 
   it('walks 70° from the room centre for 5 s and reaches the hero side of the room', () => {
@@ -190,31 +188,56 @@ describe('seaside greybox collision', () => {
       for (let i = 0; i < 30; i += 1) {
         const next = slideMove(x, z, dx, dz, body, seasideColliders);
         const onRail = rails.some((rail) => Math.abs(x - (rail > 0 ? rail - 0.001 : rail + 0.001)) < 0.02 || Math.abs(next.x - (rail > 0 ? rail - 0.001 : rail + 0.001)) < 0.02);
-        const nearEdge = seasideColliders.some((collider) => {
-          if (!collider.layers.includes('movement')) return false;
-          const minX = collider.box.min[0] - body.radius;
-          const maxX = collider.box.max[0] + body.radius;
-          const minZ = collider.box.min[2] - body.radius;
-          const maxZ = collider.box.max[2] + body.radius;
-          const corners = [
-            [minX, minZ],
-            [maxX, minZ],
-            [minX, maxZ],
-            [maxX, maxZ],
-          ];
-          return corners.some(([cx, cz]) => {
-            const lx = x - (cx ?? 0);
-            const lz = z - (cz ?? 0);
-            return lx * lx + lz * lz <= (body.radius + step) * (body.radius + step);
-          });
-        });
-        if (onRail && !nearEdge && Math.abs(dx) > 0.02) {
-          expect(Math.abs(next.x - x)).toBeGreaterThan(0.01);
+        if (onRail && Math.abs(dx) > 0.02) {
+          expect(Math.abs(next.x - x), `frozen at ${x.toFixed(3)} heading ${heading.toFixed(2)}`).toBeGreaterThan(0.01);
         }
         x = next.x;
         z = next.z;
       }
     }
+  });
+
+  function walk(x: number, z: number, headingDeg: number, seconds: number): { x: number; z: number; xs: number[] } {
+    const heading = (headingDeg * Math.PI) / 180;
+    const speed = 1.35;
+    const dt = 1 / 60;
+    const xs: number[] = [];
+    for (let t = 0; t < seconds; t += dt) {
+      const next = slideMove(x, z, Math.sin(heading) * speed * dt, Math.cos(heading) * speed * dt, body, seasideColliders);
+      x = next.x;
+      z = next.z;
+      if (Math.round(t * 10) !== Math.round((t - dt) * 10)) xs.push(x);
+    }
+    return { x, z, xs };
+  }
+
+  it('slides past the glass seam from (2.5, 4.0) at 60°', () => {
+    const end = walk(2.5, 4.0, 60, 3);
+    expect(Math.max(...end.xs, end.x)).toBeGreaterThan(3.7);
+  });
+
+  it('slides past the glass seam from (1.5, 3.5) at 45°', () => {
+    const end = walk(1.5, 3.5, 45, 4);
+    expect(Math.max(...end.xs, end.x)).toBeGreaterThan(3.7);
+  });
+
+  it('slides past the glass seam on the terrace face with a backward diagonal', () => {
+    const towardWest = walk(5.2, 4.9, 240, 3);
+    const towardEast = walk(2.5, 4.9, 120, 3);
+    expect(Math.min(...towardWest.xs, towardWest.x)).toBeLessThan(3.7);
+    expect(Math.max(...towardEast.xs, towardEast.x)).toBeGreaterThan(4.3);
+  });
+
+  it('slides past the back-wall seam from (3, -3.0) at 240°', () => {
+    const end = walk(3, -3.0, 240, 3);
+    expect(Math.min(...end.xs, end.x)).toBeLessThan(1.55);
+  });
+
+  it('does not freeze a near-corner strafe at x 1.7 for yaw 89.9° or 90.1°', () => {
+    const almostIn = walk(1.0, 4.0, 89.9, 2);
+    const almostOut = walk(1.0, 4.0, 90.1, 2);
+    expect(Math.max(...almostIn.xs, almostIn.x)).toBeGreaterThan(1.7);
+    expect(Math.max(...almostOut.xs, almostOut.x)).toBeGreaterThan(1.7);
   });
 
   it('keeps the fin, including the player radius, outside the centre band', () => {
@@ -226,6 +249,168 @@ describe('seaside greybox collision', () => {
     expect(expandedMax <= -2 || expandedMin >= 2).toBe(true);
     const reveal = slideMove(0, -3, 0, 0, body, seasideColliders);
     expect(reveal).toEqual({ x: 0, z: -3 });
+  });
+
+  it('keeps every furniture collider outside the centre band', () => {
+    for (const piece of furnitureColliders) {
+      const minX = piece.box.min[0] - body.radius;
+      const maxX = piece.box.max[0] + body.radius;
+      expect(minX < 2 && maxX > -2, piece.id).toBe(false);
+      expect(piece.layers.includes('occluder')).toBe(false);
+    }
+    const fig = furnitureColliders.find((piece) => piece.id === 'fig-planter');
+    expect(fig).toBeTruthy();
+    if (!fig) return;
+    expect((fig.box.min[0] + fig.box.max[0]) / 2).toBeCloseTo(-2.9, 5);
+    expect((fig.box.min[2] + fig.box.max[2]) / 2).toBeCloseTo(-2.6, 5);
+    expect(fig.box.max[0] + body.radius).toBeLessThanOrEqual(-2);
+  });
+
+  it('stops a diagonal step on each furniture collider', () => {
+    for (const piece of furnitureColliders) {
+      const cx = (piece.box.min[0] + piece.box.max[0]) / 2;
+      const z0 = piece.box.min[2] - body.radius - 0.08;
+      const next = slideMove(cx, z0, 0.12, 0.35, body, [piece]);
+      expect(next.z).toBeLessThan(piece.box.min[2]);
+      const inside =
+        next.x > piece.box.min[0] &&
+        next.x < piece.box.max[0] &&
+        next.z > piece.box.min[2] &&
+        next.z < piece.box.max[2];
+      expect(inside).toBe(false);
+    }
+  });
+
+  /** True when this step stuck even though sliding on the free axis would move (S6-09). */
+  function isJunctionDeadStop(fullJump: number, plainJump: number): boolean {
+    return fullJump < 1e-4 && plainJump > 1e-4;
+  }
+
+  function trace(x: number, z: number, headingDeg: number, seconds: number) {
+    const heading = (headingDeg * Math.PI) / 180;
+    const step = 1.35 / 60;
+    const dx = Math.sin(heading) * step;
+    const dz = Math.cos(heading) * step;
+    let frozen = 0;
+    let maxJump = 0;
+    for (let i = 0; i < seconds * 60; i += 1) {
+      const next = slideMove(x, z, dx, dz, body, seasideColliders);
+      const jump = Math.hypot(next.x - x, next.z - z);
+      maxJump = Math.max(maxJump, jump);
+      if (jump < 1e-4) frozen += 1;
+      x = next.x;
+      z = next.z;
+    }
+    return { x, z, frozen, maxJump, step: Math.hypot(dx, dz) };
+  }
+
+  it('does not snap backward at a free corner', () => {
+    const step = 1.35 / 60;
+    const cases = [
+      { x: 4.95, z: 0.86, heading: 245 },
+      { x: 1.95, z: 4.16, heading: 5 },
+      { x: 1.05, z: -3.19, heading: 115 },
+      { x: -2.5, z: 2.76, heading: 355 },
+    ];
+    for (const sample of cases) {
+      const heading = (sample.heading * Math.PI) / 180;
+      const dx = Math.sin(heading) * step;
+      const dz = Math.cos(heading) * step;
+      const next = slideMove(sample.x, sample.z, dx, dz, body, seasideColliders);
+      const jump = Math.hypot(next.x - sample.x, next.z - sample.z);
+      expect(jump, `${sample.x},${sample.z} @ ${sample.heading}`).toBeLessThanOrEqual(step + 1e-4);
+      if (Math.abs(dx) > 1e-6) {
+        expect(Math.sign(next.x - sample.x) === Math.sign(dx) || Math.abs(next.x - sample.x) < 1e-4).toBe(true);
+      }
+    }
+  });
+
+  it('sweeps every junction across 120 headings without a freeze or a jump', () => {
+    const step = 1.35 / 60;
+    const radius = body.radius;
+    const movement = seasideColliders.filter((collider) => collider.layers.includes('movement'));
+    const starts: { x: number; z: number }[] = [];
+    for (const piece of movement) {
+      for (const x of [piece.box.min[0], piece.box.max[0]]) {
+        for (const z of [piece.box.min[2], piece.box.max[2]]) {
+          for (const ox of [-1, 1]) {
+            for (const oz of [-1, 1]) {
+              starts.push({ x: x + ox * (radius + 0.04), z: z + oz * (radius + 0.04) });
+            }
+          }
+        }
+      }
+    }
+    const clearance = (x: number, z: number) => {
+      let best = Infinity;
+      for (const piece of movement) {
+        const minX = piece.box.min[0] - radius;
+        const maxX = piece.box.max[0] + radius;
+        const minZ = piece.box.min[2] - radius;
+        const maxZ = piece.box.max[2] + radius;
+        const dx = x < minX ? minX - x : x > maxX ? x - maxX : 0;
+        const dz = z < minZ ? minZ - z : z > maxZ ? z - maxZ : 0;
+        best = Math.min(best, Math.hypot(dx, dz));
+      }
+      return best;
+    };
+    let failure = '';
+    for (const start of starts) {
+      if (failure || clearance(start.x, start.z) < 0.01) continue;
+      for (let h = 0; h < 120; h += 1) {
+        const heading = (h / 120) * Math.PI * 2;
+        const dx = Math.sin(heading) * step;
+        const dz = Math.cos(heading) * step;
+        let x = start.x;
+        let z = start.z;
+        for (let frame = 0; frame < 20; frame += 1) {
+          const next = slideMove(x, z, dx, dz, body, seasideColliders);
+          const jump = Math.hypot(next.x - x, next.z - z);
+          if (jump > step + 1e-3) {
+            failure = `jump ${jump} at ${x},${z} @ ${h}`;
+            break;
+          }
+          // An S5-01 dead stop stays put while the plain axis slide still advances.
+          // A full stop does not move, so later frames of the same heading repeat it.
+          if (jump < 1e-4) {
+            const plain = slideMove(x, z, dx, dz, body, seasideColliders, false);
+            const plainJump = Math.hypot(plain.x - x, plain.z - z);
+            if (isJunctionDeadStop(jump, plainJump)) failure = `dead stop at ${x},${z} @ ${h}`;
+            break;
+          }
+          x = next.x;
+          z = next.z;
+        }
+        if (failure) break;
+      }
+    }
+    expect(failure).toBe('');
+  }, 20_000);
+
+  it('counts an S5-01 dead stop when the axis slide would still move', () => {
+    expect(isJunctionDeadStop(0, 0.02)).toBe(true);
+    expect(isJunctionDeadStop(0, 0)).toBe(false);
+    expect(isJunctionDeadStop(0.02, 0.02)).toBe(false);
+  });
+
+  it('does not freeze at the dining-table and west-wall junction', () => {
+    const north = trace(-6.68, 4.0, 160, 2);
+    const south = trace(-6.7, 0.9, 15, 2);
+    expect(north.frozen).toBeLessThan(10);
+    expect(south.frozen).toBeLessThan(10);
+    expect(north.x).toBeGreaterThan(-6.6);
+    expect(south.x).toBeGreaterThan(-6.6);
+    expect(north.maxJump).toBeLessThanOrEqual(north.step + 1e-4);
+    expect(south.maxJump).toBeLessThanOrEqual(south.step + 1e-4);
+  });
+
+  it('reaches the glass from V2 on the 46° to 60.5° heading band', () => {
+    // MOV-18: 40° and 43° run into the lounge cluster. 46°–60.5° clear it.
+    for (const heading of [46, 50, 60.5]) {
+      const walked = trace(0, -3, heading, 8);
+      expect(walked.z, `${heading}`).toBeGreaterThan(2);
+      expect(walked.maxJump).toBeLessThanOrEqual(walked.step + 1e-4);
+    }
   });
 
   it('blocks the closed glass and the balustrade', () => {

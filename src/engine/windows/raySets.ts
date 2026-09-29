@@ -14,3 +14,24 @@ export function blocksOcclusion(layers: readonly ColliderLayer[]): boolean {
 export function blocksCrosshair(layers: readonly ColliderLayer[]): boolean {
   return layers.includes('occluder');
 }
+
+export interface RayMember {
+  id: string;
+  layers: ColliderLayer[];
+}
+
+export function raySetMembers(colliders: readonly { id: string; layers: readonly ColliderLayer[] }[]): {
+  placement: RayMember[];
+  occlusion: RayMember[];
+  crosshair: RayMember[];
+} {
+  const member = (item: { id: string; layers: readonly ColliderLayer[] }): RayMember => ({
+    id: item.id,
+    layers: [...item.layers],
+  });
+  return {
+    placement: colliders.filter((item) => blocksPlacement(item.layers)).map(member),
+    occlusion: colliders.filter((item) => blocksOcclusion(item.layers)).map(member),
+    crosshair: colliders.filter((item) => blocksCrosshair(item.layers)).map(member),
+  };
+}

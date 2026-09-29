@@ -20,6 +20,8 @@ interface SettingsStore extends SettingsData {
   setSensitivity: (value: number) => void;
   setFov: (value: number) => void;
   setQuality: (quality: QualitySetting) => void;
+  /** Bumps on every quality selection, including re-selecting the current mode. */
+  qualityEpoch: number;
   setInvertY: (invertY: boolean) => void;
   setReduceMotion: (reduceMotion: boolean) => void;
   setMuteWhenHidden: (muteWhenHidden: boolean) => void;
@@ -40,6 +42,7 @@ export const useSettings = create<SettingsStore>()(
   persist(
     (set) => ({
       ...settingsDefaults,
+      qualityEpoch: 0,
       setMaster: (master) => set((state) => sanitizeSettings({ ...state, master })),
       setAmbient: (ambient) => set((state) => sanitizeSettings({ ...state, ambient })),
       setInterface: (level) => set((state) => sanitizeSettings({ ...state, interface: level })),
@@ -48,9 +51,10 @@ export const useSettings = create<SettingsStore>()(
       setSensitivity: (mouseSensitivity) => set((state) => sanitizeSettings({ ...state, mouseSensitivity })),
       setFov: (fovDeg) => set((state) => sanitizeSettings({ ...state, fovDeg })),
       setQuality: (quality) =>
-        set((state) =>
-          sanitizeSettings({ ...state, quality, autoCeiling: quality === 'AUTO' ? state.autoCeiling : null }),
-        ),
+        set((state) => ({
+          ...sanitizeSettings({ ...state, quality, autoCeiling: null }),
+          qualityEpoch: state.qualityEpoch + 1,
+        })),
       setInvertY: (invertY) => set({ invertY }),
       setReduceMotion: (reduceMotion) => set({ reduceMotion }),
       setMuteWhenHidden: (muteWhenHidden) => set({ muteWhenHidden }),
@@ -63,7 +67,11 @@ export const useSettings = create<SettingsStore>()(
       version: SETTINGS_VERSION,
       storage: createJSONStorage(() => settingsStorage(localStorageAdapter)),
       migrate: (persisted, version) => sanitizeSettings(migrateSettings(persisted, version)),
-      merge: (persisted, current) => ({ ...current, ...sanitizeSettings(persisted) }),
+      merge: (persisted, current) => ({
+        ...current,
+        ...sanitizeSettings(persisted),
+        qualityEpoch: current.qualityEpoch,
+      }),
       partialize: (state) => sanitizeSettings(state),
     },
   ),

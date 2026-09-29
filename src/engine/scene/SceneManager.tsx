@@ -92,7 +92,10 @@ export function SceneManager() {
         return;
       }
       useSession.getState().setProgress(0.58);
-      await loaded.default.preload?.();
+      await loaded.default.preload?.((fraction) => {
+        const clamped = Math.min(1, Math.max(0, fraction));
+        useSession.getState().setProgress(0.58 + clamped * 0.16);
+      });
       if (cancelled) {
         loaded.default.dispose?.();
         return;

@@ -7,8 +7,8 @@ export interface QualityProfile {
   shadows: 'off' | 'basic' | 'soft';
   shadowMapSize: 0 | 1024 | 2048 | 4096;
   postprocessing: { enabled: boolean; bloom: boolean; smaa: boolean };
-  multisampling: 0 | 4;
-  foliage: 'alphaTest' | 'alphaToCoverage';
+  multisampling: 0 | 2 | 4;
+  foliage: 'alphaTest' | 'alphaToCoverage' | 'alphaHash';
   maxTextureSize: 1024 | 2048 | 4096;
   drawDistance: number;
   lodBias: number;
