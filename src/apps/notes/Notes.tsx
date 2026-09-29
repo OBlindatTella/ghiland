@@ -7,6 +7,7 @@ import {
   flushNotes,
   loadNotes,
   trimInsertion,
+  NOTES_MAX_CHARS,
   noteNearingLimit,
   notesLeaderNotice,
   notesRole,
@@ -43,6 +44,7 @@ export default function Notes({ windowId, host }: AppProps) {
   const notesRef = useRef(notes);
   const bodyRef = useRef<HTMLTextAreaElement>(null);
   const caretRef = useRef<{ id: string; start: number; end: number } | null>(null);
+  const selectionRef = useRef({ start: 0, end: 0 });
   const selectedRef = useRef(selected);
   const previewRef = useRef(preview);
   const restoreRef = useRef(remembered);
@@ -142,7 +144,10 @@ export default function Notes({ windowId, host }: AppProps) {
       field.setSelectionRange(restore.selectionStart, restore.selectionEnd);
       restoreRef.current = null;
     }
-    if (document.activeElement !== field) field.focus({ preventScroll: true });
+    if (field.dataset.note !== current.id) {
+      field.dataset.note = current.id;
+      if (document.activeElement !== field) field.focus({ preventScroll: true });
+    }
   }, [notes, current]);
 
   useEffect(() => {
@@ -159,10 +164,23 @@ export default function Notes({ windowId, host }: AppProps) {
       clipped = clipped || limited.clipped;
     }
     if (nextPatch.body !== undefined) {
-      const limited = trimInsertion(current.body, nextPatch.body, caret ?? nextPatch.body.length);
+      const limited = trimInsertion(
+        current.body,
+        nextPatch.body,
+        caret ?? nextPatch.body.length,
+        NOTES_MAX_CHARS,
+        selectionRef.current,
+      );
       nextPatch.body = limited.text;
       clipped = clipped || limited.clipped;
-      if (limited.clipped) caretRef.current = { id: current.id, start: limited.caret, end: limited.caret };
+      if (limited.clipped) {
+        caretRef.current = { id: current.id, start: limited.caret, end: limited.caret };
+        const field = bodyRef.current;
+        if (field && field.value !== limited.text) {
+          field.value = limited.text;
+          field.setSelectionRange(limited.caret, limited.caret);
+        }
+      }
     }
     if (clipped) setStatus("The rest of that paste didn't fit.");
     const next = notesRef.current.map((note) =>
@@ -279,12 +297,32 @@ export default function Notes({ windowId, host }: AppProps) {
           ) : (
             <textarea
               ref={bodyRef}
+              key={current.id}
               data-testid="notes-body"
               aria-label="Note"
               className="min-h-0 flex-1 resize-none bg-transparent px-4 py-3 text-[15px] leading-6 outline-none"
-              value={current.body}
+              defaultValue={current.body}
               readOnly={role !== 'writer' || problem !== null}
+              onBeforeInput={(event) => {
+                if (role !== 'writer' || problem) return;
+                const input = event.nativeEvent;
+                if (!(input instanceof InputEvent) || !input.data) return;
+                const field = event.currentTarget;
+                selectionRef.current = { start: field.selectionStart ?? 0, end: field.selectionEnd ?? 0 };
+                const removed = selectionRef.current.end - selectionRef.current.start;
+                const room = NOTES_MAX_CHARS - (current.body.length - removed);
+                if (room >= input.data.length) return;
+                event.preventDefault();
+                if (room > 0) {
+                  const piece = input.data.slice(0, room);
+                  const cut = piece.charCodeAt(piece.length - 1) >= 0xd800 && piece.charCodeAt(piece.length - 1) <= 0xdbff ? piece.slice(0, -1) : piece;
+                  field.setRangeText(cut, selectionRef.current.start, selectionRef.current.end, 'end');
+                  field.dispatchEvent(new Event('input', { bubbles: true }));
+                }
+                setStatus("The rest of that paste didn't fit.");
+              }}
               onSelect={(event) => {
+                selectionRef.current = { start: event.currentTarget.selectionStart, end: event.currentTarget.selectionEnd };
                 writeNotesUi(windowId, {
                   selectedId: selectedRef.current,
                   preview: previewRef.current,

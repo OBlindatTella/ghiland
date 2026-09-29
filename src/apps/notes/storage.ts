@@ -47,8 +47,19 @@ export function trimInsertion(
   next: string,
   caret: number,
   max = NOTES_MAX_CHARS,
+  selection?: { start: number; end: number },
 ): { text: string; caret: number; clipped: boolean } {
   if (next.length <= max) return { text: next, caret, clipped: false };
+  if (selection) {
+    const start = Math.max(0, Math.min(selection.start, previous.length));
+    const end = Math.max(start, Math.min(selection.end, previous.length));
+    const room = max - (previous.length - (end - start));
+    if (room <= 0) return { text: previous, caret: start, clipped: true };
+    const inserted = next.slice(start, Math.min(next.length, Math.max(start, caret)));
+    const trimmed = withoutSplitPair(inserted.slice(0, room));
+    const text = `${previous.slice(0, start)}${trimmed}${previous.slice(end)}`;
+    return { text, caret: start + trimmed.length, clipped: trimmed.length < inserted.length };
+  }
   let prefix = 0;
   const shared = Math.min(previous.length, next.length);
   while (prefix < shared && previous.charCodeAt(prefix) === next.charCodeAt(prefix)) prefix += 1;

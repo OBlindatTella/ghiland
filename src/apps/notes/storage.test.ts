@@ -45,6 +45,11 @@ describe('notes storage', () => {
     const paired = trimInsertion(previous, stuffed, 12);
     expect(paired.text.endsWith('END')).toBe(true);
     expect(paired.text.includes('\uD83D') && !paired.text.includes(pair)).toBe(false);
+    const full = 'a'.repeat(NOTES_MAX_CHARS);
+    const atLimit = trimInsertion(full, `${full.slice(0, 10)}Z${full.slice(10)}`, 11, NOTES_MAX_CHARS, { start: 10, end: 10 });
+    expect(atLimit.text).toBe(full);
+    expect(atLimit.caret).toBe(10);
+    expect(atLimit.clipped).toBe(true);
     const cut = limitNoteText(`${'b'.repeat(NOTES_MAX_CHARS - 1)}\uD83D\uDE00`);
     expect(cut.text.charCodeAt(cut.text.length - 1)).toBeLessThan(0xd800);
   });
