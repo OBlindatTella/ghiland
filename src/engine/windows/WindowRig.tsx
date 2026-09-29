@@ -32,7 +32,7 @@ import { useSession } from '@/state/session';
 import { useWindows } from '@/state/windows';
 
 const FADE_SECONDS = 0.2;
-const occlusion = new Map<string, { target: number; value: number; clock: number }>();
+const occlusion = new Map<string, { target: number; value: number; clock: number; pending: number; pendingCount: number }>();
 const forward = new Vector3();
 
 function colliders(): PlacementCollider[] {
@@ -42,15 +42,26 @@ function colliders(): PlacementCollider[] {
   return world.collision.colliders;
 }
 
+let occluderSource: readonly PlacementCollider[] | null = null;
+let occluderCache: PlacementCollider[] = [];
+
 function occluders(): PlacementCollider[] {
-  return colliders().filter((item) => blocksOcclusion(item.layers));
+  const source = colliders();
+  if (source === occluderSource) return occluderCache;
+  occluderSource = source;
+  occluderCache = source.filter((item) => blocksOcclusion(item.layers));
+  return occluderCache;
 }
 
+let quadKey = '';
+
 function syncQuads(windows: WindowInstance[]): void {
+  let key = '';
   const quads: WindowQuad[] = [];
   for (const item of windows) {
     if (item.mode.kind !== 'worldPinned' || item.state === 'minimized') continue;
     const size = physicalSize(item.lastScreenRect.w, item.lastScreenRect.h);
+    key += `${item.id}:${item.mode.position[0]},${item.mode.position[1]},${item.mode.position[2]}:${item.lastScreenRect.w}x${item.lastScreenRect.h};`;
     quads.push({
       id: item.id,
       position: item.mode.position,
@@ -58,7 +69,20 @@ function syncQuads(windows: WindowInstance[]): void {
       half: { w: size.w / 2, h: size.h / 2 },
     });
   }
+  if (key === quadKey) return;
+  quadKey = key;
   setWindowQuads(quads);
+}
+
+const occupiedIds = new Set<string>();
+
+function occupiedAnchors(exceptId: string): Set<string> {
+  occupiedIds.clear();
+  for (const item of Object.values(useWindows.getState().windows)) {
+    if (item.id === exceptId || item.mode.kind !== 'worldPinned' || !item.mode.anchorId) continue;
+    occupiedIds.add(item.mode.anchorId);
+  }
+  return occupiedIds;
 }
 
 function paintGhost(camera: Camera, carried: WindowInstance | null): void {
@@ -75,11 +99,7 @@ function paintGhost(camera: Camera, carried: WindowInstance | null): void {
   }
   const worldId = useSession.getState().worldId;
   const world = worldId ? getWorld(worldId) : undefined;
-  const occupied = new Set<string>();
-  for (const item of Object.values(useWindows.getState().windows)) {
-    if (item.id === carried.id || item.mode.kind !== 'worldPinned' || !item.mode.anchorId) continue;
-    occupied.add(item.mode.anchorId);
-  }
+  const occupied = occupiedAnchors(carried.id);
   const rail = world?.collision.kind === 'boxes' ? world.collision.colliders.find((item) => item.id === 'rail-north') : undefined;
   const walk = world?.collision.kind === 'boxes' ? world.collision.walkable : undefined;
   const bounds: PlacementBounds | undefined = walk
@@ -149,8 +169,20 @@ export function WindowRig() {
       if (from === 'WORLD' && to !== 'WORLD') autoPinCarried();
     });
     const unhit = onCrosshairHit((id, point) => focusPinnedFromWorld(id, point));
-    const unsub = useWindows.subscribe(() => persistWindows());
-    const onHide = () => persistWindows();
+    let persistTimer = 0;
+    const unsub = useWindows.subscribe(() => {
+      window.clearTimeout(persistTimer);
+      persistTimer = window.setTimeout(() => {
+        persistTimer = 0;
+        persistWindows();
+      }, 400);
+    });
+    const flushPersist = () => {
+      window.clearTimeout(persistTimer);
+      persistTimer = 0;
+      persistWindows();
+    };
+    const onHide = () => flushPersist();
     window.addEventListener('pagehide', onHide);
     const ungl = useGlStore.subscribe((state, prev) => {
       if (!state.lost || prev.lost) return;
@@ -169,6 +201,7 @@ export function WindowRig() {
       inputManager.setWindowHooks(null);
       inputManager.setBeforeShellChange(null);
       unhit();
+      window.clearTimeout(persistTimer);
       unsub();
       ungl();
       occlusion.clear();
@@ -259,26 +292,32 @@ export function WindowRig() {
         element.style.opacity = '1';
         continue;
       }
-      const sample = occlusion.get(item.id) ?? { target: 1, value: 1, clock: 0 };
+      const sample = occlusion.get(item.id) ?? { target: 1, value: 1, clock: 0, pending: 1, pendingCount: 0 };
       sample.clock += dt;
       if (sample.clock >= 0.1 && pose) {
         sample.clock = 0;
-        const delta = [
-          worldPosition[0] - pose.origin[0],
-          worldPosition[1] - pose.origin[1],
-          worldPosition[2] - pose.origin[2],
-        ] as [number, number, number];
-        const span = Math.hypot(delta[0], delta[1], delta[2]);
-        const direction = span > 1e-4 ? [delta[0] / span, delta[1] / span, delta[2] / span] as [number, number, number] : [0, 0, -1] as [number, number, number];
+        const dx = worldPosition[0] - pose.origin[0];
+        const dy = worldPosition[1] - pose.origin[1];
+        const dz = worldPosition[2] - pose.origin[2];
+        const span = Math.hypot(dx, dy, dz);
+        const direction: [number, number, number] = span > 1e-4 ? [dx / span, dy / span, dz / span] : [0, 0, -1];
         let blocked = false;
         for (const box of occluders()) {
-          const hit = rayAabb(pose.origin, direction, box.box, span - 0.05);
-          if (hit) {
+          if (rayAabb(pose.origin, direction, box.box, span - 0.05)) {
             blocked = true;
             break;
           }
         }
-        sample.target = blocked ? 0 : 1;
+        const nextTarget = blocked ? 0 : 1;
+        if (nextTarget === sample.target) sample.pendingCount = 0;
+        else {
+          sample.pending = nextTarget;
+          sample.pendingCount += 1;
+          if (sample.pendingCount >= 2) {
+            sample.target = nextTarget;
+            sample.pendingCount = 0;
+          }
+        }
       }
       const step = Math.min(1, dt / FADE_SECONDS);
       sample.value += (sample.target - sample.value) * step;

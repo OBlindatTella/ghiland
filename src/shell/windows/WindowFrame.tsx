@@ -7,6 +7,7 @@ import { dragRect, resizeRect, type ResizeEdge } from '@/shell/windows/geometry'
 import { frameBackStyle, frameFaceStyle } from '@/shell/windows/frameBack';
 import { frameTint, subscribeFrameTint } from '@/shell/windows/frameTint';
 import { bindWindowElement } from '@/engine/windows/domRegistry';
+import { persistWindows } from '@/engine/windows/actions';
 import { requestDetach, requestPin, requestRecall } from '@/engine/windows/bridge';
 import { closeAppWindow, focusAppWindow, minimizeAppWindow } from '@/shell/windows/commands';
 import { subscribePulse, windowPulsing } from '@/shell/windows/pulse';
@@ -93,6 +94,7 @@ export function WindowFrame({
       window.removeEventListener('keydown', onKey);
       window.removeEventListener('blur', cancel);
       unshell();
+      persistWindows();
       if (held) requestDetach(instance.id);
     };
     const up = () => stop(true);
@@ -129,6 +131,7 @@ export function WindowFrame({
       window.removeEventListener('keydown', onKey);
       window.removeEventListener('blur', end);
       unshell();
+      persistWindows();
     };
     const move = (next: PointerEvent) => {
       if (next.buttons === 0) {
