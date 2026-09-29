@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { AppProps } from '@/contracts/app';
 import { renderLightMarkdown } from './markdown';
-import { loadNotes, rememberNotes, saveNotes, type Note } from './storage';
+import { limitNoteText, loadNotes, noteNearingLimit, rememberNotes, saveNotes, type Note } from './storage';
 
 function freshNote(): Note {
   return {
@@ -60,8 +60,21 @@ export default function Notes({ host }: AppProps) {
 
   const update = (patch: Partial<Note>) => {
     if (!current) return;
+    let clipped = false;
+    const nextPatch = { ...patch };
+    if (nextPatch.title !== undefined) {
+      const limited = limitNoteText(nextPatch.title);
+      nextPatch.title = limited.text;
+      clipped = clipped || limited.clipped;
+    }
+    if (nextPatch.body !== undefined) {
+      const limited = limitNoteText(nextPatch.body);
+      nextPatch.body = limited.text;
+      clipped = clipped || limited.clipped;
+    }
+    if (clipped) setStatus("The rest of that paste didn't fit.");
     setNotes((items) =>
-      items.map((note) => (note.id === current.id ? { ...note, ...patch, updatedAt: Date.now() } : note)),
+      items.map((note) => (note.id === current.id ? { ...note, ...nextPatch, updatedAt: Date.now() } : note)),
     );
   };
 
@@ -105,7 +118,10 @@ export default function Notes({ host }: AppProps) {
             onChange={(event) => update({ title: event.target.value })}
           />
           <div className="flex items-center justify-between px-4 pt-2 text-[12px] leading-4 text-[#f2f0eb]/64">
-            <span>{status}</span>
+            <span className="flex min-w-0 flex-col">
+              {current && noteNearingLimit(current.body) ? <span>This note is getting long.</span> : null}
+              <span>{status}</span>
+            </span>
             <button type="button" onClick={() => setPreview((value) => !value)}>
               {preview ? 'Edit' : 'Preview'}
             </button>

@@ -6,8 +6,9 @@ export interface Note {
 }
 
 export const NOTES_KEY = 'ghiland:app:notes';
-/** localStorage fallback refuses anything larger than this. IndexedDB uses the same guard. */
-export const NOTES_MAX_CHARS = 200_000;
+/** Per note, not the whole store. Past this, only the extra characters are dropped. */
+export const NOTES_MAX_CHARS = 2_000_000;
+export const NOTES_WARN_AT = Math.floor(NOTES_MAX_CHARS * 0.8);
 
 export function packNotes(notes: readonly Note[]): string {
   return JSON.stringify({ version: 1, notes });
@@ -26,6 +27,15 @@ export function unpackNotes(raw: string | null): Note[] {
   } catch {
     return [];
   }
+}
+
+export function limitNoteText(text: string): { text: string; clipped: boolean } {
+  if (text.length <= NOTES_MAX_CHARS) return { text, clipped: false };
+  return { text: text.slice(0, NOTES_MAX_CHARS), clipped: true };
+}
+
+export function noteNearingLimit(text: string): boolean {
+  return text.length >= NOTES_WARN_AT;
 }
 
 export function guardNotes(raw: string, max = NOTES_MAX_CHARS): boolean {
@@ -107,8 +117,12 @@ export async function loadNotes(): Promise<Note[]> {
 }
 
 export async function saveNotes(notes: readonly Note[]): Promise<'ok' | 'too-large'> {
-  const raw = packNotes(notes);
-  if (!guardNotes(raw)) return 'too-large';
+  const limited = notes.map((note) => ({
+    ...note,
+    title: limitNoteText(note.title).text,
+    body: limitNoteText(note.body).text,
+  }));
+  const raw = packNotes(limited);
   try {
     await idbPut(raw);
     return 'ok';

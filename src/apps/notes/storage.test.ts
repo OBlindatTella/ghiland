@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { renderLightMarkdown } from './markdown';
-import { guardNotes, NOTES_MAX_CHARS, packNotes, unpackNotes } from './storage';
+import { guardNotes, limitNoteText, NOTES_MAX_CHARS, NOTES_WARN_AT, noteNearingLimit, packNotes, unpackNotes } from './storage';
 
 describe('notes storage', () => {
   it('round-trips notes and refuses an oversized payload', () => {
@@ -8,7 +8,11 @@ describe('notes storage', () => {
     expect(unpackNotes(packNotes(notes))).toEqual(notes);
     expect(unpackNotes('not json')).toEqual([]);
     expect(guardNotes(packNotes(notes))).toBe(true);
-    expect(guardNotes('x'.repeat(NOTES_MAX_CHARS + 1))).toBe(false);
+    const limited = limitNoteText('x'.repeat(NOTES_MAX_CHARS + 40));
+    expect(limited.clipped).toBe(true);
+    expect(limited.text.length).toBe(NOTES_MAX_CHARS);
+    expect(noteNearingLimit('x'.repeat(NOTES_WARN_AT))).toBe(true);
+    expect(noteNearingLimit('short')).toBe(false);
   });
 
   it('renders a little markdown without letting HTML through', () => {
