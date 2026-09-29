@@ -2,6 +2,8 @@
 
 A browser-based first-person world. Alpha 0.1 through the Seaside greybox, the world selector, and the Screen.
 
+Play: https://oblindattella.github.io/ghiland/
+
 ## How to play
 
 Play it in the browser: [https://oblindattella.github.io/ghiland/](https://oblindattella.github.io/ghiland/)
