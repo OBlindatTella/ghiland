@@ -6,8 +6,11 @@ describe('pinned click caret', () => {
     const field = {
       contains: () => false,
       ownerDocument: {
-        caretPositionFromPoint: () => ({ offsetNode: null, offset: 0 }),
-        caretRangeFromPoint: () => null,
+        caretPositionFromPoint: ((_x: number, _y: number) => ({ offsetNode: null as Node | null, offset: 0 })) as (
+          x: number,
+          y: number,
+        ) => { offsetNode: Node | null; offset: number } | null,
+        caretRangeFromPoint: ((_x: number, _y: number) => null) as (x: number, y: number) => Range | null,
       },
     };
     field.ownerDocument.caretPositionFromPoint = () => ({ offsetNode: field as unknown as Node, offset: 12 });

@@ -126,7 +126,8 @@ export function projectWindow(
   camera.updateMatrixWorld();
   inverse.copy(camera.matrixWorldInverse);
   cameraSpace.set(worldPosition[0], worldPosition[1], worldPosition[2]).applyMatrix4(inverse);
-  const near = Math.max(0.05, camera.near || 0.05);
+  const nearValue = 'near' in camera && typeof camera.near === 'number' ? camera.near : 0.05;
+  const near = Math.max(0.05, nearValue);
   if (cameraSpace.z > -near) return { object: null, behind: true };
   if (half && straddlesNearPlane(camera, worldPosition, worldQuaternion, half, near)) {
     return { object: null, behind: true };
