@@ -365,7 +365,7 @@ export class AudioEngine {
   private startMedia(ctx: AudioContext, src: string, destination: AudioNode, fallback: () => void): () => void {
     let started = false;
     let failed = false;
-    const elements: HTMLAudioElement[] = [];
+    const elements: { audio: HTMLAudioElement; source: MediaElementAudioSourceNode; fade: GainNode }[] = [];
     const intervals = new Set<number>();
     const timeouts = new Set<number>();
     const later = (ms: number, fn: () => void) => {
@@ -381,7 +381,14 @@ export class AudioEngine {
       for (const id of timeouts) window.clearTimeout(id);
       intervals.clear();
       timeouts.clear();
-      for (const audio of elements) audio.pause();
+      for (const item of elements) {
+        item.audio.pause();
+        item.audio.removeAttribute('src');
+        item.audio.load();
+        item.source.disconnect();
+        item.fade.disconnect();
+      }
+      elements.length = 0;
     };
     const giveUp = () => {
       if (started || failed) return;
@@ -391,11 +398,11 @@ export class AudioEngine {
     const spawn = (lead: boolean) => {
       if (failed) return;
       const audio = new Audio(src);
-      elements.push(audio);
       audio.crossOrigin = 'anonymous';
       audio.preload = 'auto';
       const source = ctx.createMediaElementSource(audio);
       const fade = ctx.createGain();
+      elements.push({ audio, source, fade });
       source.connect(fade);
       fade.connect(destination);
       fade.gain.value = 0.0001;
@@ -407,6 +414,8 @@ export class AudioEngine {
         spawn(false);
         later(2500, () => {
           audio.pause();
+          audio.removeAttribute('src');
+          audio.load();
           source.disconnect();
           fade.disconnect();
         });
