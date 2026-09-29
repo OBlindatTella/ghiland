@@ -32,6 +32,8 @@ export class InputManager {
   private blurTimer = 0;
   private press: { x: number; y: number } | null = null;
   private beforeShell: ((from: ShellState, to: ShellState) => void) | null = null;
+  /** Blur, tab hide, or context loss, including when the shell was already RELEASED (S6-10). */
+  private onFocusLoss: (() => void) | null = null;
   /** Ignore blur and tab-hide caused by our own window.open, so the Web tile stays on SCREEN. */
   private externalOpenUntil = 0;
   private externalHold = false;
@@ -123,6 +125,11 @@ export class InputManager {
   /** D-017. Runs before the store write so a carried window can pin on the way out of WORLD. */
   setBeforeShellChange(hook: ((from: ShellState, to: ShellState) => void) | null): void {
     this.beforeShell = hook;
+  }
+
+  /** D-038 Q12. Runs on blur, hide, and context loss even when the shell state does not change. */
+  setOnFocusLoss(hook: (() => void) | null): void {
+    this.onFocusLoss = hook;
   }
 
   private windowHooks: { pin?: () => void; interact?: () => void; recall?: () => void } | null = null;
@@ -243,13 +250,12 @@ export class InputManager {
   };
 
   private onKeyDown = (event: KeyboardEvent): void => {
-    if (this.composing && event.code) this.compositionKey = event.code;
+    const duringComposition = this.composing || Boolean(event.isComposing) || event.keyCode === 229;
+    if (duringComposition && event.code) this.compositionKey = event.code;
     if (!this.gameplayOpen()) return;
     const editable = isEditableElement(event.target) || isEditableElement(document.activeElement);
     const composing =
-      this.composing ||
-      Boolean(event.isComposing) ||
-      event.keyCode === 229 ||
+      duringComposition ||
       (event.code === 'Escape' && this.compositionEscape);
     if (this.compositionEscape) {
       this.compositionEscape = false;
@@ -313,8 +319,9 @@ export class InputManager {
     const endingKey = this.compositionKey;
     this.compositionKey = null;
     window.clearTimeout(this.compositionTimer);
-    // Arm only for the Safari order, where the Escape keydown follows compositionend.
-    // A composing Escape already seen (Chrome), or a commit via Enter, must not swallow the next Esc.
+    // Arm only for the Safari order: no keydown was seen during the composition, so the
+    // ending Escape still follows compositionend. A composing Escape (Chrome) or a commit
+    // via Enter must not arm the flag. It lasts only until the next turn (S6-14).
     if (endingKey !== null) {
       this.compositionEscape = false;
       return;
@@ -322,7 +329,7 @@ export class InputManager {
     this.compositionEscape = true;
     this.compositionTimer = window.setTimeout(() => {
       this.compositionEscape = false;
-    }, 1000);
+    }, 0);
   };
 
   private onBlur = (): void => {
@@ -336,6 +343,7 @@ export class InputManager {
       if (document.hasFocus() && active?.tagName === 'IFRAME') return;
       this.keys.clear();
       this.unlockIntent = null;
+      this.onFocusLoss?.();
       this.apply(reduceShell(this.readModel(), { type: 'blur' }));
     }, 0);
   };
@@ -346,6 +354,7 @@ export class InputManager {
     if (!document.hidden || held.stay) return;
     this.keys.clear();
     this.unlockIntent = null;
+    this.onFocusLoss?.();
     this.apply(reduceShell(this.readModel(), { type: 'tabHidden' }));
   };
 
@@ -425,6 +434,7 @@ export class InputManager {
     this.relockAfterToggle = false;
     this.releasePointerLock();
     useInputStore.getState().setPointerLocked(false);
+    this.onFocusLoss?.();
     this.apply(reduceShell(this.readModel(), { type: 'blur' }));
   }
 

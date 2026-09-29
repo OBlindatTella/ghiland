@@ -4,6 +4,7 @@ import { seasideHouse } from '@/worlds/seaside-house/definition';
 import { sunDirection } from '@/worlds/seaside-house/sun';
 import {
   autoPinPlacement,
+  boundsFromBox,
   unionPlacementBounds,
   FLOAT_DISTANCE,
   GLASS_CLEARANCE,
@@ -174,13 +175,7 @@ describe('resolvePlacement', () => {
   });
 });
 
-const houseBounds: PlacementBounds = {
-  min: [-7, 0, -9],
-  max: [7, 0, 9],
-  floorY: 0,
-  ceilingY: null,
-  railZ: 9,
-};
+const houseBounds: PlacementBounds = boundsFromBox([-7, 0, -9], [7, 0, 9], 0, null, 9);
 
 describe('placement bounds', () => {
   it('keeps a float on the house side of the balustrade', () => {
@@ -209,7 +204,7 @@ describe('placement bounds', () => {
       occupied: new Set(),
       heightPx: 560,
       widthPx: 440,
-      bounds: { min: [-7, 0, -9], max: [7, 3.2, 9], floorY: 0, ceilingY: 3.2, railZ: 9 },
+      bounds: boundsFromBox([-7, 0, -9], [7, 3.2, 9], 0, 3.2, 9),
     });
     expect(result.placement).toBe('surface');
     expect(result.valid).toBe(true);
@@ -224,7 +219,7 @@ describe('placement bounds', () => {
       anchors: [],
       occupied: new Set(),
       heightPx: 560,
-      bounds: { ...houseBounds, ceilingY: 3.2 },
+      bounds: boundsFromBox([-7, 0, -9], [7, 0, 9], 0, 3.2, 9),
     });
     if (result.placement !== 'anchor') {
       const half = 560 / PX_PER_METER / 2;
@@ -250,6 +245,82 @@ describe('auto-pin pose', () => {
     const beyond: Vec3 = [3, 1.62, 6];
     const result = autoPinPlacement(eye, beyond, [0, 0, 0, 1], colliders, houseBounds);
     expect(result.valid).toBe(false);
+  });
+
+  it('keeps an east-wall pin 1 cm off the wall and clear of the back wall', () => {
+    const bounds = unionPlacementBounds(seasideHouse.zones, 0, 9);
+    const result = resolvePlacement({
+      ray: { origin: [5, 2.3, -3.2], direction: [1, 0, 0] },
+      colliders,
+      anchors: [],
+      occupied: new Set(),
+      heightPx: 560,
+      widthPx: 440,
+      bounds,
+    });
+    const halfW = 440 / PX_PER_METER / 2;
+    expect(result.placement).toBe('surface');
+    expect(result.valid).toBe(true);
+    expect(result.position[0]).toBeCloseTo(7 - SURFACE_OFFSET, 2);
+    expect(result.position[2] - halfW).toBeGreaterThanOrEqual(-3.5 + 0.02 - 1e-3);
+    const right = rotate(result.quaternion, [1, 0, 0]);
+    const normal = rotate(result.quaternion, [0, 0, 1]);
+    expect(Math.abs(right[2])).toBeGreaterThan(0.9);
+    expect(normal[0]).toBeLessThan(-0.9);
+  });
+
+  it('does not pin the bookshelf or a table side face', () => {
+    const shelf = resolvePlacement({
+      ray: { origin: [6.2, 1.4, -2.2], direction: [0, 0, -1] },
+      colliders,
+      anchors: [],
+      occupied: new Set(),
+      heightPx: 560,
+      widthPx: 440,
+    });
+    expect(shelf.placement).toBe('float');
+    const side = resolvePlacement({
+      ray: { origin: [-5.2, 0.4, 0.5], direction: [0, 0, 1] },
+      colliders,
+      anchors: [],
+      occupied: new Set(),
+      heightPx: 560,
+      widthPx: 440,
+    });
+    expect(side.placement).toBe('float');
+    expect(side.position[2]).toBeLessThan(1.9);
+  });
+
+  it('holds a corridor float under the 2.4 m ceiling and inside the corridor width', () => {
+    const bounds = unionPlacementBounds(seasideHouse.zones, 0, 9);
+    const corridor = bounds.volumes.find((volume) => volume.max[1] === 2.4 && volume.min[2] < -4);
+    expect(corridor?.ceilingY).toBe(2.4);
+    const raised = resolvePlacement({
+      ray: { origin: [0, 1.62, -7], direction: [0, 0.5, 0.5] },
+      colliders,
+      anchors: [],
+      occupied: new Set(),
+      heightPx: 560,
+      widthPx: 440,
+      bounds,
+    });
+    const halfH = 560 / PX_PER_METER / 2;
+    expect(raised.position[1] + halfH).toBeLessThanOrEqual(2.4 - 0.02 + 1e-3);
+    expect(raised.position[0]).toBeGreaterThanOrEqual(-1.1);
+    expect(raised.position[0]).toBeLessThanOrEqual(1.1);
+    const wide = resolvePlacement({
+      ray: { origin: [0, 1.5, -6], direction: [1, 0, 0] },
+      colliders: [],
+      anchors: [],
+      occupied: new Set(),
+      heightPx: 560,
+      widthPx: 440,
+      bounds,
+    });
+    expect(wide.valid).toBe(true);
+    expect(wide.position[0]).toBeLessThanOrEqual(1.1 - 0.02 + 1e-3);
+    expect(wide.position[0]).toBeGreaterThan(0.5);
+    expect(wide.position[2]).toBeCloseTo(-6, 2);
   });
 
   it('lets a float aimed through the open panels land on the terrace', () => {

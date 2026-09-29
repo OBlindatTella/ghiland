@@ -52,15 +52,20 @@ describe('quality tier hysteresis', () => {
   });
 
   it('does not retry a tier that failed within 60 seconds (D-022)', () => {
-    let clock = hold('HIGH', 70, 5);
-    expect(clock.tier).toBe('ULTRA');
+    let clock = hold('MED', 70, 5);
+    expect(clock.tier).toBe('HIGH');
     expect(clock.climbed).toBe(true);
     clock = advance(clock, 40, 31);
-    expect(clock.tier).toBe('HIGH');
-    expect(clock.ceiling).toBe('HIGH');
+    expect(clock.tier).toBe('MED');
+    expect(clock.ceiling).toBe('MED');
     clock = advance(clock, 70, 40);
-    expect(clock.tier).toBe('HIGH');
+    expect(clock.tier).toBe('MED');
     expect(clock.changed).toBe(false);
+  });
+
+  it('never climbs above HIGH (D-041)', () => {
+    expect(hold('HIGH', 90, 8).tier).toBe('HIGH');
+    expect(heuristicTier({ renderer: 'NVIDIA GeForce RTX 3060', cores: 16, deviceMemory: 32, lastGood: 'ULTRA' })).toBe('HIGH');
   });
 
   it('allows at most two tier changes in five minutes after the first minute, unless fps stays under half the target', () => {

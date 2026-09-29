@@ -55,17 +55,18 @@ function occluders(): PlacementCollider[] {
 
 let quadKey = '';
 
-function syncQuads(windows: WindowInstance[]): void {
+function syncQuads(windows: WindowInstance[], billboard: readonly [number, number, number, number] | null): void {
   let key = '';
   const quads: WindowQuad[] = [];
   for (const item of windows) {
     if (item.mode.kind !== 'worldPinned') continue;
     if (item.state === 'minimized') {
-      key += `${item.id}:tag:${item.mode.position[0]},${item.mode.position[1]},${item.mode.position[2]};`;
+      const quaternion = billboard ?? item.mode.quaternion;
+      key += `${item.id}:tag:${item.mode.position[0]},${item.mode.position[1]},${item.mode.position[2]}:${quaternion.join(',')};`;
       quads.push({
         id: item.id,
         position: item.mode.position,
-        quaternion: item.mode.quaternion,
+        quaternion,
         half: { w: 0.04, h: 0.04 },
       });
       continue;
@@ -212,6 +213,7 @@ export function WindowRig() {
     inputManager.setBeforeShellChange((from, to) => {
       if (from === 'WORLD' && to !== 'WORLD') autoPinCarried();
     });
+    inputManager.setOnFocusLoss(() => autoPinCarried());
     const unhit = onCrosshairHit((id, point) => focusPinnedFromWorld(id, point));
     let persistTimer = 0;
     const unsub = useWindows.subscribe(() => {
@@ -244,6 +246,7 @@ export function WindowRig() {
       installWindowBridge(null);
       inputManager.setWindowHooks(null);
       inputManager.setBeforeShellChange(null);
+      inputManager.setOnFocusLoss(null);
       unhit();
       window.clearTimeout(persistTimer);
       unsub();
@@ -283,8 +286,8 @@ export function WindowRig() {
     for (const id of occlusion.keys()) {
       if (!live.has(id)) occlusion.delete(id);
     }
-    syncQuads(windows);
     const pose = cameraPoseSafe(camera);
+    syncQuads(windows, pose?.quaternion ?? null);
     let carried: WindowInstance | null = null;
     for (const item of windows) {
       const element = windowElement(item.id);
