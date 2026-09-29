@@ -1,18 +1,21 @@
 import type { QualityTier } from '@/contracts/quality';
 
-/** Art-pass tiers. LOW drops waves, mesh density, clouds, and texture size. */
+/** Art-pass tiers. LOW drops the waves shorter than its grid can sample. */
 export function waveCount(tier: QualityTier): number {
-  if (tier === 'LOW') return 3;
+  if (tier === 'LOW') return 2;
   if (tier === 'MED') return 4;
   return 5;
 }
 
-/** Radial-ish plane segments. HIGH stays far under the triangle budget. */
+/**
+ * Plane is 380 × 270 m. Segments keep at least two samples across the shortest
+ * wave that tier still draws (24 m on LOW, 7.5 m on MED, 4.2 m on HIGH).
+ */
 export function oceanSegments(tier: QualityTier): [number, number] {
-  if (tier === 'LOW') return [36, 22];
-  if (tier === 'MED') return [56, 32];
-  if (tier === 'HIGH') return [72, 42];
-  return [88, 48];
+  if (tier === 'LOW') return [40, 28];
+  if (tier === 'MED') return [104, 74];
+  if (tier === 'HIGH') return [182, 130];
+  return [200, 144];
 }
 
 export function cloudLayers(tier: QualityTier): number {

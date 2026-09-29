@@ -3,13 +3,14 @@ import { curtainBillow, CURTAIN_BILLOW_MAX } from './curtainMath';
 import { estimateTextureBytes } from './textures';
 import { rockLayout } from './rocks';
 import { cloudLayers, oceanSegments, textureSizeForTier, waveCount } from './scale';
+import { WAVES } from './waves';
 import { shadowCoversHouse, shadowFrustum } from './shadowFit';
 import { CURTAIN_VERTEX_SNIPPET, createOceanMaterial } from './shaders';
 import { gerstnerDisplacement } from './waves';
 
 describe('seaside art scale', () => {
   it('uses fewer waves and a coarser ocean on LOW', () => {
-    expect(waveCount('LOW')).toBe(3);
+    expect(waveCount('LOW')).toBe(2);
     expect(waveCount('HIGH')).toBe(5);
     expect(waveCount('LOW')).toBeLessThan(waveCount('MED'));
     expect(waveCount('MED')).toBeLessThan(waveCount('HIGH'));
@@ -18,6 +19,13 @@ describe('seaside art scale', () => {
     expect(low[0] * low[1]).toBeLessThan(high[0] * high[1]);
     expect(cloudLayers('LOW')).toBe(1);
     expect(cloudLayers('HIGH')).toBe(3);
+    const plane: [number, number] = [380, 270];
+    for (const tier of ['LOW', 'MED', 'HIGH', 'ULTRA'] as const) {
+      const [sx, sz] = oceanSegments(tier);
+      const shortest = WAVES[waveCount(tier) - 1]?.length ?? 1;
+      expect(plane[0] / sx).toBeLessThanOrEqual(shortest / 2 + 1e-6);
+      expect(plane[1] / sz).toBeLessThanOrEqual(shortest / 2 + 1e-6);
+    }
   });
 
   it('caps textures at 512 on LOW and 1k above', () => {
@@ -30,8 +38,8 @@ describe('seaside art scale', () => {
 
   it('fits the shadow camera around the house instead of ±5 m', () => {
     expect(shadowCoversHouse()).toBe(true);
-    expect(shadowFrustum.right).toBeGreaterThan(5);
-    expect(shadowFrustum.left).toBeLessThan(-5);
+    expect(shadowFrustum.right).toBe(10);
+    expect(shadowFrustum.left).toBe(-10);
   });
 
   it('keeps curtain billow at or under 0.35 m and off the opening', () => {
@@ -45,6 +53,7 @@ describe('seaside art scale', () => {
     }
     expect(curtainBillow(1, 0, 0).z).toBe(0);
     expect(CURTAIN_VERTEX_SNIPPET).toContain('min(0.35');
+    expect(CURTAIN_VERTEX_SNIPPET).toContain('objectNormal');
   });
 
   it('moves the sea with Gerstner waves and stays a calm amplitude', () => {
