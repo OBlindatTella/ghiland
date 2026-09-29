@@ -24,10 +24,16 @@ diffuseColor.rgb *= mix(0.78, 1.0, ghSeam);
 `;
 }
 
-const SLAT_SNIPPET = /* glsl */ `
+const SLAT_COLOR = /* glsl */ `
 float ghStripe = mod(vGhWorld.x + 6.0, 0.06);
 float ghGap = step(0.04, ghStripe);
 diffuseColor.rgb = mix(vec3(${SLAT.r.toFixed(4)}, ${SLAT.g.toFixed(4)}, ${SLAT.b.toFixed(4)}), vec3(${GAP.r.toFixed(4)}, ${GAP.g.toFixed(4)}, ${GAP.b.toFixed(4)}), ghGap);
+`;
+
+const SLAT_EMISSIVE = /* glsl */ `
+float ghStripeE = mod(vGhWorld.x + 6.0, 0.06);
+float ghGapE = step(0.04, ghStripeE);
+totalEmissiveRadiance = mix(vec3(${SLAT.r.toFixed(4)}, ${SLAT.g.toFixed(4)}, ${SLAT.b.toFixed(4)}) * 0.42, vec3(${GAP.r.toFixed(4)}, ${GAP.g.toFixed(4)}, ${GAP.b.toFixed(4)}) * 0.05, ghGapE);
 `;
 
 export type InteriorShade = 'plain' | 'slats' | 'oak-boards' | 'deck-boards';
@@ -40,12 +46,17 @@ export function applyInteriorShade(material: MeshStandardMaterial, mode: Interio
       .replace('#include <common>', '#include <common>\nvarying vec3 vGhWorld;')
       .replace('#include <begin_vertex>', '#include <begin_vertex>\nvGhWorld = (modelMatrix * vec4(position, 1.0)).xyz;');
     let color = '';
-    if (mode === 'slats') color = SLAT_SNIPPET;
+    let emissive = '';
+    if (mode === 'slats') {
+      color = SLAT_COLOR;
+      emissive = SLAT_EMISSIVE;
+    }
     if (mode === 'oak-boards') color = boardSeam('x');
     if (mode === 'deck-boards') color = boardSeam('z');
     shader.fragmentShader = shader.fragmentShader
       .replace('#include <common>', '#include <common>\nvarying vec3 vGhWorld;')
       .replace('#include <color_fragment>', `#include <color_fragment>\n${color}`)
+      .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>\n${emissive}`)
       .replace('#include <lights_fragment_end>', `#include <lights_fragment_end>\n${ROOM_OCCLUSION_SNIPPET}`);
   };
 }
