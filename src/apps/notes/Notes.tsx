@@ -18,6 +18,7 @@ import {
   claimNotesHere,
   type Note,
 } from './storage';
+import { applyTextEdit, BODY_WINDOW, deleteText, windowFor } from './bodyWindow';
 import { preferredNoteId, readNotesUi, writeNotesUi } from './uiMemory';
 
 function freshNote(): Note {
@@ -35,6 +36,7 @@ export default function Notes({ windowId, host }: AppProps) {
   const [selected, setSelected] = useState<string | null>(remembered?.selectedId ?? null);
   const [preview, setPreview] = useState(remembered?.preview ?? false);
   const [status, setStatus] = useState('');
+  const [longNote, setLongNote] = useState(false);
   const [role, setRole] = useState(notesRole);
   const [problem, setProblem] = useState<'blocked' | 'unavailable' | null>(null);
   const [notice, setNotice] = useState('');
@@ -48,6 +50,36 @@ export default function Notes({ windowId, host }: AppProps) {
   const selectedRef = useRef(selected);
   const previewRef = useRef(preview);
   const restoreRef = useRef(remembered);
+  const saveTimer = useRef(0);
+  const statusText = useRef('');
+  const longRef = useRef(false);
+  const anchorRef = useRef(0);
+
+  const showStatus = (text: string) => {
+    if (statusText.current === text) return;
+    statusText.current = text;
+    setStatus(text);
+  };
+
+  const markLength = (body: string) => {
+    const next = noteNearingLimit(body);
+    if (longRef.current === next) return;
+    longRef.current = next;
+    setLongNote(next);
+  };
+
+  const scheduleSave = () => {
+    window.clearTimeout(saveTimer.current);
+    saveTimer.current = window.setTimeout(() => {
+      if (!ready.current) return;
+      void saveNotes(notesRef.current).then((result) => {
+        if (result === 'ok') showStatus('Saved');
+        else if (result === 'blocked') setProblem('blocked');
+        else if (result === 'readonly') showStatus('');
+        else showStatus('This note could not be saved.');
+      });
+    }, 300);
+  };
 
   useEffect(() => {
     selectedRef.current = selected;
@@ -56,8 +88,8 @@ export default function Notes({ windowId, host }: AppProps) {
       selectedId: selected,
       preview,
       scrollTop: bodyRef.current?.scrollTop ?? remembered?.scrollTop ?? 0,
-      selectionStart: bodyRef.current?.selectionStart ?? remembered?.selectionStart ?? 0,
-      selectionEnd: bodyRef.current?.selectionEnd ?? remembered?.selectionEnd ?? 0,
+      selectionStart: bodyRef.current ? anchorRef.current + bodyRef.current.selectionStart : remembered?.selectionStart ?? 0,
+      selectionEnd: bodyRef.current ? anchorRef.current + bodyRef.current.selectionEnd : remembered?.selectionEnd ?? 0,
     });
   }, [windowId, selected, preview, remembered]);
 
@@ -85,31 +117,20 @@ export default function Notes({ windowId, host }: AppProps) {
         return;
       }
       const next = loaded.notes.length > 0 ? loaded.notes : [freshNote()];
+      notesRef.current = next;
+      const selectedId = preferredNoteId(next.map((note) => note.id), readNotesUi(windowId)?.selectedId ?? null);
+      markLength(next.find((note) => note.id === selectedId)?.body ?? next[0]?.body ?? '');
       setNotes(next);
-      setSelected(preferredNoteId(next.map((note) => note.id), readNotesUi(windowId)?.selectedId ?? null));
+      setSelected(selectedId);
       if (loaded.indexRebuilt) setNotice('The notes list was repaired.');
       else if (loaded.quarantined > 0) setNotice('A saved note could not be read. It was set aside.');
       ready.current = claimed === 'writer';
+      if (ready.current) rememberNotes(next);
     })();
     return () => {
       live = false;
     };
   }, [windowId]);
-
-  useEffect(() => {
-    notesRef.current = notes;
-    if (!ready.current) return;
-    rememberNotes(notes);
-    const handle = window.setTimeout(() => {
-      void saveNotes(notes).then((result) => {
-        if (result === 'ok') setStatus('Saved');
-        else if (result === 'blocked') setProblem('blocked');
-        else if (result === 'readonly') setStatus('');
-        else setStatus('This note could not be saved.');
-      });
-    }, 300);
-    return () => window.clearTimeout(handle);
-  }, [notes]);
 
   useEffect(() => {
     const flush = () => {
@@ -129,43 +150,123 @@ export default function Notes({ windowId, host }: AppProps) {
 
   const current = notes.find((note) => note.id === selected) ?? notes[0];
 
+  const paintBody = (field: HTMLTextAreaElement, full: string, caret: number) => {
+    const view = windowFor(full, caret);
+    anchorRef.current = view.anchor;
+    if (field.value !== view.slice) field.value = view.slice;
+    field.setSelectionRange(view.local, view.local);
+  };
+
   useLayoutEffect(() => {
     const field = bodyRef.current;
     if (!field || !current) return;
-    const pending = caretRef.current;
-    if (pending && pending.id === current.id) {
-      field.setSelectionRange(pending.start, pending.end);
-      caretRef.current = null;
-      return;
-    }
-    const restore = restoreRef.current;
-    if (restore && restore.selectedId === current.id) {
-      field.scrollTop = restore.scrollTop;
-      field.setSelectionRange(restore.selectionStart, restore.selectionEnd);
-      restoreRef.current = null;
-    }
     if (field.dataset.note !== current.id) {
+      const body = notesRef.current.find((note) => note.id === current.id)?.body ?? '';
+      const restore = restoreRef.current;
+      const caret = restore?.selectedId === current.id ? restore.selectionStart : body.length;
+      paintBody(field, body, caret);
       field.dataset.note = current.id;
+      if (restore?.selectedId === current.id) {
+        field.scrollTop = restore.scrollTop;
+        if (restore.selectionEnd !== restore.selectionStart && body.length <= BODY_WINDOW) {
+          field.setSelectionRange(restore.selectionStart, restore.selectionEnd);
+        }
+        restoreRef.current = null;
+      }
       if (document.activeElement !== field) field.focus({ preventScroll: true });
     }
-  }, [notes, current]);
+    const pending = caretRef.current;
+    if (pending && pending.id === current.id) {
+      const body = notesRef.current.find((note) => note.id === current.id)?.body ?? field.value;
+      paintBody(field, body, pending.start);
+      caretRef.current = null;
+    }
+  }, [current]);
+
+  const editRef = useRef<(event: Event) => void>(() => {});
+
+  useEffect(() => {
+    editRef.current = (event) => {
+      if (!(event instanceof InputEvent) || notesRole() !== 'writer') return;
+      const field = bodyRef.current;
+      const live = notesRef.current.find((note) => note.id === selectedRef.current);
+      if (!field || !live || field.readOnly) return;
+      const localStart = field.selectionStart ?? 0;
+      const localEnd = field.selectionEnd ?? localStart;
+      selectionRef.current = { start: localStart, end: localEnd };
+      const stored = live.body;
+      const windowed = stored.length > BODY_WINDOW || anchorRef.current !== 0;
+      const full = windowed ? stored : field.value;
+      const start = (windowed ? anchorRef.current : 0) + localStart;
+      const end = (windowed ? anchorRef.current : 0) + localEnd;
+      const inserting = event.inputType.startsWith('insert');
+      const deleting = event.inputType.startsWith('delete');
+      const incoming = event.data ?? '';
+      const wouldWindow = full.length - (end - start) + incoming.length > BODY_WINDOW;
+      if (!windowed && !wouldWindow) {
+        if (!inserting || incoming.length === 0) return;
+        const room = NOTES_MAX_CHARS - (field.value.length - (localEnd - localStart));
+        if (room >= incoming.length) return;
+        event.preventDefault();
+        if (room > 0) {
+          let piece = incoming.slice(0, room);
+          const code = piece.charCodeAt(piece.length - 1);
+          if (code >= 0xd800 && code <= 0xdbff) piece = piece.slice(0, -1);
+          field.setRangeText(piece, localStart, localEnd, 'end');
+          field.dispatchEvent(new Event('input', { bubbles: true }));
+        }
+        showStatus("The rest of that paste didn't fit.");
+        return;
+      }
+      if (!inserting && !deleting) {
+        event.preventDefault();
+        return;
+      }
+      event.preventDefault();
+      const edited = inserting
+        ? applyTextEdit(full, start, end, incoming, NOTES_MAX_CHARS)
+        : { ...deleteText(full, start, end, event.inputType === 'deleteContentForward' ? 'forward' : 'backward'), clipped: false };
+      if (edited.text === full) {
+        if (inserting && incoming.length > 0) showStatus("The rest of that paste didn't fit.");
+        return;
+      }
+      const next = notesRef.current.map((note) =>
+        note.id === live.id ? { ...note, body: edited.text, updatedAt: Date.now() } : note,
+      );
+      notesRef.current = next;
+      rememberNotes(next);
+      scheduleSave();
+      markLength(edited.text);
+      paintBody(field, edited.text, edited.caret);
+      if (edited.clipped) showStatus("The rest of that paste didn't fit.");
+    };
+  });
+
+  useEffect(() => {
+    const field = bodyRef.current;
+    if (!field) return;
+    const onBefore = (event: Event) => editRef.current(event);
+    field.addEventListener('beforeinput', onBefore);
+    return () => field.removeEventListener('beforeinput', onBefore);
+  }, [current?.id, preview]);
 
   useEffect(() => {
     if (current) host.setTitle(current.title || 'Notes');
   }, [current, host]);
 
   const update = (patch: Partial<Note>, caret?: number) => {
-    if (!current || role !== 'writer' || problem) return;
+    const live = notesRef.current.find((note) => note.id === selectedRef.current) ?? current;
+    if (!live || role !== 'writer' || problem) return;
     let clipped = false;
     const nextPatch = { ...patch };
     if (nextPatch.title !== undefined) {
-      const limited = trimInsertion(current.title, nextPatch.title, caret ?? nextPatch.title.length);
+      const limited = trimInsertion(live.title, nextPatch.title, caret ?? nextPatch.title.length);
       nextPatch.title = limited.text;
       clipped = clipped || limited.clipped;
     }
     if (nextPatch.body !== undefined) {
       const limited = trimInsertion(
-        current.body,
+        live.body,
         nextPatch.body,
         caret ?? nextPatch.body.length,
         NOTES_MAX_CHARS,
@@ -173,21 +274,20 @@ export default function Notes({ windowId, host }: AppProps) {
       );
       nextPatch.body = limited.text;
       clipped = clipped || limited.clipped;
-      if (limited.clipped) {
-        caretRef.current = { id: current.id, start: limited.caret, end: limited.caret };
+      markLength(limited.text);
+      if (limited.clipped || limited.text.length > BODY_WINDOW) {
         const field = bodyRef.current;
-        if (field && field.value !== limited.text) {
-          field.value = limited.text;
-          field.setSelectionRange(limited.caret, limited.caret);
-        }
+        if (field) paintBody(field, limited.text, limited.caret);
       }
     }
-    if (clipped) setStatus("The rest of that paste didn't fit.");
+    if (clipped) showStatus("The rest of that paste didn't fit.");
     const next = notesRef.current.map((note) =>
-      note.id === current.id ? { ...note, ...nextPatch, updatedAt: Date.now() } : note,
+      note.id === live.id ? { ...note, ...nextPatch, updatedAt: Date.now() } : note,
     );
     notesRef.current = next;
     rememberNotes(next);
+    scheduleSave();
+    if (nextPatch.title === undefined) return;
     setNotes(next);
   };
 
@@ -202,10 +302,15 @@ export default function Notes({ windowId, host }: AppProps) {
         return;
       }
       const next = loaded.notes.length > 0 ? loaded.notes : [freshNote()];
+      notesRef.current = next;
+      const selectedId = preferredNoteId(next.map((note) => note.id), readNotesUi(windowId)?.selectedId ?? null);
+      markLength(next.find((note) => note.id === selectedId)?.body ?? next[0]?.body ?? '');
       setNotes(next);
-      setSelected(preferredNoteId(next.map((note) => note.id), readNotesUi(windowId)?.selectedId ?? null));
+      setSelected(selectedId);
       ready.current = true;
       setProblem(null);
+      rememberNotes(next);
+      scheduleSave();
     })();
   };
 
@@ -249,7 +354,10 @@ export default function Notes({ windowId, host }: AppProps) {
           onClick={() => {
             if (role !== 'writer' || problem) return;
             const note = freshNote();
-            setNotes((items) => [note, ...items]);
+            const next = [note, ...notesRef.current];
+            notesRef.current = next;
+            markLength('');
+            setNotes(next);
             setSelected(note.id);
           }}
         >
@@ -262,7 +370,10 @@ export default function Notes({ windowId, host }: AppProps) {
                 type="button"
                 className="w-full truncate px-3 py-2 text-left text-[13px] leading-5"
                 style={{ background: note.id === current?.id ? 'rgba(134,189,178,0.16)' : 'transparent' }}
-                onClick={() => setSelected(note.id)}
+                onClick={() => {
+                  markLength(notesRef.current.find((item) => item.id === note.id)?.body ?? note.body);
+                  setSelected(note.id);
+                }}
               >
                 {note.title || 'Untitled'}
               </button>
@@ -282,10 +393,16 @@ export default function Notes({ windowId, host }: AppProps) {
           />
           <div className="flex items-center justify-between px-4 pt-2 text-[12px] leading-4 text-[#f2f0eb]/64">
             <span className="flex min-w-0 flex-col">
-              {current && noteNearingLimit(current.body) ? <span>This note is getting long.</span> : null}
+              {longNote ? <span>This note is getting long.</span> : null}
               <span>{status}</span>
             </span>
-            <button type="button" onClick={() => setPreview((value) => !value)}>
+            <button
+              type="button"
+              onClick={() => {
+                if (!preview) setNotes(notesRef.current);
+                setPreview((value) => !value);
+              }}
+            >
               {preview ? 'Edit' : 'Preview'}
             </button>
           </div>
@@ -301,34 +418,40 @@ export default function Notes({ windowId, host }: AppProps) {
               data-testid="notes-body"
               aria-label="Note"
               className="min-h-0 flex-1 resize-none bg-transparent px-4 py-3 text-[15px] leading-6 outline-none"
-              defaultValue={current.body}
+              defaultValue=""
               readOnly={role !== 'writer' || problem !== null}
-              onBeforeInput={(event) => {
-                if (role !== 'writer' || problem) return;
-                const input = event.nativeEvent;
-                if (!(input instanceof InputEvent) || !input.data) return;
+              onKeyDown={(event) => {
+                const live = notesRef.current.find((note) => note.id === selectedRef.current);
+                if (!live || live.body.length <= BODY_WINDOW) return;
                 const field = event.currentTarget;
-                selectionRef.current = { start: field.selectionStart ?? 0, end: field.selectionEnd ?? 0 };
-                const removed = selectionRef.current.end - selectionRef.current.start;
-                const room = NOTES_MAX_CHARS - (current.body.length - removed);
-                if (room >= input.data.length) return;
-                event.preventDefault();
-                if (room > 0) {
-                  const piece = input.data.slice(0, room);
-                  const cut = piece.charCodeAt(piece.length - 1) >= 0xd800 && piece.charCodeAt(piece.length - 1) <= 0xdbff ? piece.slice(0, -1) : piece;
-                  field.setRangeText(cut, selectionRef.current.start, selectionRef.current.end, 'end');
-                  field.dispatchEvent(new Event('input', { bubbles: true }));
+                const local = field.selectionStart ?? 0;
+                const caret = anchorRef.current + local;
+                if ((event.key === 'Home' || event.key === 'End') && (event.ctrlKey || event.metaKey)) {
+                  event.preventDefault();
+                  paintBody(field, live.body, event.key === 'Home' ? 0 : live.body.length);
+                } else if (event.key === 'ArrowLeft' && local === 0 && anchorRef.current > 0 && field.selectionEnd === local) {
+                  event.preventDefault();
+                  paintBody(field, live.body, Math.max(0, caret - 1));
+                } else if (
+                  event.key === 'ArrowRight' &&
+                  local === field.value.length &&
+                  anchorRef.current + field.value.length < live.body.length &&
+                  field.selectionEnd === local
+                ) {
+                  event.preventDefault();
+                  paintBody(field, live.body, Math.min(live.body.length, caret + 1));
                 }
-                setStatus("The rest of that paste didn't fit.");
               }}
               onSelect={(event) => {
-                selectionRef.current = { start: event.currentTarget.selectionStart, end: event.currentTarget.selectionEnd };
+                const start = anchorRef.current + event.currentTarget.selectionStart;
+                const end = anchorRef.current + event.currentTarget.selectionEnd;
+                selectionRef.current = { start, end };
                 writeNotesUi(windowId, {
                   selectedId: selectedRef.current,
                   preview: previewRef.current,
                   scrollTop: event.currentTarget.scrollTop,
-                  selectionStart: event.currentTarget.selectionStart,
-                  selectionEnd: event.currentTarget.selectionEnd,
+                  selectionStart: start,
+                  selectionEnd: end,
                 });
               }}
               onScroll={(event) => {
@@ -336,11 +459,16 @@ export default function Notes({ windowId, host }: AppProps) {
                   selectedId: selectedRef.current,
                   preview: previewRef.current,
                   scrollTop: event.currentTarget.scrollTop,
-                  selectionStart: event.currentTarget.selectionStart,
-                  selectionEnd: event.currentTarget.selectionEnd,
+                  selectionStart: anchorRef.current + event.currentTarget.selectionStart,
+                  selectionEnd: anchorRef.current + event.currentTarget.selectionEnd,
                 });
               }}
-              onChange={(event) => update({ body: event.target.value }, event.target.selectionStart ?? event.target.value.length)}
+              onChange={(event) => {
+                const stored = notesRef.current.find((note) => note.id === selectedRef.current)?.body ?? '';
+                if (stored.length > BODY_WINDOW && event.target.value.length <= BODY_WINDOW) return;
+                const caret = anchorRef.current + (event.target.selectionStart ?? event.target.value.length);
+                update({ body: event.target.value }, caret);
+              }}
             />
           )}
         </div>

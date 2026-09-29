@@ -400,6 +400,14 @@ function writeMirror(notes: readonly Note[]): void {
       clearMirrorStore();
       return;
     }
+    let chars = 0;
+    for (const note of notes) {
+      chars += note.body.length + note.title.length;
+      if (chars > MIRROR_MAX_CHARS) {
+        clearMirrorStore();
+        return;
+      }
+    }
     const payload = JSON.stringify({ version: NOTES_RECORD_VERSION, notes });
     if (payload.length > MIRROR_MAX_CHARS) {
       clearMirrorStore();
