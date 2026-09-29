@@ -1,13 +1,13 @@
 /**
- * Orthographic shadow fit for the house and terrace (about 16 × 20 m) plus the
- * cliff rocks. The default ±5 m camera clipped the sun. Low elevation stretches
- * the footprint, so the frustum is 44 m across.
+ * Orthographic shadow fit for the house and terrace (about ±7 × ±9 m around the
+ * light target). ±10 m in light space keeps floor texels near 5 cm at 12° sun
+ * on a 2048 map. three r186 maps PCFSoftShadowMap to PCF.
  */
 export const shadowFrustum = {
-  left: -22,
-  right: 22,
-  top: 22,
-  bottom: -22,
+  left: -10,
+  right: 10,
+  top: 10,
+  bottom: -10,
   near: 8,
   far: 70,
   bias: -0.00045,
@@ -17,5 +17,5 @@ export const shadowFrustum = {
 export function shadowCoversHouse(): boolean {
   const width = shadowFrustum.right - shadowFrustum.left;
   const height = shadowFrustum.top - shadowFrustum.bottom;
-  return width >= 36 && height >= 36 && shadowFrustum.near < 16 && shadowFrustum.far > 50 && shadowFrustum.left < -5;
+  return width >= 20 && width <= 24 && height >= 20 && shadowFrustum.near < 16 && shadowFrustum.far > 50 && shadowFrustum.left <= -10;
 }

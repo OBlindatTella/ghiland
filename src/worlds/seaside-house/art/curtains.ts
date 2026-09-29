@@ -1,4 +1,4 @@
-import { DoubleSide, MeshStandardMaterial } from 'three';
+import { DoubleSide, MeshStandardMaterial, Vector2 } from 'three';
 import { CURTAIN_VERTEX_SNIPPET } from './shaders';
 
 export interface CurtainMaterial extends MeshStandardMaterial {
@@ -20,7 +20,8 @@ export function createCurtainMaterial(): CurtainMaterial {
   material.customProgramCacheKey = () => 'seaside-curtain-billow';
   material.onBeforeCompile = (shader) => {
     shader.uniforms.uTime = time;
-    shader.vertexShader = `uniform float uTime;\n${shader.vertexShader.replace('#include <begin_vertex>', `#include <begin_vertex>\n${CURTAIN_VERTEX_SNIPPET}`)}`;
+    shader.uniforms.uCurtainSize = { value: new Vector2(0.8, 3.1) };
+    shader.vertexShader = `uniform float uTime;\nuniform vec2 uCurtainSize;\n${shader.vertexShader.replace('#include <begin_vertex>', `#include <begin_vertex>\n${CURTAIN_VERTEX_SNIPPET}`)}`;
     shader.fragmentShader = shader.fragmentShader.replace(
       '#include <opaque_fragment>',
       `#include <opaque_fragment>
