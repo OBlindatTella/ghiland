@@ -392,6 +392,17 @@ function idbGet(db: IDBDatabase, key: string): Promise<unknown> {
   });
 }
 
+function idbKeys(db: IDBDatabase): Promise<string[]> {
+  return new Promise((resolve, reject) => {
+    const store = db.transaction('kv', 'readonly').objectStore('kv');
+    const request = store.getAllKeys();
+    request.onsuccess = () => {
+      resolve((request.result as IDBValidKey[]).filter((key): key is string => typeof key === 'string'));
+    };
+    request.onerror = () => reject(request.error ?? new Error('indexedDB'));
+  });
+}
+
 function idbWrite(db: IDBDatabase, writes: readonly { key: string; value: unknown }[], deletes: readonly string[]): Promise<void> {
   return new Promise((resolve, reject) => {
     const tx = db.transaction('kv', 'readwrite');
@@ -515,37 +526,69 @@ async function writeRecords(db: IDBDatabase, notes: readonly Note[], previousIds
   await idbWrite(db, writes, deletes);
 }
 
-export type LoadNotesResult = { status: 'ok'; notes: Note[] } | { status: 'blocked' } | { status: 'unavailable' };
+export type LoadNotesResult =
+  | { status: 'ok'; notes: Note[]; quarantined: number; indexRebuilt: boolean }
+  | { status: 'blocked' }
+  | { status: 'unavailable' };
+
+function okLoad(notes: Note[], quarantined = 0, indexRebuilt = false): LoadNotesResult {
+  return { status: 'ok', notes, quarantined, indexRebuilt };
+}
+
+async function readNoteRecords(db: IDBDatabase, ids: readonly string[], write: boolean): Promise<LoadNotesResult> {
+  const notes: Note[] = [];
+  let quarantined = 0;
+  for (const id of ids) {
+    const raw = await idbGet(db, recordKey(id));
+    const parsed = parseStoredNote(raw);
+    if (parsed.kind === 'empty') continue;
+    if (parsed.kind === 'corrupt') {
+      quarantined += 1;
+      if (write) {
+        const moved = await quarantineValue(db, recordKey(id), raw);
+        if (!moved) return { status: 'unavailable' };
+      }
+      continue;
+    }
+    if (parsed.version > NOTES_RECORD_VERSION) heldIds.add(parsed.note.id);
+    notes.push(parsed.note);
+  }
+  return okLoad(notes, quarantined);
+}
+
+/** A broken index is rebuilt from the note records. Readers count the damage and do not write. */
+async function rebuildFromRecords(db: IDBDatabase, indexRaw: unknown, write: boolean): Promise<LoadNotesResult> {
+  if (write) {
+    const moved = await quarantineValue(db, NOTES_INDEX_KEY, indexRaw);
+    if (!moved) return { status: 'unavailable' };
+  }
+  const keys = await idbKeys(db);
+  const ids = keys
+    .filter((key) => key.startsWith(NOTES_RECORD_PREFIX))
+    .map((key) => key.slice(NOTES_RECORD_PREFIX.length));
+  const read = await readNoteRecords(db, ids, write);
+  if (read.status !== 'ok') return read;
+  if (write) await writeRecords(db, read.notes, []);
+  knownIds = read.notes.map((note) => note.id);
+  return okLoad(read.notes, read.quarantined + 1, true);
+}
 
 export async function loadNotes(): Promise<LoadNotesResult> {
-  if (memoryCache) return { status: 'ok', notes: memoryCache.map((note) => ({ ...note })) };
+  if (memoryCache) return okLoad(memoryCache.map((note) => ({ ...note })));
+  const write = notesRole() === 'writer';
   try {
     const loaded = await withDb(async (db): Promise<LoadNotesResult> => {
-      const migrated = await migrateLegacy(db);
-      if (migrated === 'unavailable') return { status: 'unavailable' };
+      if (write) {
+        const migrated = await migrateLegacy(db);
+        if (migrated === 'unavailable') return { status: 'unavailable' };
+      }
       const indexRaw = await idbGet(db, NOTES_INDEX_KEY);
       const index = parseIndexValue(indexRaw);
-      if (index.kind === 'corrupt') {
-        const moved = await quarantineValue(db, NOTES_INDEX_KEY, indexRaw);
-        if (!moved) return { status: 'unavailable' };
-        return { status: 'ok', notes: [] };
-      }
+      if (index.kind === 'corrupt') return rebuildFromRecords(db, indexRaw, write);
       const ids = index.kind === 'ids' ? index.ids : [];
-      const notes: Note[] = [];
-      for (const id of ids) {
-        const raw = await idbGet(db, recordKey(id));
-        const parsed = parseStoredNote(raw);
-        if (parsed.kind === 'empty') continue;
-        if (parsed.kind === 'corrupt') {
-          const moved = await quarantineValue(db, recordKey(id), raw);
-          if (!moved) return { status: 'unavailable' };
-          continue;
-        }
-        if (parsed.version > NOTES_RECORD_VERSION) heldIds.add(parsed.note.id);
-        notes.push(parsed.note);
-      }
-      knownIds = notes.map((note) => note.id);
-      return { status: 'ok', notes };
+      const read = await readNoteRecords(db, ids, write);
+      if (read.status === 'ok') knownIds = read.notes.map((note) => note.id);
+      return read;
     });
     return withFresherMirror(loaded);
   } catch (error) {
@@ -557,7 +600,7 @@ export async function loadNotes(): Promise<LoadNotesResult> {
 function withFresherMirror(result: LoadNotesResult): LoadNotesResult {
   if (result.status !== 'ok') return result;
   const notes = fresher(result.notes, readMirror());
-  return { status: 'ok', notes };
+  return { ...result, notes };
 }
 
 export type SaveNotesResult = 'ok' | 'blocked' | 'quota' | 'readonly' | 'unavailable';

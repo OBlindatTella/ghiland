@@ -33,6 +33,7 @@ export default function Notes({ host }: AppProps) {
   const [status, setStatus] = useState('');
   const [role, setRole] = useState(notesRole);
   const [problem, setProblem] = useState<'blocked' | 'unavailable' | null>(null);
+  const [notice, setNotice] = useState('');
   const [sessionReady, setSessionReady] = useState(false);
   const ready = useRef(false);
   const notesRef = useRef(notes);
@@ -57,6 +58,8 @@ export default function Notes({ host }: AppProps) {
       const next = loaded.notes.length > 0 ? loaded.notes : [freshNote()];
       setNotes(next);
       setSelected(next[0]?.id ?? null);
+      if (loaded.indexRebuilt) setNotice('The notes list was repaired.');
+      else if (loaded.quarantined > 0) setNotice('A saved note could not be read. It was set aside.');
       ready.current = claimed === 'writer';
     })();
     return () => {
@@ -161,6 +164,11 @@ export default function Notes({ host }: AppProps) {
       {problem === 'unavailable' ? (
         <p className="border-b border-white/10 px-4 py-3 text-[13px] leading-5 text-[#f2f0eb]/80">
           Notes could not be read. Nothing was overwritten.
+        </p>
+      ) : null}
+      {notice ? (
+        <p data-testid="notes-notice" className="border-b border-white/10 px-4 py-3 text-[13px] leading-5 text-[#f2f0eb]/80">
+          {notice}
         </p>
       ) : null}
       {role === 'reader' && sessionReady && !problem ? (

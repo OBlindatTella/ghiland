@@ -121,12 +121,65 @@ describe('notes storage', () => {
     expect(loaded.notes.find((note) => note.id === 'b1')?.body).toBe('from B');
   });
 
+  it('rebuilds a corrupt index from the note records and leaves it untouched for a reader', async () => {
+    vi.resetModules();
+    const buckets = new Map<string, Map<string, unknown>>();
+    installMemoryIdb(buckets);
+    installLocks();
+    const storage = await import('./storage');
+    expect(await storage.startNotesSession()).toBe('writer');
+    expect(
+      await storage.saveNotes([{ id: 'a', title: 'A', body: 'kept', updatedAt: 5 }]),
+    ).toBe('ok');
+    const store = buckets.get('ghiland');
+    store?.set(storage.NOTES_INDEX_KEY, '{');
+
+    vi.resetModules();
+    installMemoryIdb(buckets);
+    installReaderLocks();
+    const reader = await import('./storage');
+    expect(await reader.startNotesSession()).toBe('reader');
+    const hidden = await reader.loadNotes();
+    expect(hidden.status).toBe('ok');
+    if (hidden.status !== 'ok') return;
+    expect(hidden.indexRebuilt).toBe(true);
+    expect(hidden.notes.map((note) => note.body)).toEqual(['kept']);
+    expect(store?.get(reader.NOTES_INDEX_KEY)).toBe('{');
+
+    vi.resetModules();
+    installMemoryIdb(buckets);
+    installLocks();
+    const writer = await import('./storage');
+    expect(await writer.startNotesSession()).toBe('writer');
+    const repaired = await writer.loadNotes();
+    expect(repaired.status).toBe('ok');
+    if (repaired.status !== 'ok') return;
+    expect(repaired.indexRebuilt).toBe(true);
+    expect(repaired.quarantined).toBeGreaterThan(0);
+    expect(repaired.notes.map((note) => note.id)).toEqual(['a']);
+    expect(store?.get(writer.NOTES_INDEX_KEY)).toEqual({ version: 1, ids: ['a'] });
+    expect([...store!.keys()].some((key) => key.startsWith(writer.NOTES_QUARANTINE_PREFIX))).toBe(true);
+  });
+
   it('renders a little markdown without letting HTML through', () => {
     expect(renderLightMarkdown('**q** and *space*\n<script>')).toBe(
       '<strong>q</strong> and <em>space</em><br>&lt;script&gt;',
     );
   });
 });
+
+function installReaderLocks(): void {
+  const nav = globalThis.navigator ?? ({} as Navigator);
+  Object.defineProperty(globalThis, 'navigator', { value: nav, configurable: true });
+  Object.defineProperty(nav, 'locks', {
+    configurable: true,
+    value: {
+      request(_name: string, _options: LockOptions, callback: (lock: Lock | null) => unknown) {
+        return callback(null);
+      },
+    },
+  });
+}
 
 function installLocks(): void {
   const nav = globalThis.navigator ?? ({} as Navigator);
@@ -205,6 +258,17 @@ function installMemoryIdb(buckets: Map<string, Map<string, unknown>>): void {
               enqueue(() => {
                 bucket().delete(key);
               });
+            },
+            getAllKeys() {
+              const req: { result?: string[]; onsuccess: (() => void) | null; onerror: (() => void) | null } = {
+                onsuccess: null,
+                onerror: null,
+              };
+              enqueue(() => {
+                req.result = [...bucket().keys()];
+                req.onsuccess?.();
+              });
+              return req;
             },
           };
           const tx = {
