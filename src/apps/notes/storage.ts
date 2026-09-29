@@ -350,13 +350,18 @@ function flushOpenConnection(notes: readonly Note[]): Promise<SaveNotesResult> |
     writeMirror(memoryCache);
     return new Promise((resolve) => {
       tx.oncomplete = () => resolve('ok');
-      tx.onerror = () => resolve('unavailable');
-      tx.onabort = () => resolve('unavailable');
+      tx.onerror = () => resolve(saveFailure(tx.error));
+      tx.onabort = () => resolve(saveFailure(tx.error));
     });
   } catch (error) {
-    if (isSiteDataBlocked(error)) return Promise.resolve('blocked');
-    return Promise.resolve('unavailable');
+    return Promise.resolve(saveFailure(error));
   }
+}
+
+function saveFailure(error: unknown): SaveNotesResult {
+  if (isSiteDataBlocked(error)) return 'blocked';
+  if (isQuotaError(error)) return 'quota';
+  return 'unavailable';
 }
 
 function limitNote(note: Note): Note {
@@ -621,9 +626,7 @@ export async function saveNotes(notes: readonly Note[]): Promise<SaveNotesResult
     knownIds = limited.map((note) => note.id);
     return 'ok';
   } catch (error) {
-    if (isSiteDataBlocked(error)) return 'blocked';
-    if (isQuotaError(error)) return 'quota';
-    return 'unavailable';
+    return saveFailure(error);
   }
 }
 

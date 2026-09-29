@@ -75,8 +75,8 @@ export default function Notes({ host }: AppProps) {
       void saveNotes(notes).then((result) => {
         if (result === 'ok') setStatus('Saved');
         else if (result === 'blocked') setProblem('blocked');
-        else if (result === 'quota') setStatus("This browser couldn't store that.");
-        else if (result === 'unavailable') setProblem('unavailable');
+        else if (result === 'readonly') setStatus('');
+        else setStatus('This note could not be saved.');
       });
     }, 300);
     return () => window.clearTimeout(handle);

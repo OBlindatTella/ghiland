@@ -161,6 +161,16 @@ describe('notes storage', () => {
     expect([...store!.keys()].some((key) => key.startsWith(writer.NOTES_QUARANTINE_PREFIX))).toBe(true);
   });
 
+  it('reports a full database as a save failure instead of a read failure', async () => {
+    vi.resetModules();
+    const buckets = new Map<string, Map<string, unknown>>();
+    installMemoryIdb(buckets, 'quota');
+    installLocks();
+    const storage = await import('./storage');
+    expect(await storage.startNotesSession()).toBe('writer');
+    expect(await storage.saveNotes([{ id: 'a', title: 'A', body: 'a', updatedAt: 1 }])).toBe('quota');
+  });
+
   it('renders a little markdown without letting HTML through', () => {
     expect(renderLightMarkdown('**q** and *space*\n<script>')).toBe(
       '<strong>q</strong> and <em>space</em><br>&lt;script&gt;',
@@ -194,7 +204,7 @@ function installLocks(): void {
   });
 }
 
-function installMemoryIdb(buckets: Map<string, Map<string, unknown>>): void {
+function installMemoryIdb(buckets: Map<string, Map<string, unknown>>, fail: 'quota' | null = null): void {
   const created = new Set<string>();
   const indexedDB = {
     open(name: string) {
@@ -251,6 +261,14 @@ function installMemoryIdb(buckets: Map<string, Map<string, unknown>>): void {
             },
             put(value: unknown, key: string) {
               enqueue(() => {
+                if (fail === 'quota') {
+                  const error = new Error('quota');
+                  error.name = 'QuotaExceededError';
+                  tx.error = error;
+                  settled = true;
+                  tx.onabort?.();
+                  return;
+                }
                 bucket().set(key, value);
               });
             },
