@@ -1,6 +1,7 @@
 import type { ScreenRect } from '@/contracts/math';
-import type { WindowInstance, WindowState } from '@/contracts/window';
-import { placeRect, type Size } from '@/shell/windows/geometry';
+import type { WindowInstance, WindowMode, WindowState } from '@/contracts/window';
+import { fitRect, placeRect, type Size } from '@/shell/windows/geometry';
+import type { PinnedRecord } from '@/shell/windows/persistence';
 
 export interface WindowBook {
   windows: Record<string, WindowInstance>;
@@ -16,11 +17,14 @@ export interface OpenWindowInput {
   defaultSize: Size;
   viewport: Size;
   now: number;
+  savedRect?: ScreenRect;
 }
 
 function list(book: WindowBook): WindowInstance[] {
   return Object.values(book.windows).sort((a, b) => a.z - b.z);
 }
+
+const recallArmed = new Set<string>();
 
 function raise(book: WindowBook, id: string): WindowBook {
   const windows = { ...book.windows };
@@ -31,15 +35,37 @@ function raise(book: WindowBook, id: string): WindowBook {
   return { windows, focusedId: id };
 }
 
-export function openWindow(book: WindowBook, input: OpenWindowInput): { book: WindowBook; created: boolean } {
+export function openWindow(
+  book: WindowBook,
+  input: OpenWindowInput,
+): { book: WindowBook; created: boolean; effect: 'created' | 'focus' | 'pulse' | 'recall' } {
   const existing = Object.values(book.windows).find((item) => item.appId === input.appId);
   if (existing) {
+    if (existing.mode.kind === 'worldPinned') {
+      if (recallArmed.has(existing.id)) {
+        recallArmed.delete(existing.id);
+        const recalled: WindowInstance = {
+          ...existing,
+          state: 'normal',
+          mode: { kind: 'overlay', rect: existing.lastScreenRect },
+        };
+        return {
+          book: raise({ windows: { ...book.windows, [existing.id]: recalled }, focusedId: book.focusedId }, existing.id),
+          created: false,
+          effect: 'recall',
+        };
+      }
+      recallArmed.add(existing.id);
+      return { book, created: false, effect: 'pulse' };
+    }
+    recallArmed.delete(existing.id);
     const restored =
       existing.state === 'minimized' ? { ...book.windows, [existing.id]: { ...existing, state: 'normal' as const } } : book.windows;
-    return { book: raise({ windows: restored, focusedId: book.focusedId }, existing.id), created: false };
+    return { book: raise({ windows: restored, focusedId: book.focusedId }, existing.id), created: false, effect: 'focus' };
   }
   const previous = book.focusedId ? book.windows[book.focusedId]?.lastScreenRect ?? null : null;
-  const rect = placeRect(input.defaultSize, input.viewport, previous);
+  const safe = { minX: 24, minY: 24, maxX: input.viewport.w - 24, maxY: input.viewport.h - 88 };
+  const rect = input.savedRect ? fitRect(input.savedRect, safe) : placeRect(input.defaultSize, input.viewport, previous);
   const z = list(book).reduce((max, item) => Math.max(max, item.z), 0) + 1;
   const window: WindowInstance = {
     id: input.id,
@@ -55,14 +81,18 @@ export function openWindow(book: WindowBook, input: OpenWindowInput): { book: Wi
   return {
     book: { windows: { ...book.windows, [window.id]: window }, focusedId: window.id },
     created: true,
+    effect: 'created',
   };
 }
 
 export function closeWindow(book: WindowBook, id: string): WindowBook {
+  recallArmed.delete(id);
   if (!book.windows[id]) return book;
   const windows = { ...book.windows };
   delete windows[id];
-  const remaining = Object.values(windows).sort((a, b) => b.z - a.z);
+  const remaining = Object.values(windows)
+    .filter((item) => item.state !== 'minimized')
+    .sort((a, b) => b.z - a.z);
   return { windows, focusedId: book.focusedId === id ? remaining[0]?.id ?? null : book.focusedId };
 }
 
@@ -94,6 +124,39 @@ export function setWindowRect(book: WindowBook, id: string, rect: ScreenRect): W
       [id]: { ...current, lastScreenRect: rect, mode: { kind: 'overlay', rect } },
     },
   };
+}
+
+export function setWindowMode(book: WindowBook, id: string, mode: WindowMode): WindowBook {
+  const current = book.windows[id];
+  if (!current) return book;
+  return { ...book, windows: { ...book.windows, [id]: { ...current, mode, state: 'normal' } } };
+}
+
+export function restorePinned(book: WindowBook, records: readonly PinnedRecord[]): WindowBook {
+  const windows = { ...book.windows };
+  for (const record of records) {
+    if (Object.values(windows).some((item) => item.appId === record.appId)) continue;
+    windows[record.id] = {
+      id: record.id,
+      appId: record.appId,
+      title: record.title,
+      mode: {
+        kind: 'worldPinned',
+        worldId: record.worldId,
+        position: record.position,
+        quaternion: record.quaternion,
+        pxPerMeter: 520,
+        placement: record.placement,
+        anchorId: record.anchorId,
+      },
+      lastScreenRect: { x: 48, y: 48, w: record.w, h: record.h },
+      state: 'normal',
+      z: 1,
+      owner: 'local',
+      createdAt: 0,
+    };
+  }
+  return { windows, focusedId: book.focusedId };
 }
 
 export function setWindowTitle(book: WindowBook, id: string, title: string): WindowBook {

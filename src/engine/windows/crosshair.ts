@@ -5,6 +5,7 @@ import {
   PlaneGeometry,
   Raycaster,
   Vector2,
+  Vector3,
   type Camera,
 } from 'three';
 import type { AABB } from '@/contracts/math';
@@ -54,7 +55,7 @@ function rayBoxDistance(originX: number, originY: number, originZ: number, dirX:
   return tmin;
 }
 
-/** Centre-of-screen ray against window quads. Occluders and placement boxes win. Empty list returns null. */
+/** Centre-of-screen ray against window quads. Occluders win. Empty list returns null. */
 export function raycastCrosshair(
   camera: Camera,
   quads: readonly WindowQuad[],
@@ -106,6 +107,29 @@ export function registerWindowQuad(quad: WindowQuad): () => void {
   return () => {
     const index = quads.indexOf(quad);
     if (index >= 0) quads.splice(index, 1);
+  };
+}
+
+export function setWindowQuads(next: readonly WindowQuad[]): void {
+  quads.length = 0;
+  quads.push(...next);
+}
+
+export function cameraPose(): {
+  origin: [number, number, number];
+  direction: [number, number, number];
+  quaternion: [number, number, number, number];
+} | null {
+  if (!cameraRef) return null;
+  cameraRef.updateMatrixWorld();
+  const direction = new Vector3();
+  cameraRef.getWorldDirection(direction);
+  const origin = cameraRef.position;
+  const quaternion = cameraRef.quaternion;
+  return {
+    origin: [origin.x, origin.y, origin.z],
+    direction: [direction.x, direction.y, direction.z],
+    quaternion: [quaternion.x, quaternion.y, quaternion.z, quaternion.w],
   };
 }
 

@@ -9,6 +9,7 @@ import { disposeObject3D } from '@/engine/scene/dispose';
 import { StableFrames } from '@/engine/scene/StableFrames';
 import { FirstPersonController } from '@/engine/player/FirstPersonController';
 import { registerRayBlockers } from '@/engine/windows/crosshair';
+import { blocksCrosshair } from '@/engine/windows/raySets';
 import { resolveEyeHeight } from '@/engine/player/movement';
 import { qualityProfiles } from '@/engine/quality/profiles';
 import { useAppliedQuality } from '@/state/appliedQuality';
@@ -36,7 +37,7 @@ function WorldHost({
 
   useEffect(() => {
     const boxes = colliders
-      .filter((collider) => collider.layers.includes('occluder') || collider.layers.includes('placement'))
+      .filter((collider) => blocksCrosshair(collider.layers))
       .map((collider) => collider.box);
     return registerRayBlockers(boxes);
   }, [colliders]);

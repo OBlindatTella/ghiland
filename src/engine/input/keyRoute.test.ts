@@ -30,6 +30,7 @@ describe('decideKey', () => {
     }
     expect(decideKey('Escape', true, 'text', false, false).blurEditable).toBe(true);
     expect(decideKey('Escape', true, 'text', false, false).action).toBeNull();
+    expect(decideKey('Escape', true, 'text', false, false, undefined, true).blurEditable).toBe(false);
   });
 
   it('prevents default on movement keys only while the world owns them', () => {

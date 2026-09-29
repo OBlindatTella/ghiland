@@ -17,7 +17,7 @@ Alpha 0.1. Aura's preferred Freesound picks (`docs/phase-a/AURA_WORLDS.md` §8) 
 - Direct file: https://upload.wikimedia.org/wikipedia/commons/c/c6/Wind_-_SoundCloud_-_Beeld_en_Geluid.ogg
 - Licence: [CC BY-SA 3.0](https://creativecommons.org/licenses/by-sa/3.0/). Commons `LicenseShortName` is CC BY-SA 3.0. The embedded copyright line points at the same deed.
 - Recordist: Beeld en Geluid (Eigen Opnames / Geluid van Nederland). Title “Wind”, description “Waaien”. Field recording, dual-mono, 96 kHz.
-- What shipped: the opening silence (0.8 s) was trimmed. A high-pass at 70 Hz, a gentle compressor, and a limiter tamed gusts that peaked at full scale. Short fades sit at both ends. Re-encoded to stereo Opus at about 96 kb/s (~2.0 MB, 77 kb/s average), 3 min 28 s. This derivative stays under CC BY-SA 3.0.
+- What shipped: the opening silence (0.8 s) was trimmed. A high-pass at 70 Hz, compression, limiting, and fades sit on the take, then it was re-encoded to stereo Opus at about 96 kb/s (~2.0 MB, 77 kb/s average), 3 min 28 s. Modifications: trim, high-pass, compression, limiting, fades, Opus re-encode. The modified `wind.ogg` is licensed CC BY-SA 3.0.
 
 ### `public/worlds/seaside-house/gull.ogg`
 

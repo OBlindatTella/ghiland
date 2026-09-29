@@ -68,8 +68,9 @@ function pushOut(x: number, z: number, radius: number, boxes: readonly Obstacle[
 /**
  * A diagonal step can walk into a box's X footprint before it reaches the face,
  * then stop dead on that face. Stay on the outside edge instead, so Z slides past.
- * Only boxes the step is actually approaching qualify — a wall metres away does not.
- * Pure sideways movement (dz === 0) is left alone.
+ * The help only applies within the capsule radius of that panel's expanded corner.
+ * A panel whose edge is farther away does not rail the step. Pure sideways
+ * movement (dz === 0) is left alone.
  */
 function holdOpeningEdge(
   x: number,
@@ -80,19 +81,27 @@ function holdOpeningEdge(
   boxes: readonly Obstacle[],
 ): number {
   if (dz === 0) return nextX;
+  const reach = radius * radius;
   let held = nextX;
   for (const box of boxes) {
     const minX = box.minX - radius;
     const maxX = box.maxX + radius;
     const minZ = box.minZ - radius;
     const maxZ = box.maxZ + radius;
-    const outside = x <= minX || x >= maxX;
+    const outsideLeft = x <= minX;
+    const outsideRight = x >= maxX;
+    if (!outsideLeft && !outsideRight) continue;
     const entered = held > minX && held < maxX;
-    const clearOfFace = z <= minZ || z >= maxZ;
-    const toward = (dz > 0 && z <= minZ) || (dz < 0 && z >= maxZ);
-    if (outside && entered && clearOfFace && toward) {
-      held = x <= minX ? minX - SKIN : maxX + SKIN;
-    }
+    if (!entered) continue;
+    const approachingSouth = dz > 0 && z <= minZ;
+    const approachingNorth = dz < 0 && z >= maxZ;
+    if (!approachingSouth && !approachingNorth) continue;
+    const edgeX = outsideLeft ? minX : maxX;
+    const edgeZ = approachingSouth ? minZ : maxZ;
+    const lx = x - edgeX;
+    const lz = z - edgeZ;
+    if (lx * lx + lz * lz > reach) continue;
+    held = outsideLeft ? minX - SKIN : maxX + SKIN;
   }
   return held;
 }

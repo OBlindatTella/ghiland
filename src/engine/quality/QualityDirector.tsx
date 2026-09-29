@@ -1,11 +1,11 @@
 'use client';
 
-import { useEffect, useContext, useRef } from 'react';
+import { memo, useEffect, useContext, useRef, useState } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
 import { BasicShadowMap, PCFSoftShadowMap } from 'three';
 import { Bloom, EffectComposer, EffectComposerContext, SMAA, ToneMapping } from '@react-three/postprocessing';
 import { COMPOSER_TONE_MODE, readComposerTone } from '@/engine/quality/toneState';
-import { composerGpuBytes, releaseComposerTargets, trackGpuBytes, trackedGpuBytes } from '@/engine/quality/gpuMemory';
+import { composerGpuBytes, releaseComposerTargets, shadowMapBytes, trackGpuBytes, trackedGpuBytes } from '@/engine/quality/gpuMemory';
 import { bus } from '@/engine/events/bus';
 import { heuristicTier, initialAutoClock, stepAutoQuality, ceilingStillValid, type AutoClock } from '@/engine/quality/autoQuality';
 import { qualityProfiles } from '@/engine/quality/profiles';
@@ -55,6 +55,7 @@ export function QualityDirector() {
     let generation = 0;
     let booted = false;
     const apply = () => {
+      if (useGlStore.getState().lost && booted) return;
       const next = targetTier();
       const gen = ++generation;
       if (!booted) {
@@ -68,6 +69,7 @@ export function QualityDirector() {
         useAppliedQuality.getState().setDim(true);
         window.setTimeout(() => {
           if (gen !== generation) return;
+          if (useGlStore.getState().lost) return;
           const resolved = targetTier();
           useAppliedQuality.getState().setTier(resolved);
           bus.emit('quality:changed', {
@@ -81,6 +83,9 @@ export function QualityDirector() {
       }, 400);
     };
     apply();
+    const unsubGl = useGlStore.subscribe((state, prev) => {
+      if (prev.lost && !state.lost) apply();
+    });
     const unsubSettings = useSettings.subscribe((state, prev) => {
       if (state.quality !== prev.quality) apply();
     });
@@ -92,11 +97,14 @@ export function QualityDirector() {
     });
     return () => {
       generation += 1;
+      unsubGl();
       unsubSettings();
       unsubPerf();
       unsubSession();
     };
   }, []);
+
+  useEffect(() => trackGpuBytes(shadowMapBytes(profile.shadowMapSize)), [profile.shadowMapSize]);
 
   useEffect(() => {
     gl.shadowMap.enabled = profile.shadows !== 'off';
@@ -135,7 +143,31 @@ export function QualityDirector() {
     }
   });
 
-  return <PostStack profile={profile} />;
+  return <FrozenPost profile={profile} />;
+}
+
+const MemoPost = memo(PostStack);
+
+/**
+ * While the context is lost, the post stack keeps the profile it had and does not
+ * re-render, so EffectComposer does not remove and re-add passes. After restore
+ * the key changes and the stack builds again.
+ */
+function FrozenPost({ profile }: { profile: QualityProfile }) {
+  const [held, setHeld] = useState<QualityProfile | null>(null);
+  const [generation, setGeneration] = useState(0);
+
+  useEffect(() => {
+    return useGlStore.subscribe((state, prev) => {
+      if (!prev.lost && state.lost) setHeld(profile);
+      if (prev.lost && !state.lost) {
+        setHeld(null);
+        setGeneration((value) => value + 1);
+      }
+    });
+  }, [profile]);
+
+  return <MemoPost key={generation} profile={held ?? profile} />;
 }
 
 /** SMAA on LOW/MED, bloom and MSAA on HIGH/ULTRA, AgX on every tier. */
@@ -186,6 +218,7 @@ function ComposerLifecycle() {
   useEffect(() => {
     let release = () => {};
     const id = window.requestAnimationFrame(() => {
+      if (useGlStore.getState().lost) return;
       composer.setSize(size.width, size.height);
       release = trackGpuBytes(composerGpuBytes(composer));
     });

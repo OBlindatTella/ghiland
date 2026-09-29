@@ -109,12 +109,25 @@ describe('seaside greybox collision', () => {
     expect(Math.abs(x)).toBeLessThan(0.05);
   });
 
+  it('can cross in front of a closed panel that is still metres ahead', () => {
+    let x = 0;
+    let z = 1;
+    for (let i = 0; i < 40; i += 1) {
+      const next = slideMove(x, z, 0.15, 0.02, body, seasideColliders);
+      x = next.x;
+      z = next.z;
+    }
+    expect(x).toBeGreaterThan(4.5);
+    expect(z).toBeLessThan(3);
+  });
+
   it('slides along a closed panel edge without snagging', () => {
-    let x = 1.65;
-    let z = 3.4;
+    // Start within the capsule radius of the east opening corner (expanded x 1.7, z 4.17).
+    let x = 1.69;
+    let z = 4.0;
     let stalled = 0;
     let edgeX = x;
-    for (let i = 0; i < 80; i += 1) {
+    for (let i = 0; i < 40; i += 1) {
       const next = slideMove(x, z, 0.05, 0.1, body, seasideColliders);
       if (next.z <= z + 0.001) stalled += 1;
       x = next.x;
@@ -125,6 +138,83 @@ describe('seaside greybox collision', () => {
     expect(stalled).toBe(0);
     expect(z).toBeGreaterThan(5);
     expect(edgeX).toBeLessThanOrEqual(1.71);
+  });
+
+  it('walks 70° from the room centre for 5 s and reaches the hero side of the room', () => {
+    const heading = (70 * Math.PI) / 180;
+    const speed = 1.35;
+    const dt = 0.05;
+    let x = 0;
+    let z = 0;
+    for (let t = 0; t < 5; t += dt) {
+      const next = slideMove(x, z, Math.sin(heading) * speed * dt, Math.cos(heading) * speed * dt, body, seasideColliders);
+      x = next.x;
+      z = next.z;
+    }
+    expect(x).toBeGreaterThan(6);
+    expect(z).toBeGreaterThan(2);
+    expect(Math.abs(x - 1.699)).toBeGreaterThan(1);
+    expect(Math.hypot(x - 5.1, z - 3.9)).toBeLessThan(2.5);
+  });
+
+  it('walks on the bearing to hero-sea and stops at the glass in front of it', () => {
+    const bearing = Math.atan2(5.1, 3.9);
+    const speed = 1.35;
+    const dt = 0.05;
+    let x = 0;
+    let z = 0;
+    for (let t = 0; t < 6; t += dt) {
+      const next = slideMove(x, z, Math.sin(bearing) * speed * dt, Math.cos(bearing) * speed * dt, body, seasideColliders);
+      x = next.x;
+      z = next.z;
+    }
+    expect(Math.hypot(x - 5.1, z - 3.9)).toBeLessThan(1.2);
+    expect(z).toBeLessThan(4.5);
+  });
+
+  it('does not rail diagonal walks on panel or corridor edges', () => {
+    const rails = [1.7, -1.7, 3.7, -3.7, 5.7, -5.7, 0.8, -0.8];
+    let seed = 0x5eed;
+    const rand = () => {
+      seed = (seed * 1664525 + 1013904223) >>> 0;
+      return seed / 0x100000000;
+    };
+    for (let n = 0; n < 48; n += 1) {
+      let x = -5.5 + rand() * 11;
+      let z = -2.5 + rand() * 5.5;
+      const heading = rand() * Math.PI * 2;
+      const step = 0.12;
+      const dx = Math.sin(heading) * step;
+      const dz = Math.cos(heading) * step;
+      if (Math.abs(dz) < 0.02) continue;
+      for (let i = 0; i < 30; i += 1) {
+        const next = slideMove(x, z, dx, dz, body, seasideColliders);
+        const onRail = rails.some((rail) => Math.abs(x - (rail > 0 ? rail - 0.001 : rail + 0.001)) < 0.02 || Math.abs(next.x - (rail > 0 ? rail - 0.001 : rail + 0.001)) < 0.02);
+        const nearEdge = seasideColliders.some((collider) => {
+          if (!collider.layers.includes('movement')) return false;
+          const minX = collider.box.min[0] - body.radius;
+          const maxX = collider.box.max[0] + body.radius;
+          const minZ = collider.box.min[2] - body.radius;
+          const maxZ = collider.box.max[2] + body.radius;
+          const corners = [
+            [minX, minZ],
+            [maxX, minZ],
+            [minX, maxZ],
+            [maxX, maxZ],
+          ];
+          return corners.some(([cx, cz]) => {
+            const lx = x - (cx ?? 0);
+            const lz = z - (cz ?? 0);
+            return lx * lx + lz * lz <= (body.radius + step) * (body.radius + step);
+          });
+        });
+        if (onRail && !nearEdge && Math.abs(dx) > 0.02) {
+          expect(Math.abs(next.x - x)).toBeGreaterThan(0.01);
+        }
+        x = next.x;
+        z = next.z;
+      }
+    }
   });
 
   it('keeps the fin, including the player radius, outside the centre band', () => {

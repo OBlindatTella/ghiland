@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { closeWindow, emptyWindowBook, migrateWindows, openWindow, setWindowRect, setWindowState } from '@/shell/windows/model';
+import { closeWindow, emptyWindowBook, migrateWindows, openWindow, setWindowMode, setWindowRect, setWindowState } from '@/shell/windows/model';
 
 const viewport = { w: 1280, h: 800 };
 const size = { w: 440, h: 560 };
@@ -71,8 +71,69 @@ describe('window book', () => {
       now: 1,
     });
     expect(closeWindow(opened.book, 'a').windows).toEqual({});
+    const second = openWindow(opened.book, {
+      id: 'b',
+      appId: 'chat',
+      title: 'Chat',
+      defaultSize: size,
+      viewport,
+      now: 2,
+    });
+    const hidden = setWindowState(second.book, 'a', 'minimized');
+    const closed = closeWindow(hidden, 'b');
+    expect(closed.focusedId).toBeNull();
     const migrated = migrateWindows({ windows: [opened.book.windows.a] }, 1);
     expect(migrated.windows).toHaveLength(1);
     expect(migrateWindows({ windows: 'nope' }, 1)).toEqual({ windows: [] });
+  });
+
+  it('pulses a pinned app, then recalls it on the next open', () => {
+    const opened = openWindow(emptyWindowBook, {
+      id: 'a',
+      appId: 'notes',
+      title: 'Notes',
+      defaultSize: size,
+      viewport,
+      now: 1,
+    });
+    const pinned = setWindowMode(opened.book, 'a', {
+      kind: 'worldPinned',
+      worldId: 'seaside-house',
+      position: [5.1, 1.45, 3.9],
+      quaternion: [0, 0, 0, 1],
+      pxPerMeter: 520,
+      placement: 'anchor',
+      anchorId: 'hero-sea',
+    });
+    const pulse = openWindow(pinned, {
+      id: 'ignored',
+      appId: 'notes',
+      title: 'Notes',
+      defaultSize: size,
+      viewport,
+      now: 2,
+    });
+    expect(pulse.effect).toBe('pulse');
+    expect(pulse.book.windows.a.mode.kind).toBe('worldPinned');
+    const recall = openWindow(pulse.book, {
+      id: 'ignored',
+      appId: 'notes',
+      title: 'Notes',
+      defaultSize: size,
+      viewport,
+      now: 3,
+    });
+    expect(recall.effect).toBe('recall');
+    expect(recall.book.windows.a.mode.kind).toBe('overlay');
+    const again = openWindow(recall.book, {
+      id: 'ignored',
+      appId: 'notes',
+      title: 'Notes',
+      defaultSize: size,
+      viewport,
+      now: 4,
+    });
+    expect(again.effect).toBe('focus');
+    expect(Object.keys(again.book.windows)).toEqual(['a']);
   });
 });

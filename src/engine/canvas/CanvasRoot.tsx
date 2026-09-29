@@ -12,7 +12,8 @@ import { ContextGuard } from '@/engine/quality/ContextGuard';
 import { QualityDirector } from '@/engine/quality/QualityDirector';
 import { SceneManager } from '@/engine/scene/SceneManager';
 import { CrosshairRig } from '@/engine/windows/CrosshairRig';
-import { useGlStore } from '@/state/gl';
+import { WindowRig } from '@/engine/windows/WindowRig';
+import { ExposureDirector } from '@/engine/environment/ExposureDirector';
 import { useSession } from '@/state/session';
 
 let canvasMounts = 0;
@@ -46,12 +47,11 @@ function CanvasLifecycle() {
 }
 
 export function CanvasRoot() {
-  const lost = useGlStore((state) => state.lost);
   const tier = useAppliedQuality((state) => state.tier);
   return (
     <div className="absolute inset-0">
       <Canvas
-        frameloop={lost ? 'never' : 'always'}
+        frameloop="always"
         dpr={qualityProfiles[tier].dpr}
         shadows={false}
         gl={{
@@ -74,6 +74,8 @@ export function CanvasRoot() {
       >
         <CanvasLifecycle />
         <CrosshairRig />
+        <WindowRig />
+        <ExposureDirector />
         <SceneManager />
         <AudioRig />
         <QualityDirector />

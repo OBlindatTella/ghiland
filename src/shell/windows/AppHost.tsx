@@ -2,15 +2,34 @@
 
 import { useEffect, useMemo, useState, type ComponentType } from 'react';
 import type { AppDefinition, AppHostApi, AppProps, NamespacedStorage } from '@/contracts/app';
+import { inputManager } from '@/engine/input/InputManager';
 import { closeAppWindow, focusAppWindow } from '@/shell/windows/commands';
 import { useWindows } from '@/state/windows';
 
 function storageFor(appId: string): NamespacedStorage {
   const prefix = `ghiland:app:${appId}:`;
   return {
-    get: (key) => (typeof localStorage === 'undefined' ? null : localStorage.getItem(prefix + key)),
-    set: (key, value) => localStorage.setItem(prefix + key, value),
-    remove: (key) => localStorage.removeItem(prefix + key),
+    get: (key) => {
+      try {
+        return typeof localStorage === 'undefined' ? null : localStorage.getItem(prefix + key);
+      } catch {
+        return null;
+      }
+    },
+    set: (key, value) => {
+      try {
+        localStorage.setItem(prefix + key, value);
+      } catch {
+        /* Site data can be blocked. The app keeps working in memory. */
+      }
+    },
+    remove: (key) => {
+      try {
+        localStorage.removeItem(prefix + key);
+      } catch {
+        /* Same as set. */
+      }
+    },
   };
 }
 
@@ -24,7 +43,10 @@ function ExternalCard({ url, title }: { url: string; title: string }) {
         type="button"
         data-testid="external-open"
         className="rounded-[6px] border border-white/10 px-3 py-2 text-[13px] leading-5"
-        onClick={() => window.open(url, '_blank', 'noopener,noreferrer')}
+        onClick={() => {
+          inputManager.noteExternalOpen();
+          window.open(url, '_blank', 'noopener,noreferrer');
+        }}
       >
         Open in a new tab
       </button>
@@ -34,18 +56,24 @@ function ExternalCard({ url, title }: { url: string; title: string }) {
 
 export function AppHost({ app, windowId }: { app: AppDefinition; windowId: string }) {
   const [Comp, setComp] = useState<ComponentType<AppProps> | null>(null);
+  const [chunkFailed, setChunkFailed] = useState(false);
+  const [attempt, setAttempt] = useState(0);
   const load = app.integration.kind === 'native' ? app.integration.load : null;
 
   useEffect(() => {
     if (!load) return;
     let live = true;
-    void load().then((mod) => {
-      if (live) setComp(() => mod.default);
-    });
+    void load()
+      .then((mod) => {
+        if (live) setComp(() => mod.default);
+      })
+      .catch(() => {
+        if (live) setChunkFailed(true);
+      });
     return () => {
       live = false;
     };
-  }, [load]);
+  }, [load, attempt]);
 
   const host = useMemo<AppHostApi>(
     () => ({
@@ -66,6 +94,23 @@ export function AppHost({ app, windowId }: { app: AppDefinition; windowId: strin
       <p className="px-6 py-8 text-[15px] leading-6 text-[#f2f0eb]/64">
         This page is meant to sit in a frame. If it stays blank, use the external card instead.
       </p>
+    );
+  }
+  if (chunkFailed) {
+    return (
+      <div role="alert" className="flex h-full flex-col items-start justify-center gap-3 px-6">
+        <p className="text-[15px] leading-6">This app could not open.</p>
+        <button
+          type="button"
+          className="rounded-[6px] border border-white/10 px-3 py-2 text-[13px] leading-5"
+          onClick={() => {
+            setChunkFailed(false);
+            setAttempt((value) => value + 1);
+          }}
+        >
+          Retry
+        </button>
+      </div>
     );
   }
   if (!Comp) return null;

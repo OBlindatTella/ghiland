@@ -23,6 +23,8 @@ export interface AutoClock {
   highFor: number;
   /** The previous change was a climb. A drop within 60 s then sets the ceiling. */
   climbed: boolean;
+  /** Elapsed timestamps of tier changes, for the rolling 5-minute cap (D-031). */
+  changes: number[];
   changed: boolean;
   /** Set once, when the current tier has held for 60 s. */
   remember: QualityTier | null;
@@ -40,6 +42,7 @@ export function initialAutoClock(tier: QualityTier, ceiling: QualityTier = 'ULTR
     climbed: false,
     changed: false,
     remember: null,
+    changes: [],
   };
 }
 
@@ -62,8 +65,12 @@ export function stepAutoQuality(clock: AutoClock, fps: number, dt: number): Auto
   const index = indexOf(clock.tier);
   const ceiling = indexOf(clock.ceiling);
   const canChange = elapsed >= 3 && sinceChange >= 30;
+  const changes = (clock.changes ?? []).filter((at) => elapsed - at < 300);
+  const rateLimited = elapsed >= 60 && changes.length >= 2;
+  const targetFps = clock.tier === 'LOW' ? 30 : 60;
+  const emergency = fps < targetFps * 0.5 && lowFor >= 3;
   const remember = clock.held < STABLE_HOLD_S && held >= STABLE_HOLD_S ? clock.tier : null;
-  if (canChange && lowFor >= 5 && index > 0) {
+  if (index > 0 && elapsed >= 3 && ((canChange && !rateLimited && lowFor >= 5) || (rateLimited && emergency))) {
     const failedClimb = clock.climbed && sinceChange < STABLE_HOLD_S;
     const next = ORDER[index - 1] ?? clock.tier;
     return {
@@ -77,9 +84,10 @@ export function stepAutoQuality(clock: AutoClock, fps: number, dt: number): Auto
       climbed: false,
       changed: true,
       remember: null,
+      changes: [...changes, elapsed],
     };
   }
-  if (canChange && highFor >= 5 && index < ceiling && index < ORDER.length - 1) {
+  if (!rateLimited && canChange && highFor >= 5 && index < ceiling && index < ORDER.length - 1) {
     return {
       tier: ORDER[index + 1] ?? clock.tier,
       ceiling: clock.ceiling,
@@ -91,6 +99,7 @@ export function stepAutoQuality(clock: AutoClock, fps: number, dt: number): Auto
       climbed: true,
       changed: true,
       remember: null,
+      changes: [...changes, elapsed],
     };
   }
   return {
@@ -104,6 +113,7 @@ export function stepAutoQuality(clock: AutoClock, fps: number, dt: number): Auto
     climbed: clock.climbed,
     changed: false,
     remember,
+    changes,
   };
 }
 

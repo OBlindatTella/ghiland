@@ -72,4 +72,20 @@ describe('settings migration and clamping', () => {
     const backup = Object.entries(store.dump).find(([key]) => key.startsWith('ghiland:settings:future-'));
     expect(backup?.[1]).toBe(raw);
   });
+
+  it('keeps the original blob when the future-version backup cannot be written', () => {
+    const store = memory();
+    const raw = JSON.stringify({ state: { master: 0.2 }, version: 9 });
+    store.set('ghiland:settings', raw);
+    const guarded = {
+      ...store,
+      set: (key: string, value: string) => {
+        if (key.includes(':future-') || key.includes(':corrupt-')) return false;
+        store.dump[key] = value;
+        return true;
+      },
+    };
+    expect(readPersistedSettings(raw, 'ghiland:settings', guarded)).toBeNull();
+    expect(guarded.dump['ghiland:settings']).toBe(raw);
+  });
 });

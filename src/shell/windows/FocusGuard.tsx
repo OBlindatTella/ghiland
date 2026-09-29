@@ -4,6 +4,7 @@ import { useEffect } from 'react';
 import { isEditableElement } from '@/engine/input/keyRoute';
 import { inputManager } from '@/engine/input/InputManager';
 import { useInputStore } from '@/state/input';
+import { focusAppWindow } from '@/shell/windows/commands';
 
 const FOCUSABLE = 'button, a[href], input, textarea, select, [tabindex="0"]';
 
@@ -50,11 +51,17 @@ export function FocusGuard() {
         last.focus();
       }
     };
-    document.addEventListener('focusin', syncOwner);
+    const onFocus = (event: FocusEvent) => {
+      syncOwner();
+      const windowNode = (event.target as HTMLElement | null)?.closest?.('[data-ghiland-window]');
+      const id = windowNode?.getAttribute('data-ghiland-window');
+      if (id) focusAppWindow(id);
+    };
+    document.addEventListener('focusin', onFocus);
     document.addEventListener('focusout', syncOwner);
     window.addEventListener('keydown', onTab);
     return () => {
-      document.removeEventListener('focusin', syncOwner);
+      document.removeEventListener('focusin', onFocus);
       document.removeEventListener('focusout', syncOwner);
       window.removeEventListener('keydown', onTab);
       window.clearTimeout(timer);
