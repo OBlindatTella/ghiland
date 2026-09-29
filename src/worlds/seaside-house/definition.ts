@@ -1,6 +1,7 @@
 import type { EnvironmentPreset } from '@/contracts/environment';
 import type { Quat } from '@/contracts/math';
 import type { WorldDefinition } from '@/contracts/world';
+import { SEASIDE_FOG_COLOR, SEASIDE_FOG_DENSITY, SEASIDE_SUN, SEASIDE_SUN_AZIMUTH, SEASIDE_SUN_ELEVATION } from './art/horizon';
 import { seasideAudio } from './audio';
 import { seasideCollision, SPAWN } from './level';
 
@@ -12,14 +13,14 @@ function yawQuat(deg: number): Quat {
 
 const environment: EnvironmentPreset = {
   sun: {
-    elevationDeg: 12,
-    azimuthDeg: -22,
-    direction: [-0.366, 0.208, 0.907],
+    elevationDeg: SEASIDE_SUN_ELEVATION,
+    azimuthDeg: SEASIDE_SUN_AZIMUTH,
+    direction: [SEASIDE_SUN[0], SEASIDE_SUN[1], SEASIDE_SUN[2]],
     color: '#FFC98F',
     intensity: 2.6,
   },
-  sky: { zenith: '#6E8EAE', horizon: '#E7C7A4', sunGlow: '#FFC98F' },
-  fog: { color: '#E7C7A4', density: 0.011 },
+  sky: { zenith: '#5E86AA', horizon: '#D6D4CC', sunGlow: '#FFE1B0' },
+  fog: { color: SEASIDE_FOG_COLOR, density: SEASIDE_FOG_DENSITY },
   wind: {
     direction: [0, 0, -1],
     strength: 0.3,

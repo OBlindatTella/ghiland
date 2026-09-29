@@ -1,31 +1,37 @@
 'use client';
 
-import { useEffect, useLayoutEffect, useMemo, useRef } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
 import {
   Color,
   DirectionalLight,
+  Group,
   Mesh,
   MeshBasicMaterial,
   MeshStandardMaterial,
   Object3D,
   type Material,
   type InstancedMesh,
+  type Texture,
 } from 'three';
 import { releaseWarmedMaterials, trackGpuBytes, useResolvedFoliage, warmSceneShaders } from '@/engine';
 import type { WorldSceneProps } from '@/contracts/world';
+import { ContactDecals } from './art/contactShadows';
 import { createCurtainMaterial } from './art/curtains';
-import { environmentFromSky } from './art/environment';
-import { rockLayout } from './art/rocks';
-import { cloudLayers, curtainSegments, leafCount, oceanSegments, rockDetail, textureSizeForTier, vertexWaveCount, waveCount } from './art/scale';
+import { createFresnelGlass } from './art/glass';
+import { applyInteriorShade } from './art/occlusion';
+import { environmentFromHdri, type SeasideEnvironment } from './art/hdri';
+import { buildFarRidgeGeometry, buildHeadlandGeometry, headlandResolution, LIGHTHOUSE_AT } from './art/headland';
+import { CAMERA_FAR, SEASIDE_BACKGROUND, SEASIDE_FOG_COLOR, SEASIDE_FOG_DENSITY, SEASIDE_SUN, SKY_DOME_RADIUS } from './art/horizon';
+import { loadSeasideNature, natureTextureBytes, type NatureHandle } from './art/nature';
+import { buildOceanGeometry, oceanGrid } from './art/oceanMesh';
+import { cloudLayers, curtainSegments, leafCount, textureSizeForTier, waveCount } from './art/scale';
 import { shadowFrustum } from './art/shadowFit';
 import { createOceanMaterial, createSkyMaterial } from './art/shaders';
 import { cachedTextureSizes, cloneRepeat, estimateTextureBytes, retainTextureSize, seasideMaps, type SeasideMaps } from './art/textures';
-import { FIG_AT, furnitureVisuals, type FurnishMaterial } from './furniture';
+import { loadWaterNormals } from './art/water';
+import { FIG_AT, furnitureColliders, furnitureVisuals, type FurnishMaterial } from './furniture';
 import { levelBoxes, SEA_Y } from './level';
-import { sunDirection } from './sun';
-
-const SUN = sunDirection(12, -22);
 
 function fitShadow(light: DirectionalLight) {
   const camera = light.shadow.camera;
@@ -52,8 +58,8 @@ function SunLight({ shadows, mapSize }: { shadows: boolean; mapSize: number }) {
     <>
       <directionalLight
         ref={light}
-        position={[SUN[0] * 40, SUN[1] * 40, SUN[2] * 40]}
-        intensity={2.6}
+        position={[SEASIDE_SUN[0] * 40, SEASIDE_SUN[1] * 40, SEASIDE_SUN[2] * 40]}
+        intensity={3.2}
         color="#FFC98F"
         castShadow={shadows}
         shadow-mapSize-width={mapSize || 1024}
@@ -100,12 +106,16 @@ function buildHouseMaterials(maps: SeasideMaps, foliage: 'alphaTest' | 'alphaToC
     owned.push(material);
     return material;
   };
-  const travertineFloor = mapped(maps.travertine, [5, 3.5], '#ffffff', 0.84);
   const travertineDetail = mapped(maps.travertine, [1.2, 1.2], '#ffffff', 0.78);
   const oak = mapped(maps.oak, [1.5, 1], '#ffffff', 0.72);
-  const plaster = mapped(maps.plaster, [2, 2], '#ffffff', 0.92);
-  const plasterDark = mapped(maps.plaster, [1.4, 1.2], '#c9bfb2', 0.94);
-  const teak = mapped(maps.teak, [4, 2.5], '#ffffff', 0.8);
+  const plaster = mapped(maps.plaster, [2, 2], '#EDE6DA', 0.92);
+  const plasterDark = mapped(maps.plaster, [1.4, 1.2], '#E6DDCF', 0.94);
+  const teak = mapped(maps.teak, [2, 2], '#C9BBA6', 0.82);
+  const oakFloor = flat('#F3E6D3', 0.78);
+  const ceiling = mapped(maps.plaster, [2, 2], '#F2EEE8', 0.92);
+  const slat = flat('#C9A67E', 0.72);
+  const deck = flat('#C9BBA6', 0.86);
+  const soffit = flat('#4A3B2E', 0.7);
   const rock = mapped(maps.rock, [1.5, 1.5], '#ffffff', 0.9);
   const leafMap = cloneRepeat(maps.leaf, 1, 1);
   const leaf = new MeshStandardMaterial({
@@ -120,31 +130,33 @@ function buildHouseMaterials(maps: SeasideMaps, foliage: 'alphaTest' | 'alphaToC
   });
   leaf.userData.role = 'foliage';
   owned.push(leaf, leafMap as unknown as Material);
-  const glass = new MeshStandardMaterial({
-    color: '#d7e6e8',
-    roughness: 0.05,
-    metalness: 0.04,
-    transparent: true,
-    opacity: 0.07,
-    depthWrite: false,
-    envMapIntensity: 1.4,
-  });
+  const glass = createFresnelGlass(true);
   const metal = flat('#d9d3c8', 0.35, 0.45);
-  const linen = flat('#e6d5c0', 0.94);
+  const linen = flat('#E3D8C8', 0.94);
   const ceramic = flat('#efe6da', 0.4, 0.05);
-  const bronze = flat('#6e5a45', 0.42, 0.55);
+  const bronze = flat('#3B2F25', 0.45, 0.6);
+  const plinth = flat('#3A2F25', 0.92);
   owned.push(glass);
+  for (const interior of [travertineDetail, oak, plaster, plasterDark, teak, oakFloor, ceiling, slat, deck, soffit, linen, ceramic, bronze, plinth, leaf]) {
+    applyInteriorShade(interior, interior === slat ? 'slats' : interior === oakFloor ? 'oak-boards' : interior === deck ? 'deck-boards' : 'plain');
+  }
   return {
     byKind: {
-      travertineFloor,
+      travertineFloor: oakFloor,
       travertineDetail,
       oak,
+      oakFloor,
       plaster,
+      ceiling,
+      slat,
+      deck,
+      soffit,
       teak,
       rock,
       linen,
       ceramic,
       bronze,
+      plinth,
     },
     glass,
     metal,
@@ -159,16 +171,49 @@ function buildHouseMaterials(maps: SeasideMaps, foliage: 'alphaTest' | 'alphaToC
   };
 }
 
-function architectureKind(id: string): 'glass' | 'metal' | 'oak' | 'travertine' | 'travertineFloor' | 'teak' | 'plasterDark' | 'plaster' {
-  if (id.startsWith('glass') || (id.startsWith('rail-') && id !== 'rail-cap-north')) return 'glass';
-  if (id === 'rail-cap-north') return 'metal';
-  if (id === 'soffit') return 'oak';
+function architectureKind(id: string): 'glass' | 'bronze' | 'soffit' | 'travertine' | 'deck' | 'slat' | 'ceiling' | 'oakFloor' | 'plasterDark' | 'plaster' {
+  if (id.startsWith('glass')) return 'glass';
+  if (id === 'rail-cap-north') return 'bronze';
+  if (id === 'soffit') return 'soffit';
   if (id === 'fin' || id.startsWith('jamb')) return 'travertine';
-  if (id === 'terrace-floor') return 'teak';
-  if (id.endsWith('floor')) return 'travertineFloor';
+  if (id === 'terrace-floor') return 'deck';
+  if (id === 'corridor-ceiling') return 'slat';
+  if (id === 'living-ceiling') return 'ceiling';
+  if (id.endsWith('floor')) return 'oakFloor';
   if (id.startsWith('corridor')) return 'plasterDark';
   return 'plaster';
 }
+
+const GLASS_FRAMES: readonly [string, number, number, number, number, number, number][] = [
+  ['mullion-w2', -2.025, 0.04, 4.44, -1.975, 3.12, 4.56],
+  ['mullion-e2', 1.975, 0.04, 4.44, 2.025, 3.12, 4.56],
+  ['mullion-w4', -4.025, 0.04, 4.44, -3.975, 3.12, 4.56],
+  ['mullion-e4', 3.975, 0.04, 4.44, 4.025, 3.12, 4.56],
+  ['mullion-inner-w', -2.025, 0.04, 4.34, -1.975, 3.12, 4.46],
+  ['mullion-inner-e', 1.975, 0.04, 4.34, 2.025, 3.12, 4.46],
+  ['jamb-glass-w', -6.04, 0, 4.44, -5.96, 3.12, 4.56],
+  ['jamb-glass-e', 5.96, 0, 4.44, 6.04, 3.12, 4.56],
+  ['glass-head', -6, 3.12, 4.44, 6, 3.2, 4.56],
+  ['glass-track', -6, 0, 4.44, 6, 0.04, 4.56],
+];
+
+const OPEN_PANELS: readonly [string, number, number, number, number, number, number][] = [
+  ['open-west', -4, 0.04, 4.394, -2, 3.12, 4.406],
+  ['open-east', 2, 0.04, 4.394, 4, 3.12, 4.406],
+];
+
+const CONTACT_FOOTPRINTS = furnitureColliders.map((piece) => ({
+  x: (piece.box.min[0] + piece.box.max[0]) / 2,
+  z: (piece.box.min[2] + piece.box.max[2]) / 2,
+  w: piece.box.max[0] - piece.box.min[0] + 0.3,
+  d: piece.box.max[2] - piece.box.min[2] + 0.3,
+}));
+
+const THIN_RAILS: readonly [string, number, number, number, number, number, number][] = [
+  ['rail-north-glass', -7, 0, 9.024, 7, 1.05, 9.036],
+  ['rail-west-glass', -7, 0, 4.5, -6.988, 1.05, 9],
+  ['rail-east-glass', 6.988, 0, 4.5, 7, 1.05, 9],
+];
 
 function SkyDome({ clouds }: { clouds: number }) {
   const material = useMemo(() => createSkyMaterial(clouds), [clouds]);
@@ -179,23 +224,58 @@ function SkyDome({ clouds }: { clouds: number }) {
     material.uniforms.uTime!.value = clock.elapsedTime;
   });
   return (
-    <mesh ref={mesh} frustumCulled={false} renderOrder={-10} material={material}>
-      <sphereGeometry args={[400, 28, 16]} />
+    <mesh ref={mesh} frustumCulled={false} renderOrder={-1} material={material}>
+      <sphereGeometry args={[SKY_DOME_RADIUS, 48, 24]} />
     </mesh>
   );
 }
 
-function Ocean({ waves, vertexWaves, segments }: { waves: number; vertexWaves: number; segments: [number, number] }) {
-  const material = useMemo(() => createOceanMaterial(waves, vertexWaves), [waves, vertexWaves]);
-  useEffect(() => () => material.dispose(), [material]);
+function Ocean({ waves, rings, segments }: { waves: number; rings: number; segments: number }) {
+  const gl = useThree((state) => state.gl);
+  const material = useMemo(() => createOceanMaterial(waves), [waves]);
+  const geometry = useMemo(() => buildOceanGeometry(rings, segments), [rings, segments]);
+  useEffect(() => () => {
+    material.dispose();
+    geometry.dispose();
+    for (const key of ['uNormalA', 'uNormalB'] as const) {
+      const texture = material.uniforms[key]?.value as Texture | undefined;
+      if (texture?.userData.flat) texture.dispose();
+    }
+  }, [material, geometry]);
+  useEffect(() => {
+    let alive = true;
+    let maps: { dispose: () => void } | null = null;
+    const apply = () => {
+      void loadWaterNormals(gl).then((loaded) => {
+        if (!alive) {
+          loaded.dispose();
+          return;
+        }
+        const previousA = material.uniforms.uNormalA?.value as Texture | undefined;
+        const previousB = material.uniforms.uNormalB?.value as Texture | undefined;
+        if (previousA?.userData.flat) previousA.dispose();
+        if (previousB?.userData.flat) previousB.dispose();
+        maps?.dispose();
+        maps = loaded;
+        material.uniforms.uNormalA!.value = loaded.a;
+        material.uniforms.uNormalB!.value = loaded.b;
+      }).catch(() => undefined);
+    };
+    apply();
+    const onRestore = () => {
+      if (alive) apply();
+    };
+    gl.domElement.addEventListener('webglcontextrestored', onRestore);
+    return () => {
+      alive = false;
+      gl.domElement.removeEventListener('webglcontextrestored', onRestore);
+      maps?.dispose();
+    };
+  }, [gl, material]);
   useFrame(({ clock }) => {
     material.uniforms.uTime!.value = clock.elapsedTime;
   });
-  return (
-    <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, SEA_Y, 145]} material={material}>
-      <planeGeometry args={[380, 270, segments[0], segments[1]]} />
-    </mesh>
-  );
+  return <mesh position={[0, SEA_Y, -3]} geometry={geometry} material={material} />;
 }
 
 function Curtains({ segments }: { segments: [number, number] }) {
@@ -206,36 +286,13 @@ function Curtains({ segments }: { segments: [number, number] }) {
   });
   return (
     <>
-      <mesh position={[2.2, 1.6, 4.3]} material={material}>
-        <planeGeometry args={[0.8, 3.1, segments[0], segments[1]]} />
+      <mesh position={[2.2, 1.545, 4.3]} material={material}>
+        <planeGeometry args={[0.8, 3.05, segments[0], segments[1]]} />
       </mesh>
-      <mesh position={[-2.2, 1.6, 4.3]} material={material}>
-        <planeGeometry args={[0.8, 3.1, segments[0], segments[1]]} />
+      <mesh position={[-2.2, 1.545, 4.3]} material={material}>
+        <planeGeometry args={[0.8, 3.05, segments[0], segments[1]]} />
       </mesh>
     </>
-  );
-}
-
-function Rocks({ material, detail, shadows }: { material: Material; detail: number; shadows: boolean }) {
-  const ref = useRef<InstancedMesh>(null);
-  const rocks = useMemo(() => rockLayout(), []);
-  useLayoutEffect(() => {
-    const mesh = ref.current;
-    if (!mesh) return;
-    const dummy = new Object3D();
-    rocks.forEach((rock, index) => {
-      dummy.position.set(rock.position[0], rock.position[1], rock.position[2]);
-      dummy.scale.set(rock.scale[0], rock.scale[1], rock.scale[2]);
-      dummy.rotation.set(rock.rotation[0], rock.rotation[1], rock.rotation[2]);
-      dummy.updateMatrix();
-      mesh.setMatrixAt(index, dummy.matrix);
-    });
-    mesh.instanceMatrix.needsUpdate = true;
-  }, [rocks]);
-  return (
-    <instancedMesh ref={ref} args={[undefined, undefined, rocks.length]} material={material} castShadow={shadows} receiveShadow={shadows}>
-      <icosahedronGeometry args={[1, detail]} />
-    </instancedMesh>
   );
 }
 
@@ -273,21 +330,22 @@ function SolidMesh({
   material,
   shadows,
   transparent,
+  renderOrder = 0,
 }: {
   min: readonly number[];
   max: readonly number[];
   material: Material;
   shadows: boolean;
   transparent?: boolean;
+  renderOrder?: number;
 }) {
   const [w, h, d, x, y, z] = boxSize(min, max);
   return (
-    <mesh position={[x, y, z]} material={material} castShadow={shadows && !transparent} receiveShadow={shadows}>
+    <mesh position={[x, y, z]} material={material} castShadow={shadows && !transparent} receiveShadow={shadows} renderOrder={renderOrder}>
       <boxGeometry args={[w, h, d]} />
     </mesh>
   );
 }
-
 
 /** Late-afternoon seaside: sky dome, Gerstner water, and furnished rooms. */
 export function SeasideHouseScene({ onReady, quality }: WorldSceneProps) {
@@ -295,113 +353,203 @@ export function SeasideHouseScene({ onReady, quality }: WorldSceneProps) {
   const scene = useThree((state) => state.scene);
   const camera = useThree((state) => state.camera);
   const ready = useRef(false);
-  const size = textureSizeForTier(quality.tier);
-  const maps = seasideMaps(size) ?? seasideMaps(1024) ?? seasideMaps(512);
+  const preferred = textureSizeForTier(quality.tier);
+  const held = seasideMaps(preferred) ? preferred : seasideMaps(1024) ? 1024 : seasideMaps(512) ? 512 : 0;
+  const maps = held ? seasideMaps(held) : null;
   const resolvedFoliage = useResolvedFoliage(quality.tier, quality.foliage);
   const materials = useMemo(() => (maps ? buildHouseMaterials(maps, resolvedFoliage) : null), [maps, resolvedFoliage]);
-  const headland = useMemo(() => new MeshStandardMaterial({ color: '#6d6458', roughness: 0.96 }), []);
-  const beacon = useMemo(() => new MeshBasicMaterial({ color: '#FFC98F' }), []);
+  // Seam diagnostic: the glass is MeshStandardMaterial, not transmission, so there is no second ocean pass.
+  // The line was the opaque cap plus FogExp2 on the rail (the ocean shades its own haze). Rail glass stays fog-free.
+  const railGlass = useMemo(() => createFresnelGlass(false), []);
+  const pocketMaterial = useMemo(() => new MeshBasicMaterial({ color: '#2A231D' }), []);
+  const shadeGlow = useMemo(
+    () => new MeshStandardMaterial({ color: '#FFE3C2', emissive: '#FFE3C2', emissiveIntensity: 0.6, roughness: 0.8 }),
+    [],
+  );
+  const downlightOn = quality.tier !== 'LOW';
+  const downlightTarget = useMemo(() => {
+    const target = new Object3D();
+    target.position.set(0, 0, -7.4);
+    return target;
+  }, []);
+  const headlandMaterial = useMemo(() => new MeshStandardMaterial({ color: '#ffffff', roughness: 0.94, vertexColors: true }), []);
+  const farRidgeMaterial = useMemo(() => new MeshStandardMaterial({ color: '#8E8F8A', roughness: 0.96 }), []);
+  const lighthouseMaterial = useMemo(() => new MeshStandardMaterial({ color: '#EDE8DF', roughness: 0.72 }), []);
+  const lanternMaterial = useMemo(() => new MeshStandardMaterial({ color: '#2E2A26', roughness: 0.5 }), []);
+  const lipMaterial = useMemo(() => new MeshStandardMaterial({ color: '#BFB3A3', roughness: 0.9 }), []);
+  const gapMaterial = useMemo(() => new MeshStandardMaterial({ color: '#6A6258', roughness: 0.95 }), []);
+  const headlandGeometry = useMemo(() => {
+    const detail = headlandResolution(quality.tier);
+    return buildHeadlandGeometry(detail.stations, detail.steps);
+  }, [quality.tier]);
+  const farRidgeGeometry = useMemo(() => buildFarRidgeGeometry(64, 8), []);
+  const [nature, setNature] = useState<Group | null>(null);
   useEffect(() => () => {
-    headland.dispose();
-    beacon.dispose();
-  }, [headland, beacon]);
+    railGlass.dispose();
+    pocketMaterial.dispose();
+    shadeGlow.dispose();
+    headlandMaterial.dispose();
+    farRidgeMaterial.dispose();
+    lighthouseMaterial.dispose();
+    lanternMaterial.dispose();
+    lipMaterial.dispose();
+    gapMaterial.dispose();
+    headlandGeometry.dispose();
+    farRidgeGeometry.dispose();
+  }, [railGlass, pocketMaterial, shadeGlow, headlandMaterial, farRidgeMaterial, lighthouseMaterial, lanternMaterial, lipMaterial, gapMaterial, headlandGeometry, farRidgeGeometry]);
   const shadows = quality.shadows !== 'off';
   const clouds = cloudLayers(quality.tier);
+  const grid = oceanGrid(quality.tier);
 
   useEffect(() => {
-    scene.background = new Color('#E7C7A4');
-    let env: ReturnType<typeof environmentFromSky> | null = null;
-    let disposed = false;
-    const build = () => {
-      env?.dispose();
-      try {
-        env = environmentFromSky(gl, 2);
-        scene.environment = env.texture;
-        scene.environmentIntensity = 0.34;
-      } catch {
-        env = null;
+    const previousFar = camera.far;
+    camera.far = CAMERA_FAR;
+    camera.updateProjectionMatrix();
+    scene.background = new Color(SEASIDE_BACKGROUND);
+    let env: SeasideEnvironment | null = null;
+    let natureHandle: NatureHandle | null = null;
+    let cancelled = false;
+    const buildEnv = async () => {
+      const next = await environmentFromHdri(gl);
+      if (cancelled) {
+        next.dispose();
+        return;
       }
+      env?.dispose();
+      env = next;
+      scene.environment = next.texture;
+      scene.environmentIntensity = 0.6;
+      scene.environmentRotation.y = next.yaw;
     };
-    build();
+    const buildNature = async () => {
+      const next = await loadSeasideNature(gl, quality.tier);
+      if (cancelled) {
+        next.dispose();
+        return;
+      }
+      natureHandle?.dispose();
+      natureHandle = next;
+      setNature(next.group);
+    };
     const onRestore = () => {
-      if (!disposed) build();
+      if (cancelled) return;
+      void buildEnv().catch(() => undefined);
+      void buildNature().catch(() => undefined);
     };
     gl.domElement.addEventListener('webglcontextrestored', onRestore);
-    let cancelled = false;
-    void warmSceneShaders(gl, scene, camera)
-      .catch(() => undefined)
-      .then(() => {
-        if (cancelled || ready.current) return;
-        ready.current = true;
-        onReady();
-      });
+    void Promise.all([
+      buildEnv().catch((error: unknown) => console.error(error)),
+      buildNature().catch((error: unknown) => console.error(error)),
+      warmSceneShaders(gl, scene, camera).catch((error: unknown) => console.error(error)),
+    ]).then(() => {
+      if (cancelled || ready.current) return;
+      ready.current = true;
+      onReady();
+    });
     return () => {
-      disposed = true;
       cancelled = true;
-      releaseWarmedMaterials();
+      camera.far = previousFar;
+      camera.updateProjectionMatrix();
       gl.domElement.removeEventListener('webglcontextrestored', onRestore);
       env?.dispose();
       if (env && scene.environment === env.texture) scene.environment = null;
+      natureHandle?.dispose();
+      releaseWarmedMaterials();
+      setNature(null);
     };
-  }, [gl, scene, onReady, camera]);
+  }, [gl, scene, onReady, camera, quality.tier]);
 
   useEffect(() => () => materials?.dispose(), [materials]);
   useEffect(() => {
-    if (!maps) return undefined;
-    retainTextureSize(size);
-    const stillHeld = cachedTextureSizes().filter((key) => key !== size);
-    return trackGpuBytes(estimateTextureBytes(size, stillHeld));
-  }, [maps, size]);
+    if (!maps || !held) return undefined;
+    retainTextureSize(held);
+    const stillHeld = cachedTextureSizes().filter((key) => key !== held);
+    return trackGpuBytes(estimateTextureBytes(held, stillHeld) + natureTextureBytes(quality.tier));
+  }, [maps, held, quality.tier]);
 
   if (!materials) return null;
 
-  const architecture = levelBoxes.filter((item) => !item.id.startsWith('curtain'));
+  const architecture = levelBoxes.filter((item) => !item.id.startsWith('curtain') && !(item.id.startsWith('rail-') && item.id !== 'rail-cap-north'));
   const materialFor = (kind: ReturnType<typeof architectureKind> | FurnishMaterial) => {
     if (kind === 'glass') return materials.glass;
-    if (kind === 'metal') return materials.metal;
     if (kind === 'plasterDark') return materials.plasterDark;
     if (kind === 'linen') return materials.linen;
     if (kind === 'ceramic') return materials.ceramic;
     if (kind === 'bronze') return materials.bronze;
-    if (kind === 'travertine' || kind === 'travertineFloor') return materials.byKind[kind] ?? materials.byKind.travertineDetail!;
+    if (kind === 'travertine') return materials.byKind.travertineDetail!;
     return materials.byKind[kind] ?? materials.byKind.plaster!;
   };
 
   return (
     <>
-      <fogExp2 attach="fog" args={['#E7C7A4', 0.011]} />
-      <hemisphereLight args={['#F4E0C4', '#6A5344', 0.16]} />
+      <fogExp2 attach="fog" args={[SEASIDE_FOG_COLOR, SEASIDE_FOG_DENSITY]} />
       <SunLight shadows={shadows} mapSize={quality.shadowMapSize} />
-      <pointLight position={[0.4, 2.35, 1.6]} intensity={7} distance={6.5} decay={2} color="#FFE0C0" />
-      <pointLight position={[2.55, 1.45, -1.55]} intensity={3.5} distance={3.2} decay={2} color="#FFD2A8" />
+      <pointLight position={[2.57, 1.38, -1.57]} intensity={1.5} distance={3} decay={2} color="#FFD9B0" />
+      {downlightOn ? (
+        <>
+          <primitive object={downlightTarget} />
+          <spotLight
+            position={[0, 2.39, -7.4]}
+            target={downlightTarget}
+            color="#FFD6A8"
+            angle={(50 * Math.PI) / 180}
+            penumbra={0.8}
+            intensity={4}
+            distance={5}
+            decay={2}
+            castShadow={false}
+          />
+          <mesh position={[0, 2.385, -7.4]} rotation={[Math.PI / 2, 0, 0]}>
+            <circleGeometry args={[0.055, 12]} />
+            <meshBasicMaterial color="#FFD6A8" />
+          </mesh>
+        </>
+      ) : null}
       <SkyDome clouds={clouds} />
-      <Ocean waves={waveCount(quality.tier)} vertexWaves={vertexWaveCount(quality.tier)} segments={oceanSegments(quality.tier)} />
-      <mesh position={[0, -3.6, 11.4]} rotation={[-0.82, 0, 0]} material={materials.byKind.rock} receiveShadow={shadows}>
-        <planeGeometry args={[18, 4.5, 1, 3]} />
+      <Ocean waves={waveCount(quality.tier)} rings={grid.rings} segments={grid.segments} />
+      <mesh geometry={headlandGeometry} material={headlandMaterial} castShadow={false} receiveShadow={false} />
+      <mesh geometry={farRidgeGeometry} material={farRidgeMaterial} castShadow={false} receiveShadow={false} />
+      <mesh position={[LIGHTHOUSE_AT[0], LIGHTHOUSE_AT[1] + 8, LIGHTHOUSE_AT[2]]} material={lighthouseMaterial} castShadow={false} receiveShadow={false}>
+        <cylinderGeometry args={[2, 2.15, 16, 12]} />
       </mesh>
-      <mesh position={[52, 1.2, 78]} scale={[26, 8.5, 16]} material={headland} castShadow={shadows}>
-        <sphereGeometry args={[1, 20, 12]} />
+      <mesh position={[LIGHTHOUSE_AT[0], LIGHTHOUSE_AT[1] + 17.1, LIGHTHOUSE_AT[2]]} material={lanternMaterial} castShadow={false} receiveShadow={false}>
+        <cylinderGeometry args={[1.45, 1.55, 2.2, 10]} />
       </mesh>
-      <mesh position={[74, 2.4, 98]} scale={[16, 6.5, 12]} material={headland}>
-        <sphereGeometry args={[1, 16, 10]} />
+      <mesh position={[0, -0.175, 9.02]} material={lipMaterial} castShadow={false} receiveShadow={false}>
+        <boxGeometry args={[14, 0.35, 0.12]} />
       </mesh>
-      <mesh position={[46, 8.2, 70]} material={materials.ceramic} castShadow={shadows}>
-        <cylinderGeometry args={[0.28, 0.38, 2.4, 6]} />
+      <mesh position={[0, -0.05, 8.9]} material={gapMaterial} castShadow={false} receiveShadow={false}>
+        <boxGeometry args={[14, 0.04, 0.18]} />
       </mesh>
-      <mesh position={[46, 9.5, 70]} material={beacon}>
-        <sphereGeometry args={[0.18, 8, 6]} />
-      </mesh>
-      <Rocks material={materials.byKind.rock!} detail={rockDetail(quality.tier)} shadows={shadows} />
-      {architecture.map((item) => (
-        <SolidMesh
-          key={item.id}
-          min={item.box.min}
-          max={item.box.max}
-          material={materialFor(architectureKind(item.id))}
-          shadows={shadows}
-          transparent={item.opacity < 1}
-        />
+      {nature ? <primitive object={nature} /> : null}
+      {architecture.map((item) => {
+        const glassPanel = item.id.startsWith('glass');
+        return (
+          <SolidMesh
+            key={item.id}
+            min={item.box.min}
+            max={item.box.max}
+            material={materialFor(architectureKind(item.id))}
+            shadows={shadows}
+            transparent={item.opacity < 1}
+            renderOrder={glassPanel ? 3 : 0}
+          />
+        );
+      })}
+      {GLASS_FRAMES.map(([id, x0, y0, z0, x1, y1, z1]) => (
+        <SolidMesh key={id} min={[x0, y0, z0]} max={[x1, y1, z1]} material={materials.bronze} shadows={shadows} />
       ))}
+      {OPEN_PANELS.map(([id, x0, y0, z0, x1, y1, z1]) => (
+        <SolidMesh key={id} min={[x0, y0, z0]} max={[x1, y1, z1]} material={materials.glass} shadows={false} transparent renderOrder={3} />
+      ))}
+      {THIN_RAILS.map(([id, x0, y0, z0, x1, y1, z1]) => (
+        <SolidMesh key={id} min={[x0, y0, z0]} max={[x1, y1, z1]} material={railGlass} shadows={false} transparent renderOrder={2} />
+      ))}
+      <SolidMesh min={[-6, 3.14, 4.25]} max={[6, 3.195, 4.34]} material={pocketMaterial} shadows={false} />
+      <mesh position={[2.57, 1.39, -1.57]} material={shadeGlow}>
+        <sphereGeometry args={[0.09, 10, 8]} />
+      </mesh>
+      <ContactDecals footprints={CONTACT_FOOTPRINTS} />
       {furnitureVisuals.filter((item) => item.id !== 'fig-pot').map((item) => (
         <SolidMesh
           key={item.id}

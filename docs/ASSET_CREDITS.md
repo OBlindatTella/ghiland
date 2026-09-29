@@ -1,26 +1,16 @@
 # Asset credits
 
-Seaside House, art pass. Nothing in this pass was downloaded from a third-party library.
+Seaside House art pass 2. Every file below is [CC0](https://creativecommons.org/publicdomain/zero/1.0/). Downloads are from [Poly Haven](https://polyhaven.com). Geometry is meshopt-compressed and textures are KTX2 (ETC1S colour, UASTC normals and ARM). The Basis transcoder under `public/basis/` is the [BinomialLLC basis_universal](https://github.com/BinomialLLC/basis_universal) transcoder shipped with three.js.
 
-Geometry, materials, the sky, and the ocean are generated in the client. There is no GLB, no HDRI, and no KTX2 file. Poly Haven, ambientCG, Kenney, and Quaternius were the allowed CC0 sources. They were not used, because a fetched texture was not required and several of those sites sit behind a CDN or a login wall. Credit is recorded here anyway, including the choice not to ship their files.
+| Asset id | Author | Licence | URL | Files |
+|---|---|---|---|---|
+| syferfontein_18d_clear_puresky | Greg Zaal (Original), Jarod Guest (Sky Edits) | CC0 | https://polyhaven.com/a/syferfontein_18d_clear_puresky | `public/assets/seaside/hdri/syferfontein_18d_clear_puresky_1k.hdr` |
+| coastal_cliff_02 | Rob Tuytel (All) | CC0 | https://polyhaven.com/a/coastal_cliff_02 | `public/assets/seaside/models/coastal_cliff_02.glb`, `coastal_cliff_02-low.glb` |
+| coastal_cliff_01 | Rob Tuytel (Photography, processing), Rico Cilliers (cleanup) | CC0 | https://polyhaven.com/a/coastal_cliff_01 | `public/assets/seaside/models/coastal_cliff_01.glb`, `coastal_cliff_01-low.glb` |
+| coastal_cliff_04 | Rob Tuytel (Photography, processing), Rico Cilliers (cleanup) | CC0 | https://polyhaven.com/a/coastal_cliff_04 | `public/assets/seaside/models/coastal_cliff_04.glb`, `coastal_cliff_04-low.glb` |
+| coast_rocks_05 | Rob Tuytel (All) | CC0 | https://polyhaven.com/a/coast_rocks_05 | `public/assets/seaside/models/coast_rocks_05.glb`, `coast_rocks_05-low.glb` |
+| coast_land_rocks_03 | Rob Tuytel (Photography, processing), Rico Cilliers (cleanup) | CC0 | https://polyhaven.com/a/coast_land_rocks_03 | `public/assets/seaside/models/coast_land_rocks_03.glb`, `coast_land_rocks_03-low.glb` |
 
-## Procedural, made for this world
+The two water normals (`public/assets/seaside/water/normal-a.ktx2`, `normal-b.ktx2`) are generated in `scripts/generate-water-normals.mjs` (sixteen random-phase sines). They are not a third-party asset.
 
-| What | Where | Licence |
-|---|---|---|
-| Analytic late-afternoon sky, sun disk, clouds, and the PMREM lighting built from that sky | `src/worlds/seaside-house/art/shaders.ts`, `art/environment.ts` | Original. No external HDRI. |
-| Gerstner ocean (3–5 waves, fresnel, glitter, foam, horizon haze) | `art/shaders.ts`, `art/waves.ts` | Original shader. Not three.js `Water` / `Water2`. |
-| Travertine, smoked oak, lime plaster, teak, rock, and the fig leaf card | `art/textures.ts` | Painted at runtime onto canvas. 512 px on LOW, 1024 px above. |
-| House boxes, furniture, curtains, headland, cove rocks, lighthouse marker | `Scene.tsx`, `furniture.ts`, `level.ts` | Original geometry. No Draco or meshopt, because there is no mesh file. |
-| Linen curtain billow | `art/curtains.ts` | Vertex shader. 0.35 m cap. Not a cloth sim and not a collider. |
-
-## Audio
-
-Unchanged from the earlier pass. See `docs/AUDIO_CREDITS.md`.
-
-## Deliberately not shipped
-
-- Poly Haven late-afternoon HDRI. The sky shader is the environment map, so the light matches the visible sky without a download.
-- ambientCG material scans. The canvas tiles stand in for travertine, oak, plaster, teak, and rock.
-- Kenney / Quaternius furniture and plant kits. The sofa, chairs, island, desk, bench, and fig are built from primitives.
-- KTX2 / Basis and Draco / meshopt. There is no authored texture or mesh to compress. The deferral is in `docs/KNOWN_ISSUES.md`.
+The house surfaces (travertine, oak, plaster, teak, rock, fig leaf) are still painted at runtime in `art/textures.ts`. Audio credits stay in `docs/AUDIO_CREDITS.md`.

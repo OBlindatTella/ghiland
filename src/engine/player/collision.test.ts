@@ -310,7 +310,8 @@ describe('seaside greybox collision', () => {
       { x: 4.95, z: 0.86, heading: 245 },
       { x: 1.95, z: 4.16, heading: 5 },
       { x: 1.05, z: -3.19, heading: 115 },
-      { x: -2.5, z: 2.76, heading: 355 },
+      // Just outside the grown reading chair (−2.45, 2.95), clear of the 0.3 m radius.
+      { x: -2.11, z: 2.61, heading: 355 },
     ];
     for (const sample of cases) {
       const heading = (sample.heading * Math.PI) / 180;
@@ -402,6 +403,15 @@ describe('seaside greybox collision', () => {
     expect(south.x).toBeGreaterThan(-6.6);
     expect(north.maxJump).toBeLessThanOrEqual(north.step + 1e-4);
     expect(south.maxJump).toBeLessThanOrEqual(south.step + 1e-4);
+  });
+
+  it('uses the D-040 dining and reading footprints', () => {
+    const table = furnitureColliders.find((piece) => piece.id === 'dining-table');
+    const chair = furnitureColliders.find((piece) => piece.id === 'reading-chair');
+    expect(table?.box.min[0]).toBe(-6.3);
+    expect(chair?.box.min).toEqual([-3.35, 0, 2.95]);
+    expect(chair?.box.max).toEqual([-2.45, 0.9, 3.95]);
+    expect((chair?.box.max[0] ?? 0) + body.radius).toBeLessThanOrEqual(-2.15);
   });
 
   it('reaches the glass from V2 on the 46° to 60.5° heading band', () => {
