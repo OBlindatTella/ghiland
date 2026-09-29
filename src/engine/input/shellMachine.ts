@@ -52,6 +52,21 @@ const world: ShellModel = {
   showClickToWalk: false,
 };
 
+/**
+ * A tab we opened ourselves must not drop SCREEN when the page hides.
+ * `holding` stays set until the page is visible again, so a two-minute trip still returns to SCREEN.
+ */
+export function externalOpenKeepsScreen(
+  now: number,
+  openedUntil: number,
+  holding: boolean,
+  hidden: boolean,
+): { holding: boolean; stay: boolean } {
+  if (!hidden) return { holding: false, stay: false };
+  if (holding || now < openedUntil) return { holding: true, stay: true };
+  return { holding: false, stay: false };
+}
+
 function none(model: ShellModel): { model: ShellModel; effects: ShellEffect[] } {
   return { model, effects: [] };
 }

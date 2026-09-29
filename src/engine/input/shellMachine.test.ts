@@ -3,6 +3,7 @@ import { ownerForShell, OwnerStack } from '@/engine/input/ownerStack';
 import { KeyState } from '@/engine/input/keyState';
 import {
   classifyLockLoss,
+  externalOpenKeepsScreen,
   initialShellModel,
   reduceShell,
   type ShellEvent,
@@ -12,6 +13,19 @@ import {
 function apply(model: ShellModel, event: ShellEvent) {
   return reduceShell(model, event);
 }
+
+describe('external window.open', () => {
+  it('keeps SCREEN while the page is hidden after our own open, including a later return', () => {
+    const opened = externalOpenKeepsScreen(1_000, 1_500, false, true);
+    expect(opened.stay).toBe(true);
+    const stillGone = externalOpenKeepsScreen(120_000, 1_500, opened.holding, true);
+    expect(stillGone.stay).toBe(true);
+    const back = externalOpenKeepsScreen(130_000, 1_500, stillGone.holding, false);
+    expect(back.holding).toBe(false);
+    expect(back.stay).toBe(false);
+    expect(externalOpenKeepsScreen(2_000, 1_500, false, true).stay).toBe(false);
+  });
+});
 
 describe('reduceShell', () => {
   it('starts released with the click-to-walk hint', () => {

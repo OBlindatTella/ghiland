@@ -7,7 +7,7 @@ import { ownerForShell, OwnerStack } from '@/engine/input/ownerStack';
 import { requestCanvasPointerLock } from '@/engine/input/pointerLock';
 import { isWindowTarget } from '@/engine/windows/windowTarget';
 import { idleEscapeGate, onBrowserEscapeUnlock, onEscapeKey, onToggleUnlock, type EscapeGate } from '@/engine/input/escapeGate';
-import { classifyLockLoss, reduceShell, type ShellEffect, type ShellModel } from '@/engine/input/shellMachine';
+import { classifyLockLoss, externalOpenKeepsScreen, reduceShell, type ShellEffect, type ShellModel } from '@/engine/input/shellMachine';
 import { useInputStore } from '@/state/input';
 import { useSession } from '@/state/session';
 import { useSettings } from '@/state/settings';
@@ -32,8 +32,9 @@ export class InputManager {
   private blurTimer = 0;
   private press: { x: number; y: number } | null = null;
   private beforeShell: ((from: ShellState, to: ShellState) => void) | null = null;
-  /** Ignore one blur caused by our own window.open, so the Web tile stays on SCREEN. */
+  /** Ignore blur and tab-hide caused by our own window.open, so the Web tile stays on SCREEN. */
   private externalOpenUntil = 0;
+  private externalHold = false;
 
   attach(canvas: HTMLElement): () => void {
     this.detach();
@@ -281,10 +282,9 @@ export class InputManager {
     // Focus moving into an iframe blurs the parent window while document.hasFocus() stays true.
     this.blurTimer = window.setTimeout(() => {
       if (!this.canvas) return;
-      if (Date.now() < this.externalOpenUntil) {
-        this.externalOpenUntil = 0;
-        return;
-      }
+      const held = externalOpenKeepsScreen(Date.now(), this.externalOpenUntil, this.externalHold, true);
+      this.externalHold = held.holding;
+      if (held.stay) return;
       const active = document.activeElement as { tagName?: string } | null;
       if (document.hasFocus() && active?.tagName === 'IFRAME') return;
       this.keys.clear();
@@ -294,7 +294,9 @@ export class InputManager {
   };
 
   private onVisibility = (): void => {
-    if (!document.hidden) return;
+    const held = externalOpenKeepsScreen(Date.now(), this.externalOpenUntil, this.externalHold, document.hidden);
+    this.externalHold = held.holding;
+    if (!document.hidden || held.stay) return;
     this.keys.clear();
     this.unlockIntent = null;
     this.apply(reduceShell(this.readModel(), { type: 'tabHidden' }));
