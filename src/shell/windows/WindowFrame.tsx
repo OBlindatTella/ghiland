@@ -54,6 +54,7 @@ export function WindowFrame({
     focusAppWindow(instance.id);
     const start = { x: event.clientX, y: event.clientY, rect };
     const pointer = event.currentTarget;
+    pointer.closest('article')?.focus();
     pointer.setPointerCapture(event.pointerId);
     let origin = rect;
     let outsideSince: number | null = null;
@@ -167,6 +168,7 @@ export function WindowFrame({
       data-anchor={instance.mode.kind === 'worldPinned' ? instance.mode.anchorId : undefined}
       data-testid={`window-${instance.appId}`}
       data-pulse={pulsing ? 'true' : 'false'}
+      tabIndex={-1}
       className="pointer-events-auto absolute"
       style={
         world

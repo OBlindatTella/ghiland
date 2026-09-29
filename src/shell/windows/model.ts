@@ -88,7 +88,9 @@ export function closeWindow(book: WindowBook, id: string): WindowBook {
   if (!book.windows[id]) return book;
   const windows = { ...book.windows };
   delete windows[id];
-  const remaining = Object.values(windows).sort((a, b) => b.z - a.z);
+  const remaining = Object.values(windows)
+    .filter((item) => item.state !== 'minimized')
+    .sort((a, b) => b.z - a.z);
   return { windows, focusedId: book.focusedId === id ? remaining[0]?.id ?? null : book.focusedId };
 }
 

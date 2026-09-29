@@ -71,6 +71,17 @@ describe('window book', () => {
       now: 1,
     });
     expect(closeWindow(opened.book, 'a').windows).toEqual({});
+    const second = openWindow(opened.book, {
+      id: 'b',
+      appId: 'chat',
+      title: 'Chat',
+      defaultSize: size,
+      viewport,
+      now: 2,
+    });
+    const hidden = setWindowState(second.book, 'a', 'minimized');
+    const closed = closeWindow(hidden, 'b');
+    expect(closed.focusedId).toBeNull();
     const migrated = migrateWindows({ windows: [opened.book.windows.a] }, 1);
     expect(migrated.windows).toHaveLength(1);
     expect(migrateWindows({ windows: 'nope' }, 1)).toEqual({ windows: [] });
