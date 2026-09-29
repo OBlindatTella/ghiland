@@ -32,6 +32,10 @@ export class InputManager {
   private blurTimer = 0;
   private press: { x: number; y: number } | null = null;
   private beforeShell: ((from: ShellState, to: ShellState) => void) | null = null;
+  /** Blur, tab hide, or context loss, including when the shell was already RELEASED (S6-10). */
+  private onFocusLoss: (() => void) | null = null;
+  /** A composing Escape already arrived, so the next Escape is the player's (S6-14). */
+  private sawComposingEscape = false;
   /** Ignore blur and tab-hide caused by our own window.open, so the Web tile stays on SCREEN. */
   private externalOpenUntil = 0;
   private externalHold = false;
@@ -70,6 +74,7 @@ export class InputManager {
     document.removeEventListener('compositionend', this.onCompositionEnd);
     this.composing = false;
     this.compositionEscape = false;
+    this.sawComposingEscape = false;
     window.clearTimeout(this.compositionTimer);
     this.canvas.removeEventListener('pointerdown', this.onPointerDown);
     this.canvas.removeEventListener('click', this.onClick);
@@ -116,6 +121,11 @@ export class InputManager {
   /** D-017. Runs before the store write so a carried window can pin on the way out of WORLD. */
   setBeforeShellChange(hook: ((from: ShellState, to: ShellState) => void) | null): void {
     this.beforeShell = hook;
+  }
+
+  /** D-038 Q12. Runs on blur, hide, and context loss even when the shell state does not change. */
+  setOnFocusLoss(hook: (() => void) | null): void {
+    this.onFocusLoss = hook;
   }
 
   private windowHooks: { pin?: () => void; interact?: () => void; recall?: () => void } | null = null;
@@ -238,10 +248,10 @@ export class InputManager {
   private onKeyDown = (event: KeyboardEvent): void => {
     if (!this.gameplayOpen()) return;
     const editable = isEditableElement(event.target) || isEditableElement(document.activeElement);
+    const duringComposition = this.composing || Boolean(event.isComposing) || event.keyCode === 229;
+    if (duringComposition && event.code === 'Escape') this.sawComposingEscape = true;
     const composing =
-      this.composing ||
-      Boolean(event.isComposing) ||
-      event.keyCode === 229 ||
+      duringComposition ||
       (event.code === 'Escape' && this.compositionEscape);
     if (this.compositionEscape) {
       this.compositionEscape = false;
@@ -296,16 +306,20 @@ export class InputManager {
   private onCompositionStart = (): void => {
     this.composing = true;
     this.compositionEscape = false;
+    this.sawComposingEscape = false;
   };
 
   private onCompositionEnd = (): void => {
     this.composing = false;
-    this.compositionEscape = true;
+    // Chrome delivers the composing Escape before compositionend, so that key already
+    // consumed the dismiss. Arm only when it has not been seen, and only until the
+    // next turn, so a later deliberate Escape is not swallowed (S6-14).
+    this.compositionEscape = !this.sawComposingEscape;
+    this.sawComposingEscape = false;
     window.clearTimeout(this.compositionTimer);
-    // Survive until the keydown that follows compositionend. A microtask runs before that key on Safari.
     this.compositionTimer = window.setTimeout(() => {
       this.compositionEscape = false;
-    }, 1000);
+    }, 0);
   };
 
   private onBlur = (): void => {
@@ -319,6 +333,7 @@ export class InputManager {
       if (document.hasFocus() && active?.tagName === 'IFRAME') return;
       this.keys.clear();
       this.unlockIntent = null;
+      this.onFocusLoss?.();
       this.apply(reduceShell(this.readModel(), { type: 'blur' }));
     }, 0);
   };
@@ -329,6 +344,7 @@ export class InputManager {
     if (!document.hidden || held.stay) return;
     this.keys.clear();
     this.unlockIntent = null;
+    this.onFocusLoss?.();
     this.apply(reduceShell(this.readModel(), { type: 'tabHidden' }));
   };
 
@@ -408,6 +424,7 @@ export class InputManager {
     this.relockAfterToggle = false;
     this.releasePointerLock();
     useInputStore.getState().setPointerLocked(false);
+    this.onFocusLoss?.();
     this.apply(reduceShell(this.readModel(), { type: 'blur' }));
   }
 

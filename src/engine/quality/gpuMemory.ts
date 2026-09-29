@@ -146,7 +146,8 @@ export function frameGpuBytes(input: FrameGpuInput): number {
   const inputTarget = renderTargetBytes(input.width, input.height, samples, true);
   const output = renderTargetBytes(input.width, input.height, 1, false);
   const depth = renderTargetBytes(input.width, input.height, 1, true);
-  const bloom = input.bloom && input.samples > 0 ? input.width * input.height * 8 * (1 / 3) : 0;
+  // Bloom stays on in the SMAA path (D-041), so its mips are counted at every sample count.
+  const bloom = input.bloom ? input.width * input.height * 8 * (1 / 3) : 0;
   const smaa = input.samples === 0 ? input.width * input.height * 4 * 2 : 0;
   return (
     inputTarget +
@@ -160,18 +161,101 @@ export function frameGpuBytes(input: FrameGpuInput): number {
   );
 }
 
-const HIGH_GPU_BUDGET = 384 * 1024 * 1024;
+/** The only GPU-memory estimator. Sample choice and the budget check both use `frameGpuBytes` (D-041). */
+export const HIGH_GPU_BUDGET = 384 * 1024 * 1024;
+export const ULTRA_GPU_BUDGET = 768 * 1024 * 1024;
+export const RENDER_SCALE_FLOOR = 0.75;
+
+export type FoliageAa = 'alphaTest' | 'alphaToCoverage' | 'alphaHash';
+
+export interface PresentationInput {
+  tier: 'LOW' | 'MED' | 'HIGH' | 'ULTRA';
+  cssWidth: number;
+  cssHeight: number;
+  deviceDpr: number;
+  dprMin: number;
+  dprMax: number;
+  shadowMap: number;
+  textureBytes: number;
+  bloom: boolean;
+}
+
+export interface Presentation {
+  tier: PresentationInput['tier'];
+  samples: 0 | 2 | 4;
+  dpr: number;
+  renderScale: number;
+  width: number;
+  height: number;
+  bytes: number;
+  bloom: boolean;
+  smaa: boolean;
+  foliage: FoliageAa;
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value));
+}
+
+/** Requested DPR first, then 0.25 steps down to `floor`. */
+export function dprLadder(requested: number, floor: number): number[] {
+  const start = Math.round(requested * 1000) / 1000;
+  const steps = [start];
+  for (let dpr = Math.floor((start - 1e-6) / 0.25) * 0.25; dpr >= floor - 1e-6; dpr -= 0.25) {
+    const value = Math.round(dpr * 4) / 4;
+    if (value < floor - 1e-6 || Math.abs(value - start) < 1e-6) continue;
+    steps.push(value);
+  }
+  return steps;
+}
 
 /**
- * HIGH stays at or under 384 MB.
- * Above DPR 1.25 the 2× composer still exceeds 384 MB live, so HIGH uses SMAA there.
+ * HIGH stays at or under 384 MB and ULTRA under 768 MB (D-041).
+ * Try 4× MSAA, then 2×, then SMAA. If none fits, lower DPR in 0.25 steps to 1.0,
+ * then drop render scale to 0.75. Bloom is kept when SMAA is chosen.
  */
-export function samplesWithinBudget(tier: 'HIGH' | 'ULTRA', input: Omit<FrameGpuInput, 'samples'>): 0 | 2 | 4 {
-  const budget = tier === 'HIGH' ? HIGH_GPU_BUDGET : Number.POSITIVE_INFINITY;
-  const cost = (samples: 0 | 2 | 4) => frameGpuBytes({ ...input, samples });
-  const aboveOneAndQuarter = input.width * input.height > 1920 * 1080 * 1.25 * 1.25;
-  if (tier === 'HIGH' && aboveOneAndQuarter) return 0;
-  if (cost(4) <= budget) return 4;
-  if (cost(2) <= budget) return 2;
-  return 0;
+export function resolvePresentation(input: PresentationInput): Presentation {
+  const requested = clamp(input.deviceDpr, input.dprMin, input.dprMax);
+  const budget = input.tier === 'ULTRA' ? ULTRA_GPU_BUDGET : input.tier === 'HIGH' ? HIGH_GPU_BUDGET : Number.POSITIVE_INFINITY;
+  const pack = (samples: 0 | 2 | 4, dpr: number, renderScale: number): Presentation => {
+    const width = Math.max(1, Math.round(input.cssWidth * dpr * renderScale));
+    const height = Math.max(1, Math.round(input.cssHeight * dpr * renderScale));
+    const bytes = frameGpuBytes({
+      width,
+      height,
+      samples,
+      shadowMap: input.shadowMap,
+      textureBytes: input.textureBytes,
+      bloom: input.bloom,
+    });
+    const msaa = input.tier === 'HIGH' || input.tier === 'ULTRA';
+    return {
+      tier: input.tier,
+      samples,
+      dpr,
+      renderScale,
+      width,
+      height,
+      bytes,
+      bloom: input.bloom,
+      smaa: samples === 0,
+      foliage: !msaa ? 'alphaTest' : samples === 0 ? 'alphaHash' : 'alphaToCoverage',
+    };
+  };
+  if (input.tier !== 'HIGH' && input.tier !== 'ULTRA') return pack(0, requested, 1);
+  const minDpr = Math.min(requested, Math.max(1, input.dprMin));
+  const order: Array<{ samples: 0 | 2 | 4; dpr: number; scale: number }> = [];
+  for (const dpr of dprLadder(requested, minDpr)) {
+    order.push({ samples: 4, dpr, scale: 1 }, { samples: 2, dpr, scale: 1 }, { samples: 0, dpr, scale: 1 });
+  }
+  order.push(
+    { samples: 4, dpr: minDpr, scale: RENDER_SCALE_FLOOR },
+    { samples: 2, dpr: minDpr, scale: RENDER_SCALE_FLOOR },
+    { samples: 0, dpr: minDpr, scale: RENDER_SCALE_FLOOR },
+  );
+  for (const candidate of order) {
+    const choice = pack(candidate.samples, candidate.dpr, candidate.scale);
+    if (choice.bytes <= budget) return choice;
+  }
+  return pack(0, minDpr, RENDER_SCALE_FLOOR);
 }

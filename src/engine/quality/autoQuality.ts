@@ -2,6 +2,9 @@ import type { QualityTier } from '@/contracts/quality';
 
 const ORDER: QualityTier[] = ['LOW', 'MED', 'HIGH', 'ULTRA'];
 
+/** AUTO may use LOW, MED and HIGH. It does not climb to ULTRA (D-041). */
+export const AUTO_MAX_TIER: QualityTier = 'HIGH';
+
 export const AUTO_CEILING_MS = 7 * 24 * 60 * 60 * 1000;
 export const STABLE_HOLD_S = 60;
 
@@ -32,10 +35,10 @@ export interface AutoClock {
   remember: QualityTier | null;
 }
 
-export function initialAutoClock(tier: QualityTier, ceiling: QualityTier = 'ULTRA'): AutoClock {
+export function initialAutoClock(tier: QualityTier, ceiling: QualityTier = AUTO_MAX_TIER): AutoClock {
   return {
     tier,
-    ceiling,
+    ceiling: capTier(ceiling, AUTO_MAX_TIER),
     elapsed: 0,
     sinceChange: 30,
     held: 0,
@@ -96,7 +99,7 @@ export function stepAutoQuality(clock: AutoClock, fps: number, dt: number): Auto
       changes: viaEmergency ? changes : [...changes, elapsed],
     };
   }
-  if (!rateLimited && canChange && highFor >= 5 && index < ceiling && index < ORDER.length - 1) {
+  if (!rateLimited && canChange && highFor >= 5 && index < ceiling && index < indexOf(AUTO_MAX_TIER)) {
     return {
       tier: ORDER[index + 1] ?? clock.tier,
       ceiling: clock.ceiling,
@@ -148,12 +151,13 @@ export function heuristicTier(input: {
   now?: number;
 }): QualityTier {
   const capped = ceilingStillValid(input.ceiling ?? null, input.renderer, input.now ?? Date.now());
-  if (input.lastGood) return capTier(input.lastGood, capped);
+  // AUTO never selects ULTRA, including a last-good tier saved before the ceiling (D-041).
+  if (input.lastGood) return capTier(capTier(input.lastGood, capped), AUTO_MAX_TIER);
   const renderer = input.renderer.toLowerCase();
   const weak =
     /swiftshader|llvmpipe|basic render|intel\(r\) hd|intel\(r\) uhd|intel\(r\) iris\(r\) xe|mali-4|adreno \(tm\) [345]/.test(renderer) ||
     input.cores <= 4 ||
     (input.deviceMemory !== undefined && input.deviceMemory <= 4);
   const tier: QualityTier = weak ? 'LOW' : input.cores >= 8 && (input.deviceMemory === undefined || input.deviceMemory >= 8) ? 'HIGH' : 'MED';
-  return capTier(tier, capped);
+  return capTier(capTier(tier, capped), AUTO_MAX_TIER);
 }
