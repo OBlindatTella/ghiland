@@ -165,9 +165,12 @@ export function isQuotaError(error: unknown): boolean {
 type Role = 'writer' | 'reader';
 type RoleListener = (role: Role) => void;
 
+const TAB_ID = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 let role: Role = 'reader';
 let releaseHold: (() => void) | null = null;
 let channel: BroadcastChannel | null = null;
+let channelLeader = false;
+let leaderNotice = false;
 const roleListeners = new Set<RoleListener>();
 const heldIds = new Set<string>();
 let memoryCache: Note[] | null = null;
@@ -176,6 +179,17 @@ let keptDb: IDBDatabase | null = null;
 
 export function notesRole(): Role {
   return role;
+}
+
+export function notesLeaderNotice(): boolean {
+  return leaderNotice;
+}
+
+/** Lowest id wins when two tabs ask at once and Web Locks are missing. */
+export function electNotesLeader(selfId: string, others: readonly string[]): Role {
+  const ids = [selfId, ...others.filter((id) => id && id !== selfId)];
+  ids.sort();
+  return ids[0] === selfId ? 'writer' : 'reader';
 }
 
 export function subscribeNotesRole(listener: RoleListener): () => void {
@@ -199,20 +213,72 @@ function setRole(next: Role): void {
 function bindChannel(): void {
   if (channel || typeof BroadcastChannel === 'undefined') return;
   channel = new BroadcastChannel('ghiland-notes');
-  channel.onmessage = (event: MessageEvent<{ type?: string }>) => {
-    if (event.data?.type !== 'yield' || role !== 'writer') return;
-    releaseHold?.();
-    releaseHold = null;
-    setRole('reader');
+  channel.onmessage = (event: MessageEvent<{ type?: string; id?: string }>) => {
+    const data = event.data;
+    if (!data) return;
+    if (data.type === 'yield' && role === 'writer') {
+      releaseHold?.();
+      releaseHold = null;
+      channelLeader = false;
+      setRole('reader');
+      return;
+    }
+    if (data.type === 'present?' && (channelLeader || releaseHold) && data.id !== TAB_ID) {
+      channel?.postMessage({ type: 'leader', id: TAB_ID });
+    }
   };
+}
+
+function claimByChannel(wait: boolean): Promise<Role> {
+  if (typeof BroadcastChannel === 'undefined') {
+    leaderNotice = true;
+    setRole('writer');
+    return Promise.resolve('writer');
+  }
+  bindChannel();
+  if (!wait && (channelLeader || releaseHold)) {
+    leaderNotice = false;
+    setRole('writer');
+    return Promise.resolve('writer');
+  }
+  return new Promise((resolve) => {
+    const others: string[] = [];
+    let sawLeader = false;
+    const onMessage = (event: MessageEvent<{ type?: string; id?: string }>) => {
+      const data = event.data;
+      if (!data?.id || data.id === TAB_ID) return;
+      if (data.type === 'leader') sawLeader = true;
+      if (data.type === 'present?' || data.type === 'leader' || data.type === 'present') others.push(data.id);
+    };
+    channel?.addEventListener('message', onMessage);
+    channel?.postMessage({ type: 'present?', id: TAB_ID });
+    setTimeout(() => {
+      channel?.removeEventListener('message', onMessage);
+      const writer = wait || (!sawLeader && electNotesLeader(TAB_ID, others) === 'writer');
+      leaderNotice = false;
+      if (!writer) {
+        channelLeader = false;
+        setRole('reader');
+        resolve('reader');
+        return;
+      }
+      channelLeader = true;
+      releaseHold = () => {
+        releaseHold = null;
+        channelLeader = false;
+        channel?.postMessage({ type: 'released', id: TAB_ID });
+      };
+      channel?.postMessage({ type: 'leader', id: TAB_ID });
+      setRole('writer');
+      resolve('writer');
+    }, 30);
+  });
 }
 
 function claimLock(wait: boolean): Promise<Role> {
   const locks = typeof navigator === 'undefined' ? undefined : navigator.locks;
-  if (!locks) {
-    setRole('writer');
-    return Promise.resolve('writer');
-  }
+  if (!locks) return claimByChannel(wait);
+  leaderNotice = false;
   return new Promise((resolve) => {
     const options: LockOptions = wait ? { mode: 'exclusive' } : { mode: 'exclusive', ifAvailable: true };
     void locks.request(LOCK_NAME, options, (lock) => {

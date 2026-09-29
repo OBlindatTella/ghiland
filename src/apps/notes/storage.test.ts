@@ -12,6 +12,7 @@ import {
   parseLegacyPack,
   parseStoredNote,
   quarantineKey,
+  electNotesLeader,
   startNotesSession,
   unpackNotes,
 } from './storage';
@@ -169,6 +170,23 @@ describe('notes storage', () => {
     const storage = await import('./storage');
     expect(await storage.startNotesSession()).toBe('writer');
     expect(await storage.saveNotes([{ id: 'a', title: 'A', body: 'a', updatedAt: 1 }])).toBe('quota');
+  });
+
+  it('elects a single writer when Web Locks are missing', async () => {
+    expect(electNotesLeader('a', ['b', 'c'])).toBe('writer');
+    expect(electNotesLeader('m', ['a'])).toBe('reader');
+    vi.resetModules();
+    const nav = globalThis.navigator ?? ({} as Navigator);
+    Object.defineProperty(globalThis, 'navigator', { value: nav, configurable: true });
+    const previous = Object.getOwnPropertyDescriptor(nav, 'locks');
+    Object.defineProperty(nav, 'locks', { configurable: true, value: undefined });
+    const storage = await import('./storage');
+    const role = await storage.startNotesSession();
+    if (role === 'reader') expect(await storage.claimNotesHere()).toBe('writer');
+    else expect(role).toBe('writer');
+    expect(storage.notesLeaderNotice()).toBe(false);
+    expect(await storage.startNotesSession()).toBe('writer');
+    if (previous) Object.defineProperty(nav, 'locks', previous);
   });
 
   it('renders a little markdown without letting HTML through', () => {

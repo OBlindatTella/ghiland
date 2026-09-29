@@ -8,6 +8,7 @@ import {
   loadNotes,
   trimInsertion,
   noteNearingLimit,
+  notesLeaderNotice,
   notesRole,
   rememberNotes,
   saveNotes,
@@ -36,6 +37,7 @@ export default function Notes({ windowId, host }: AppProps) {
   const [role, setRole] = useState(notesRole);
   const [problem, setProblem] = useState<'blocked' | 'unavailable' | null>(null);
   const [notice, setNotice] = useState('');
+  const [leaderNotice, setLeaderNotice] = useState(notesLeaderNotice);
   const [sessionReady, setSessionReady] = useState(false);
   const ready = useRef(false);
   const notesRef = useRef(notes);
@@ -57,7 +59,14 @@ export default function Notes({ windowId, host }: AppProps) {
     });
   }, [windowId, selected, preview, remembered]);
 
-  useEffect(() => subscribeNotesRole(setRole), []);
+  useEffect(
+    () =>
+      subscribeNotesRole((next) => {
+        setRole(next);
+        setLeaderNotice(notesLeaderNotice());
+      }),
+    [],
+  );
 
   useEffect(() => {
     let live = true;
@@ -65,6 +74,7 @@ export default function Notes({ windowId, host }: AppProps) {
       const claimed = await startNotesSession();
       if (!live) return;
       setRole(claimed);
+      setLeaderNotice(notesLeaderNotice());
       setSessionReady(true);
       const loaded = await loadNotes();
       if (!live) return;
@@ -190,6 +200,11 @@ export default function Notes({ windowId, host }: AppProps) {
       {problem === 'unavailable' ? (
         <p className="border-b border-white/10 px-4 py-3 text-[13px] leading-5 text-[#f2f0eb]/80">
           Notes could not be read. Nothing was overwritten.
+        </p>
+      ) : null}
+      {leaderNotice ? (
+        <p data-testid="notes-leader-notice" className="border-b border-white/10 px-4 py-3 text-[13px] leading-5 text-[#f2f0eb]/80">
+          This browser can't keep Notes to one tab.
         </p>
       ) : null}
       {notice ? (
