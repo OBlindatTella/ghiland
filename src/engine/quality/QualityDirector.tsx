@@ -166,23 +166,10 @@ const MemoPost = memo(PostStack);
  */
 function FrozenPost({ profile }: { profile: QualityProfile }) {
   const lost = useGlStore((state) => state.lost);
-  const [generation, setGeneration] = useState(0);
-
-  useEffect(() => {
-    return useGlStore.subscribe((state, prev) => {
-      if (prev.lost && !state.lost) setGeneration((value) => value + 1);
-    });
-  }, []);
-
-  if (lost) return null;
-  return <MemoPost key={generation} profile={profile} />;
-}
-
-/** SMAA on LOW/MED, bloom and MSAA on HIGH/ULTRA, AgX on every tier. */
-export function PostStack({ profile }: { profile: QualityProfile }) {
   const size = useThree((state) => state.size);
   const dpr = useThree((state) => state.viewport.dpr);
-  const msaa =
+  const [generation, setGeneration] = useState(0);
+  const samples =
     profile.multisampling === 0
       ? 0
       : samplesWithinBudget(profile.tier === 'ULTRA' ? 'ULTRA' : 'HIGH', {
@@ -192,6 +179,20 @@ export function PostStack({ profile }: { profile: QualityProfile }) {
           textureBytes: estimateTextureBytes(textureSizeForTier(profile.tier)),
           bloom: profile.postprocessing.bloom,
         });
+
+  useEffect(() => {
+    return useGlStore.subscribe((state, prev) => {
+      if (prev.lost && !state.lost) setGeneration((value) => value + 1);
+    });
+  }, []);
+
+  if (lost) return null;
+  return <MemoPost key={generation} profile={profile} samples={samples} />;
+}
+
+/** SMAA on LOW/MED, bloom and MSAA on HIGH/ULTRA, AgX on every tier. */
+export function PostStack({ profile, samples = 0 }: { profile: QualityProfile; samples?: 0 | 2 | 4 }) {
+  const msaa = profile.multisampling === 0 ? 0 : samples;
   const smaa = profile.postprocessing.smaa || msaa === 0;
   return (
     <EffectComposer multisampling={smaa ? 0 : msaa} enableNormalPass={false} autoClear>
