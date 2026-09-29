@@ -310,8 +310,9 @@ export function SeasideHouseScene({ onReady, quality }: WorldSceneProps) {
   const scene = useThree((state) => state.scene);
   const camera = useThree((state) => state.camera);
   const ready = useRef(false);
-  const size = textureSizeForTier(quality.tier);
-  const maps = seasideMaps(size) ?? seasideMaps(1024) ?? seasideMaps(512);
+  const preferred = textureSizeForTier(quality.tier);
+  const held = seasideMaps(preferred) ? preferred : seasideMaps(1024) ? 1024 : seasideMaps(512) ? 512 : 0;
+  const maps = held ? seasideMaps(held) : null;
   const resolvedFoliage = useResolvedFoliage(quality.tier, quality.foliage);
   const materials = useMemo(() => (maps ? buildHouseMaterials(maps, resolvedFoliage) : null), [maps, resolvedFoliage]);
   // Seam diagnostic: the glass is MeshStandardMaterial, not transmission, so there is no second ocean pass.
@@ -413,11 +414,11 @@ export function SeasideHouseScene({ onReady, quality }: WorldSceneProps) {
 
   useEffect(() => () => materials?.dispose(), [materials]);
   useEffect(() => {
-    if (!maps) return undefined;
-    retainTextureSize(size);
-    const stillHeld = cachedTextureSizes().filter((key) => key !== size);
-    return trackGpuBytes(estimateTextureBytes(size, stillHeld) + natureTextureBytes(quality.tier));
-  }, [maps, size, quality.tier]);
+    if (!maps || !held) return undefined;
+    retainTextureSize(held);
+    const stillHeld = cachedTextureSizes().filter((key) => key !== held);
+    return trackGpuBytes(estimateTextureBytes(held, stillHeld) + natureTextureBytes(quality.tier));
+  }, [maps, held, quality.tier]);
 
   if (!materials) return null;
 
