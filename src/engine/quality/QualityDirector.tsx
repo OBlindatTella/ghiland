@@ -1,11 +1,11 @@
 'use client';
 
-import { memo, useEffect, useContext, useRef, useState } from 'react';
+import { memo, useEffect, useContext, useMemo, useRef, useState } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
 import { BasicShadowMap, PCFSoftShadowMap } from 'three';
 import { Bloom, EffectComposer, EffectComposerContext, SMAA, ToneMapping } from '@react-three/postprocessing';
 import { COMPOSER_TONE_MODE, readComposerTone } from '@/engine/quality/toneState';
-import { composerGpuBytes, defaultFramebufferBytes, releaseComposerTargets, samplesWithinBudget, shadowMapBytes, trackGpuBytes, trackedGpuBytes, type ComposerBuffers } from '@/engine/quality/gpuMemory';
+import { composerGpuBytes, defaultFramebufferBytes, releaseComposerTargets, resolvePresentation, shadowMapBytes, trackGpuBytes, trackedGpuBytes, type ComposerBuffers } from '@/engine/quality/gpuMemory';
 import { estimateTextureBytes } from '@/worlds/seaside-house/art/textures';
 import { textureSizeForTier } from '@/worlds/seaside-house/art/scale';
 import { readFps } from '@/engine/quality/fakeFps';
@@ -17,6 +17,7 @@ import { perfSample, usePerfStore } from '@/state/perf';
 import { useAppliedQuality } from '@/state/appliedQuality';
 import { useGlStore } from '@/state/gl';
 import { useSession } from '@/state/session';
+import { useFrameBudget } from '@/state/frameBudget';
 import { useSettings } from '@/state/settings';
 
 function targetTier(): 'LOW' | 'MED' | 'HIGH' | 'ULTRA' {
@@ -51,7 +52,7 @@ export function QualityDirector() {
       now,
     });
     usePerfStore.getState().setAutoTier(tier);
-    clock.current = initialAutoClock(tier, ceiling ?? 'ULTRA');
+    clock.current = initialAutoClock(tier, ceiling ?? 'HIGH');
   }, [gl]);
 
   useEffect(() => {
@@ -94,7 +95,7 @@ export function QualityDirector() {
       if (state.quality === prev.quality && !selected) return;
       // A manual tier, or choosing AUTO again, clears the session ceiling (D-034).
       const tier = state.quality === 'AUTO' ? usePerfStore.getState().autoTier : state.quality;
-      clock.current = initialAutoClock(tier, 'ULTRA');
+      clock.current = initialAutoClock(tier, 'HIGH');
       apply();
     });
     const unsubPerf = usePerfStore.subscribe((state, prev) => {
@@ -167,18 +168,28 @@ const MemoPost = memo(PostStack);
 function FrozenPost({ profile }: { profile: QualityProfile }) {
   const lost = useGlStore((state) => state.lost);
   const size = useThree((state) => state.size);
-  const dpr = useThree((state) => state.viewport.dpr);
   const [generation, setGeneration] = useState(0);
-  const samples =
-    profile.multisampling === 0
-      ? 0
-      : samplesWithinBudget(profile.tier === 'ULTRA' ? 'ULTRA' : 'HIGH', {
-          width: Math.max(1, Math.round(size.width * dpr)),
-          height: Math.max(1, Math.round(size.height * dpr)),
-          shadowMap: profile.shadowMapSize,
-          textureBytes: estimateTextureBytes(textureSizeForTier(profile.tier)),
-          bloom: profile.postprocessing.bloom,
-        });
+  const deviceDpr = typeof window === 'undefined' ? 1 : window.devicePixelRatio || 1;
+  const presentation = useMemo(
+    () =>
+      resolvePresentation({
+        tier: profile.tier,
+        cssWidth: Math.max(1, size.width),
+        cssHeight: Math.max(1, size.height),
+        deviceDpr,
+        dprMin: profile.dpr[0],
+        dprMax: profile.dpr[1],
+        shadowMap: profile.shadowMapSize,
+        textureBytes: estimateTextureBytes(textureSizeForTier(profile.tier)),
+        bloom: profile.postprocessing.bloom,
+      }),
+    [profile, size.width, size.height, deviceDpr],
+  );
+  const samples = profile.multisampling === 0 ? 0 : presentation.samples;
+
+  useEffect(() => {
+    useFrameBudget.getState().setPresentation(presentation);
+  }, [presentation]);
 
   useEffect(() => {
     return useGlStore.subscribe((state, prev) => {
@@ -190,13 +201,15 @@ function FrozenPost({ profile }: { profile: QualityProfile }) {
   return <MemoPost key={generation} profile={profile} samples={samples} />;
 }
 
-/** SMAA on LOW/MED, bloom and MSAA on HIGH/ULTRA, AgX on every tier. */
+/** SMAA without MSAA, bloom kept on HIGH/ULTRA, AgX on every tier (D-041). */
 export function PostStack({ profile, samples = 0 }: { profile: QualityProfile; samples?: 0 | 2 | 4 }) {
   const msaa = profile.multisampling === 0 ? 0 : samples;
-  const smaa = profile.postprocessing.smaa || msaa === 0;
+  const smaa = msaa === 0;
+  const bloom = profile.postprocessing.bloom;
   return (
-    <EffectComposer multisampling={smaa ? 0 : msaa} enableNormalPass={false} autoClear>
-      {smaa ? <SMAA /> : <Bloom intensity={0.12} luminanceThreshold={0.9} mipmapBlur />}
+    <EffectComposer multisampling={msaa} enableNormalPass={false} autoClear>
+      {bloom ? <Bloom intensity={0.12} luminanceThreshold={0.9} mipmapBlur /> : null}
+      {smaa ? <SMAA /> : null}
       <ToneMapping mode={COMPOSER_TONE_MODE} />
       <ComposerLifecycle />
     </EffectComposer>

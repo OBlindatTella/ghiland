@@ -9,14 +9,12 @@ import {
   MeshBasicMaterial,
   MeshStandardMaterial,
   Object3D,
-  PlaneGeometry,
-  Scene,
-  type Camera,
-  type WebGLRenderer,
   type Material,
   type InstancedMesh,
 } from 'three';
 import { trackGpuBytes } from '@/engine';
+import { releaseWarmedMaterials, warmSceneShaders } from '@/engine/quality/shaderWarmup';
+import { useFrameBudget } from '@/state/frameBudget';
 import type { WorldSceneProps } from '@/contracts/world';
 import { createCurtainMaterial } from './art/curtains';
 import { environmentFromSky } from './art/environment';
@@ -91,7 +89,7 @@ interface HouseMaterials {
   dispose: () => void;
 }
 
-function buildHouseMaterials(maps: SeasideMaps, foliage: 'alphaTest' | 'alphaToCoverage'): HouseMaterials {
+function buildHouseMaterials(maps: SeasideMaps, foliage: 'alphaTest' | 'alphaToCoverage' | 'alphaHash'): HouseMaterials {
   const owned: Material[] = [];
   const mapped = (source: SeasideMaps[keyof SeasideMaps], repeat: [number, number], color: string, roughness: number) => {
     const map = cloneRepeat(source, repeat[0], repeat[1]);
@@ -114,13 +112,15 @@ function buildHouseMaterials(maps: SeasideMaps, foliage: 'alphaTest' | 'alphaToC
   const leafMap = cloneRepeat(maps.leaf, 1, 1);
   const leaf = new MeshStandardMaterial({
     map: leafMap,
-    alphaTest: foliage === 'alphaToCoverage' ? 0.35 : 0.4,
+    alphaTest: foliage === 'alphaHash' ? 0 : foliage === 'alphaToCoverage' ? 0.35 : 0.4,
     alphaToCoverage: foliage === 'alphaToCoverage',
+    alphaHash: foliage === 'alphaHash',
     roughness: 0.7,
     metalness: 0,
     side: 2,
     color: '#d7e2c8',
   });
+  leaf.userData.role = 'foliage';
   owned.push(leaf, leafMap as unknown as Material);
   const glass = new MeshStandardMaterial({
     color: '#d7e6e8',
@@ -290,20 +290,6 @@ function SolidMesh({
   );
 }
 
-/** Compile the tier variants once during load so an AUTO switch does not hitch on a new program. */
-async function compileTierShaders(gl: WebGLRenderer, camera: Camera): Promise<void> {
-  const probe = new Scene();
-  const geo = new PlaneGeometry(1, 1);
-  const alpha = new MeshStandardMaterial({ alphaTest: 0.4 });
-  const coverage = new MeshStandardMaterial({ alphaTest: 0.35, alphaToCoverage: true });
-  const ocean = createOceanMaterial(5);
-  const sky = createSkyMaterial(3);
-  const curtain = createCurtainMaterial();
-  for (const material of [alpha, coverage, ocean, sky, curtain]) probe.add(new Mesh(geo, material));
-  await gl.compileAsync(probe, camera);
-  geo.dispose();
-  for (const material of [alpha, coverage, ocean, sky, curtain]) material.dispose();
-}
 
 /** Late-afternoon seaside: sky dome, Gerstner water, and furnished rooms. */
 export function SeasideHouseScene({ onReady, quality }: WorldSceneProps) {
@@ -313,7 +299,10 @@ export function SeasideHouseScene({ onReady, quality }: WorldSceneProps) {
   const ready = useRef(false);
   const size = textureSizeForTier(quality.tier);
   const maps = seasideMaps(size) ?? seasideMaps(1024) ?? seasideMaps(512);
-  const materials = useMemo(() => (maps ? buildHouseMaterials(maps, quality.foliage) : null), [maps, quality.foliage]);
+  const resolvedFoliage = useFrameBudget((state) =>
+    state.presentation && state.presentation.tier === quality.tier ? state.presentation.foliage : quality.foliage,
+  );
+  const materials = useMemo(() => (maps ? buildHouseMaterials(maps, resolvedFoliage) : null), [maps, resolvedFoliage]);
   const headland = useMemo(() => new MeshStandardMaterial({ color: '#6d6458', roughness: 0.96 }), []);
   const beacon = useMemo(() => new MeshBasicMaterial({ color: '#FFC98F' }), []);
   useEffect(() => () => {
@@ -343,7 +332,7 @@ export function SeasideHouseScene({ onReady, quality }: WorldSceneProps) {
     };
     gl.domElement.addEventListener('webglcontextrestored', onRestore);
     let cancelled = false;
-    void compileTierShaders(gl, camera)
+    void warmSceneShaders(gl, scene, camera)
       .catch(() => undefined)
       .then(() => {
         if (cancelled || ready.current) return;
@@ -353,6 +342,7 @@ export function SeasideHouseScene({ onReady, quality }: WorldSceneProps) {
     return () => {
       disposed = true;
       cancelled = true;
+      releaseWarmedMaterials();
       gl.domElement.removeEventListener('webglcontextrestored', onRestore);
       env?.dispose();
       if (env && scene.environment === env.texture) scene.environment = null;

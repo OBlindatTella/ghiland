@@ -35,6 +35,13 @@ describe('crosshair raycast', () => {
     expect(raycastCrosshair(camera, [aside, centre])).toBe('notes');
     const back: WindowQuad = { ...centre, id: 'back', quaternion: [0, 0, 0, 1] };
     expect(raycastCrosshair(camera, [back])).toBeNull();
+    const tag: WindowQuad = {
+      ...back,
+      id: 'tag',
+      half: { w: 0.04, h: 0.04 },
+      quaternion: [camera.quaternion.x, camera.quaternion.y, camera.quaternion.z, camera.quaternion.w],
+    };
+    expect(raycastCrosshair(camera, [tag])).toBe('tag');
   });
 
   it('stops at a wall, ignores a window past 25 m, and keeps glass from blocking', () => {

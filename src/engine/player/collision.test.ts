@@ -281,6 +281,11 @@ describe('seaside greybox collision', () => {
     }
   });
 
+  /** True when this step stuck even though sliding on the free axis would move (S6-09). */
+  function isJunctionDeadStop(fullJump: number, plainJump: number): boolean {
+    return fullJump < 1e-4 && plainJump > 1e-4;
+  }
+
   function trace(x: number, z: number, headingDeg: number, seconds: number) {
     const heading = (headingDeg * Math.PI) / 180;
     const step = 1.35 / 60;
@@ -359,14 +364,23 @@ describe('seaside greybox collision', () => {
         let z = start.z;
         for (let frame = 0; frame < 20; frame += 1) {
           const next = slideMove(x, z, dx, dz, body, seasideColliders);
+          const plain = slideMove(x, z, dx, dz, body, seasideColliders, false);
           const jump = Math.hypot(next.x - x, next.z - z);
+          const plainJump = Math.hypot(plain.x - x, plain.z - z);
           expect(jump).toBeLessThanOrEqual(step + 1e-3);
-          if (jump < 1e-4) expect(clearance(x, z)).toBeLessThanOrEqual(0.02);
+          // An S5-01 dead stop stays put while the plain axis slide still advances.
+          expect(isJunctionDeadStop(jump, plainJump), `${x},${z} @ ${h}`).toBe(false);
           x = next.x;
           z = next.z;
         }
       }
     }
+  });
+
+  it('counts an S5-01 dead stop when the axis slide would still move', () => {
+    expect(isJunctionDeadStop(0, 0.02)).toBe(true);
+    expect(isJunctionDeadStop(0, 0)).toBe(false);
+    expect(isJunctionDeadStop(0.02, 0.02)).toBe(false);
   });
 
   it('does not freeze at the dining-table and west-wall junction', () => {

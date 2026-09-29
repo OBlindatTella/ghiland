@@ -245,6 +245,31 @@ describe('IME composition', () => {
     expect(useInputStore.getState().shellState).toBe('SCREEN');
     manager.detach();
   });
+
+  it('does not swallow a later Escape after a composing Escape or a committed word', async () => {
+    const dom = installDom();
+    const manager = new InputManager();
+    const blur = vi.fn();
+    useInputStore.setState({ shellState: 'SCREEN', owner: 'ui', showClickToWalk: false });
+    dom.documentStub.activeElement = { tagName: 'TEXTAREA', blur };
+    manager.attach(dom.canvas);
+    const escape = { code: 'Escape', repeat: false, isComposing: false, keyCode: 27, preventDefault() {}, target: dom.documentStub.activeElement };
+
+    dom.fireDoc('compositionstart', {});
+    dom.fireWindow('keydown', { ...escape, isComposing: true, keyCode: 229 });
+    dom.fireDoc('compositionend', {});
+    await Promise.resolve();
+    dom.fireWindow('keydown', escape);
+    expect(blur).toHaveBeenCalledTimes(1);
+
+    blur.mockClear();
+    dom.fireDoc('compositionstart', {});
+    dom.fireDoc('compositionend', {});
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    dom.fireWindow('keydown', escape);
+    expect(blur).toHaveBeenCalledTimes(1);
+    manager.detach();
+  });
 });
 
 describe('escape pairing', () => {
@@ -326,6 +351,38 @@ describe('pending pointer lock', () => {
     dom.documentStub.pointerLockElement = dom.canvas;
     dom.fireDoc('pointerlockchange', {});
     expect(useInputStore.getState().shellState).toBe('WORLD');
+    manager.detach();
+  });
+});
+
+describe('focus loss while already released', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    useInputStore.getState().reset();
+  });
+
+  it('auto-pins on blur, hide, and context loss without a shell change', async () => {
+    const dom = installDom();
+    const manager = new InputManager();
+    useInputStore.setState({ shellState: 'RELEASED', owner: 'world', showClickToWalk: true });
+    manager.attach(dom.canvas);
+    const loss = vi.fn();
+    manager.setOnFocusLoss(loss);
+
+    dom.setFocused(false);
+    dom.fireWindow('blur', {});
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(loss).toHaveBeenCalledTimes(1);
+    expect(useInputStore.getState().shellState).toBe('RELEASED');
+
+    dom.documentStub.hidden = true;
+    dom.fireDoc('visibilitychange', {});
+    expect(loss).toHaveBeenCalledTimes(2);
+
+    manager.loseContext();
+    expect(loss).toHaveBeenCalledTimes(3);
+    expect(useInputStore.getState().shellState).toBe('RELEASED');
+    manager.setOnFocusLoss(null);
     manager.detach();
   });
 });

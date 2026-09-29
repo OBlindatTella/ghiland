@@ -92,6 +92,10 @@ function faceContinuesPast(
  * put X back outside that corner so Z can slide past. The capsule has to be
  * meeting the face (Z was shortened). A strafe that never reaches the slab
  * is left alone. An inner corner shared with a coplanar neighbour is not an opening.
+ *
+ * Vestigial after S5-01/S5-02 (S6-15): the shift is capped at this frame's
+ * lateral step and rejected if it would enter another padded box, so it changes
+ * the outcome by less than one step. It stays so a junction cannot dead-stop.
  */
 /** True when (x, z) sits inside a radius-expanded movement box, not merely on its skin. */
 function insidePadded(x: number, z: number, radius: number, boxes: readonly Obstacle[]): boolean {
@@ -199,12 +203,13 @@ export function slideMove(
   dz: number,
   body: Body,
   colliders: readonly Collider[],
+  releaseEdges = true,
 ): { x: number; z: number } {
   const boxes = movementObstacles(colliders, body);
   const freed = pushOut(x, z, body.radius, boxes);
   let nextX = moveAxis(freed.x, freed.z, dx, body.radius, boxes, 'x');
   let nextZ = moveAxis(nextX, freed.z, dz, body.radius, boxes, 'z');
-  if (dz !== 0 && Math.abs(nextZ - (freed.z + dz)) > 1e-6) {
+  if (releaseEdges && dz !== 0 && Math.abs(nextZ - (freed.z + dz)) > 1e-6) {
     const released = releaseOpeningEdge(freed.x, freed.z, nextX, dx, dz, body.radius, boxes);
     if (released !== null && !insidePadded(released, freed.z, body.radius, boxes)) {
       const retryZ = moveAxis(released, freed.z, dz, body.radius, boxes, 'z');

@@ -179,3 +179,9 @@ After the first 60 s, AUTO makes at most 2 tier changes per rolling 5 minutes, u
 ## D-039 GPU memory on HIGH (S5-10)
 - HIGH caps the device pixel ratio at 1.5 and ULTRA at 2. The estimator must count the MSAA resolve target, the default framebuffer, mipmaps, the real PMREM size and any texture set not yet released. HIGH at DPR 1.5 must stay at or under 384 MB by the corrected estimate; otherwise HIGH drops MSAA to 2× or uses SMAA at DPR above 1.25.
 - PMREM is rebuilt after a context restore (S5-09) and is not rebuilt on every AUTO tier change. Shaders for every tier are compiled up front during loading (`renderer.compile` / `compileAsync`) to avoid hitches when AUTO switches tier.
+
+## D-041 GPU fallback, AUTO ceiling, and pin surfaces (S6-04, question 13)
+- One estimator, `frameGpuBytes`, both chooses the frame and is the figure the budget is checked against.
+- HIGH, under 384 MB: try 4× MSAA, then 2× MSAA, then SMAA. If none fits, lower the device pixel ratio in 0.25 steps down to 1.0, then lower render scale to 0.75. Bloom stays on when SMAA is chosen. Foliage without MSAA uses alpha-hash instead of alpha-to-coverage.
+- ULTRA has a 768 MB budget and uses the same fallback. AUTO never climbs above HIGH.
+- Question 13: the bookshelf and table side faces are not pin surfaces. Walls and the fin pin flat, 1 cm off. Desk, table, and island tops pin in table pose.

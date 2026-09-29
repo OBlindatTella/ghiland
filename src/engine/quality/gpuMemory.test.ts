@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { composerGpuBytes, frameGpuBytes, releaseComposerTargets, samplesWithinBudget, trackedGpuBytes, trackGpuBytes } from '@/engine/quality/gpuMemory';
+import { composerGpuBytes, frameGpuBytes, HIGH_GPU_BUDGET, releaseComposerTargets, resolvePresentation, trackedGpuBytes, trackGpuBytes, ULTRA_GPU_BUDGET } from '@/engine/quality/gpuMemory';
 import { estimateTextureBytes } from '@/worlds/seaside-house/art/textures';
 
 function target(width: number, height: number, samples: number) {
@@ -49,16 +49,74 @@ describe('composer GPU memory', () => {
     expect(trackedGpuBytes()).toBe(before);
   });
 
-  it('keeps HIGH at DPR 1.5 under 384 MB by using SMAA above DPR 1.25', () => {
-    const width = Math.round(1920 * 1.5);
-    const height = Math.round(1080 * 1.5);
+  it('picks 4×, then 2×, then SMAA under 384 MB, then DPR and render scale (D-041)', () => {
     const textureBytes = estimateTextureBytes(1024);
-    const shared = { width, height, shadowMap: 2048, textureBytes, bloom: true };
-    const samples = samplesWithinBudget('HIGH', shared);
-    expect(samples).toBe(0);
-    expect(frameGpuBytes({ ...shared, samples })).toBeLessThanOrEqual(384 * 1024 * 1024);
-    expect(frameGpuBytes({ ...shared, samples: 4 })).toBeGreaterThan(384 * 1024 * 1024);
-    const atOne = samplesWithinBudget('HIGH', { ...shared, width: 1920, height: 1080 });
-    expect(atOne).toBe(4);
+    const displays = [
+      { name: '1080p', width: 1920, height: 1080 },
+      { name: '1440p', width: 2560, height: 1440 },
+      { name: '4k', width: 3840, height: 2160 },
+    ];
+    const expected: Record<string, { samples: 0 | 2 | 4; dpr: number; renderScale: number }> = {
+      '1080p@1': { samples: 4, dpr: 1, renderScale: 1 },
+      '1080p@1.25': { samples: 4, dpr: 1.25, renderScale: 1 },
+      '1080p@1.5': { samples: 2, dpr: 1.5, renderScale: 1 },
+      '1440p@1': { samples: 4, dpr: 1, renderScale: 1 },
+      '1440p@1.25': { samples: 0, dpr: 1.25, renderScale: 1 },
+      '1440p@1.5': { samples: 0, dpr: 1.25, renderScale: 1 },
+      '4k@1': { samples: 2, dpr: 1, renderScale: 0.75 },
+      '4k@1.25': { samples: 2, dpr: 1, renderScale: 0.75 },
+      '4k@1.5': { samples: 2, dpr: 1, renderScale: 0.75 },
+    };
+    for (const display of displays) {
+      for (const deviceDpr of [1, 1.25, 1.5]) {
+        const choice = resolvePresentation({
+          tier: 'HIGH',
+          cssWidth: display.width,
+          cssHeight: display.height,
+          deviceDpr,
+          dprMin: 1,
+          dprMax: 1.5,
+          shadowMap: 2048,
+          textureBytes,
+          bloom: true,
+        });
+        const want = expected[`${display.name}@${deviceDpr}`]!;
+        expect(choice.samples, `${display.name} @ ${deviceDpr}`).toBe(want.samples);
+        expect(choice.dpr).toBe(want.dpr);
+        expect(choice.renderScale).toBe(want.renderScale);
+        expect(choice.bytes).toBeLessThanOrEqual(HIGH_GPU_BUDGET);
+        expect(choice.bloom).toBe(true);
+        expect(choice.bytes).toBe(
+          frameGpuBytes({
+            width: choice.width,
+            height: choice.height,
+            samples: choice.samples,
+            shadowMap: 2048,
+            textureBytes,
+            bloom: true,
+          }),
+        );
+        if (choice.samples === 0) {
+          expect(choice.smaa).toBe(true);
+          expect(choice.foliage).toBe('alphaHash');
+        } else {
+          expect(choice.foliage).toBe('alphaToCoverage');
+        }
+      }
+    }
+    const ultra = resolvePresentation({
+      tier: 'ULTRA',
+      cssWidth: 1920,
+      cssHeight: 1080,
+      deviceDpr: 2,
+      dprMin: 1,
+      dprMax: 2,
+      shadowMap: 4096,
+      textureBytes,
+      bloom: true,
+    });
+    expect(ultra.samples).toBe(2);
+    expect(ultra.bytes).toBeLessThanOrEqual(ULTRA_GPU_BUDGET);
+    expect(frameGpuBytes({ width: 3840, height: 2160, samples: 4, shadowMap: 4096, textureBytes, bloom: true })).toBeGreaterThan(ULTRA_GPU_BUDGET);
   });
 });
