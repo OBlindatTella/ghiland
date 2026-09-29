@@ -6,7 +6,7 @@ export const PAGES_BASE_PATH = '/ghiland';
  * these so a production export works at `/ghiland` without editing world code.
  * KTX2 (Basis), Draco, and meshopt are copied from `three` at build time.
  */
-export const PUBLIC_ROOTS = ['/worlds/', '/fonts/', '/decoders/', '/audio/'] as const;
+export const PUBLIC_ROOTS = ['/worlds/', '/fonts/', '/decoders/', '/audio/', '/assets/'] as const;
 
 export const DECODER_PATHS = {
   ktx2: '/decoders/basis/',

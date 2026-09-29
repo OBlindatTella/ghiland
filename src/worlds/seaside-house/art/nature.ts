@@ -14,9 +14,10 @@ import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.j
 import type { QualityTier } from '@/contracts/quality';
 import { BOULDERS, CLIFF_UNDER, COVE_ARM_LEFT, COVE_ARM_RIGHT, WET_SHELVES, type PlacedModel } from './cove';
 import { headlandCliffs } from './headland';
+import { prefixPublicUrl } from '@/deploy/basePath';
 import { seasideKtx2 } from './ktx';
 
-const MODEL_ROOT = '/assets/seaside/models';
+const MODEL_ROOT = prefixPublicUrl('/assets/seaside/models');
 const buffers = new Map<string, ArrayBuffer>();
 
 export interface NatureHandle {

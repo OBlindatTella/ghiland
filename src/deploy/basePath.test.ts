@@ -22,6 +22,12 @@ describe('public asset base path', () => {
       '/ghiland/decoders/draco/gltf/draco_wasm_wrapper.js',
     );
     expect(prefixPublicUrl(DECODER_PATHS.meshopt, base)).toBe('/ghiland/decoders/meshopt/meshopt_decoder.module.js');
+    expect(prefixPublicUrl('/assets/seaside/hdri/syferfontein_18d_clear_puresky_1k.hdr', base)).toBe(
+      '/ghiland/assets/seaside/hdri/syferfontein_18d_clear_puresky_1k.hdr',
+    );
+    expect(prefixPublicUrl('/assets/seaside/models/coastal_cliff_02.glb', base)).toBe(
+      '/ghiland/assets/seaside/models/coastal_cliff_02.glb',
+    );
   });
 
   it('prefixes a same-origin absolute url and leaves other hosts alone', () => {

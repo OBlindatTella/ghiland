@@ -9,9 +9,10 @@ import {
   type WebGLRenderer,
 } from 'three';
 import { HDRLoader } from 'three/examples/jsm/loaders/HDRLoader.js';
+import { prefixPublicUrl } from '@/deploy/basePath';
 import { SEASIDE_SUN } from './horizon';
 
-export const HDRI_URL = '/assets/seaside/hdri/syferfontein_18d_clear_puresky_1k.hdr';
+export const HDRI_URL = prefixPublicUrl('/assets/seaside/hdri/syferfontein_18d_clear_puresky_1k.hdr');
 const LUMINANCE_CAP = 12;
 
 let cachedHdr: ArrayBuffer | null = null;

@@ -1,7 +1,11 @@
 import { LinearSRGBColorSpace, RepeatWrapping, type Texture, type WebGLRenderer } from 'three';
+import { prefixPublicUrl } from '@/deploy/basePath';
 import { seasideKtx2 } from './ktx';
 
-const URLS = ['/assets/seaside/water/normal-a.ktx2', '/assets/seaside/water/normal-b.ktx2'] as const;
+const URLS = [
+  prefixPublicUrl('/assets/seaside/water/normal-a.ktx2'),
+  prefixPublicUrl('/assets/seaside/water/normal-b.ktx2'),
+] as const;
 const buffers = new Map<string, ArrayBuffer>();
 
 export interface WaterNormals {
