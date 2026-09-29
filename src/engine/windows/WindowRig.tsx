@@ -197,6 +197,11 @@ export function WindowRig() {
     for (const item of windows) {
       const element = windowElement(item.id);
       if (!element) continue;
+      if (useWindows.getState().closingIds.includes(item.id)) {
+        element.style.transition = 'opacity 120ms linear';
+        element.style.opacity = '0';
+        continue;
+      }
       if (item.mode.kind === 'overlay' || item.state === 'minimized') {
         element.style.transform = '';
         element.style.visibility = '';

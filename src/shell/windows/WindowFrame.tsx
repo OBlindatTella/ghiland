@@ -35,6 +35,7 @@ export function WindowFrame({
   children: ReactNode;
 }) {
   const focused = useWindows((state) => state.focusedId === instance.id);
+  const closing = useWindows((state) => state.closingIds.includes(instance.id));
   const [tint, setTint] = useState(frameTint);
   const [lift, setLift] = useState(false);
   const [pulsing, setPulsing] = useState(() => windowPulsing(instance.id));
@@ -169,11 +170,13 @@ export function WindowFrame({
       data-testid={`window-${instance.appId}`}
       data-pulse={pulsing ? 'true' : 'false'}
       tabIndex={-1}
+      role="region"
+      aria-label={app.title}
       className="pointer-events-auto absolute"
       style={
         world
           ? { left: 0, top: 0, width: rect.w, height: rect.h, transformOrigin: '0 0' }
-          : { left: rect.x, top: rect.y, width: rect.w, height: rect.h, zIndex: 20 + instance.z }
+          : { left: rect.x, top: rect.y, width: rect.w, height: rect.h, zIndex: 20 + instance.z, opacity: closing ? 0 : 1, transition: 'opacity 120ms linear' }
       }
       onPointerDown={() => focusAppWindow(instance.id)}
     >

@@ -1,6 +1,6 @@
 import type { ScreenRect } from '@/contracts/math';
 import type { WindowInstance, WindowMode, WindowState } from '@/contracts/window';
-import { placeRect, type Size } from '@/shell/windows/geometry';
+import { fitRect, placeRect, type Size } from '@/shell/windows/geometry';
 import type { PinnedRecord } from '@/shell/windows/persistence';
 
 export interface WindowBook {
@@ -17,6 +17,7 @@ export interface OpenWindowInput {
   defaultSize: Size;
   viewport: Size;
   now: number;
+  savedRect?: ScreenRect;
 }
 
 function list(book: WindowBook): WindowInstance[] {
@@ -63,7 +64,8 @@ export function openWindow(
     return { book: raise({ windows: restored, focusedId: book.focusedId }, existing.id), created: false, effect: 'focus' };
   }
   const previous = book.focusedId ? book.windows[book.focusedId]?.lastScreenRect ?? null : null;
-  const rect = placeRect(input.defaultSize, input.viewport, previous);
+  const safe = { minX: 24, minY: 24, maxX: input.viewport.w - 24, maxY: input.viewport.h - 88 };
+  const rect = input.savedRect ? fitRect(input.savedRect, safe) : placeRect(input.defaultSize, input.viewport, previous);
   const z = list(book).reduce((max, item) => Math.max(max, item.z), 0) + 1;
   const window: WindowInstance = {
     id: input.id,

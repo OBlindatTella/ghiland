@@ -20,6 +20,7 @@ import {
 interface WindowsStore {
   windows: Record<string, WindowInstance>;
   focusedId: string | null;
+  closingIds: string[];
   open: (input: OpenWindowInput) => { id: string; created: boolean };
   close: (id: string) => void;
   focus: (id: string) => void;
@@ -33,6 +34,7 @@ interface WindowsStore {
 
 export const useWindows = create<WindowsStore>((set, get) => ({
   ...emptyWindowBook,
+  closingIds: [],
   open: (input) => {
     const result = openWindow(
       { windows: get().windows, focusedId: get().focusedId },
@@ -43,7 +45,14 @@ export const useWindows = create<WindowsStore>((set, get) => ({
     if (result.effect === 'pulse') pulseWindow(id);
     return { id, created: result.created };
   },
-  close: (id) => set(closeWindow({ windows: get().windows, focusedId: get().focusedId }, id)),
+  close: (id) => {
+    if (!get().windows[id] || get().closingIds.includes(id)) return;
+    set({ closingIds: [...get().closingIds, id] });
+    window.setTimeout(() => {
+      const book = closeWindow({ windows: get().windows, focusedId: get().focusedId }, id);
+      set({ ...book, closingIds: get().closingIds.filter((item) => item !== id) });
+    }, 120);
+  },
   focus: (id) => set(focusWindow({ windows: get().windows, focusedId: get().focusedId }, id)),
   minimize: (id) => set(setWindowState({ windows: get().windows, focusedId: get().focusedId }, id, 'minimized')),
   restore: (id) => set(setWindowState({ windows: get().windows, focusedId: get().focusedId }, id, 'normal')),

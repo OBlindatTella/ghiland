@@ -1,6 +1,7 @@
 import type { AppDefinition } from '@/contracts/app';
 import { audioEngine } from '@/engine/audio/engine';
 import { bus } from '@/engine/events/bus';
+import { readWindowsFile } from '@/shell/windows/persistence';
 import { useWindows } from '@/state/windows';
 
 function viewport(): { w: number; h: number } {
@@ -16,6 +17,7 @@ export function openAppWindow(app: AppDefinition): string {
     defaultSize: app.window.defaultSize,
     viewport: viewport(),
     now: Date.now(),
+    savedRect: readWindowsFile().rects[app.id],
   });
   audioEngine.playUi(result.created ? 'open' : 'focus');
   if (result.created) bus.emit('window:opened', { windowId: result.id, appId: app.id });
