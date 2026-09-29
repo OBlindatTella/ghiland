@@ -3,7 +3,7 @@ const failureListeners = new Set<() => void>();
 
 export interface StorageAdapter {
   get(key: string): string | null;
-  set(key: string, value: string): void;
+  set(key: string, value: string): void | boolean;
   remove(key: string): void;
 }
 
@@ -34,8 +34,10 @@ export const localStorageAdapter: StorageAdapter = {
   set: (key, value) => {
     try {
       localStorage.setItem(key, value);
+      return true;
     } catch {
       noteWriteFailure();
+      return false;
     }
   },
   remove: (key) => {

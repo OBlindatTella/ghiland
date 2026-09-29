@@ -98,18 +98,14 @@ export function readPersistedSettings(raw: string | null, key: string, adapter: 
     if (!parsed || typeof parsed !== 'object' || !('state' in parsed)) throw new Error('shape');
     const version = typeof parsed.version === 'number' ? parsed.version : 0;
     if (version > SETTINGS_VERSION) {
-      try {
-        adapter.set(`${key}:future-${Date.now()}`, raw);
-        adapter.remove(key);
-      } catch {
-        // The backup itself can fail when storage is blocked. Keep the original key.
-      }
+      if (adapter.set(`${key}:future-${Date.now()}`, raw) === false) return null;
+      adapter.remove(key);
       return null;
     }
     const state = sanitizeSettings(migrateSettings(parsed.state, version));
     return JSON.stringify({ state, version: SETTINGS_VERSION });
   } catch {
-    adapter.set(`${key}:corrupt-${Date.now()}`, raw);
+    if (adapter.set(`${key}:corrupt-${Date.now()}`, raw) === false) return null;
     adapter.remove(key);
     return null;
   }
