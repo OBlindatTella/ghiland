@@ -100,7 +100,8 @@ function paintGhost(camera: Camera, carried: WindowInstance | null): void {
     widthPx: carried.lastScreenRect.w,
     bounds,
   });
-  const projected = projectWindow(camera, placement.position, placement.quaternion);
+  const ghostHalf = physicalSize(carried.lastScreenRect.w, carried.lastScreenRect.h);
+  const projected = projectWindow(camera, placement.position, placement.quaternion, { w: ghostHalf.w / 2, h: ghostHalf.h / 2 });
   ghost.hidden = projected.behind || !projected.object;
   ghost.dataset.valid = placement.valid ? 'true' : 'false';
   ghost.dataset.taken = placement.taken ? 'true' : 'false';
@@ -233,7 +234,8 @@ export function WindowRig() {
         worldQuaternion = lagged.quaternion;
       }
       if (!worldPosition || !worldQuaternion) continue;
-      const projected = projectWindow(camera, worldPosition, worldQuaternion);
+      const half = physicalSize(item.lastScreenRect.w, item.lastScreenRect.h);
+      const projected = projectWindow(camera, worldPosition, worldQuaternion, { w: half.w / 2, h: half.h / 2 });
       element.style.width = `${item.lastScreenRect.w}px`;
       element.style.height = `${item.lastScreenRect.h}px`;
       element.style.transformOrigin = '0 0';

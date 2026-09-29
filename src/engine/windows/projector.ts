@@ -8,6 +8,26 @@ const scale = new Vector3(1, 1, 1);
 const matrix = new Matrix4();
 const inverse = new Matrix4();
 const cameraSpace = new Vector3();
+const corner = new Vector3();
+const cornerQuat = new Quaternion();
+
+function cornerBehindNear(camera: Camera, world: Vec3, quat: Quat, x: number, y: number, near: number): boolean {
+  corner.set(x, y, 0).applyQuaternion(cornerQuat.set(quat[0], quat[1], quat[2], quat[3]));
+  corner.x += world[0];
+  corner.y += world[1];
+  corner.z += world[2];
+  corner.applyMatrix4(camera.matrixWorldInverse);
+  return corner.z > -near;
+}
+
+function straddlesNearPlane(camera: Camera, world: Vec3, quat: Quat, half: { w: number; h: number }, near: number): boolean {
+  return (
+    cornerBehindNear(camera, world, quat, half.w, half.h, near) ||
+    cornerBehindNear(camera, world, quat, half.w, -half.h, near) ||
+    cornerBehindNear(camera, world, quat, -half.w, half.h, near) ||
+    cornerBehindNear(camera, world, quat, -half.w, -half.h, near)
+  );
+}
 
 function epsilon(value: number): number {
   return Math.abs(value) < 1e-10 ? 0 : value;
@@ -101,11 +121,16 @@ export function projectWindow(
   camera: Camera,
   worldPosition: Vec3,
   worldQuaternion: Quat,
+  half?: { w: number; h: number },
 ): ProjectedWindow {
   camera.updateMatrixWorld();
   inverse.copy(camera.matrixWorldInverse);
   cameraSpace.set(worldPosition[0], worldPosition[1], worldPosition[2]).applyMatrix4(inverse);
-  if (cameraSpace.z > -0.05) return { object: null, behind: true };
+  const near = Math.max(0.05, camera.near || 0.05);
+  if (cameraSpace.z > -near) return { object: null, behind: true };
+  if (half && straddlesNearPlane(camera, worldPosition, worldQuaternion, half, near)) {
+    return { object: null, behind: true };
+  }
   position.set(worldPosition[0] * PX_PER_METER, worldPosition[1] * PX_PER_METER, worldPosition[2] * PX_PER_METER);
   quaternion.set(worldQuaternion[0], worldQuaternion[1], worldQuaternion[2], worldQuaternion[3]);
   scale.set(1, 1, 1);
