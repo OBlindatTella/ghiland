@@ -97,11 +97,25 @@ describe('test hooks', () => {
     expect(readWindowsFile().pinned).toEqual([]);
     expect([...memory.keys()].some((key) => key.startsWith('ghiland:windows:quarantine-'))).toBe(true);
 
+    class HookStorage {
+      getItem(key: string): string | null {
+        return memory.get(key) ?? null;
+      }
+      setItem(key: string, value: string): void {
+        memory.set(key, value);
+      }
+      removeItem(key: string): void {
+        memory.delete(key);
+      }
+    }
+    vi.stubGlobal('Storage', HookStorage);
+    vi.stubGlobal('localStorage', new HookStorage());
     let writes = 0;
-    const original = localStorage.setItem.bind(localStorage);
-    localStorage.setItem = (key: string, value: string) => {
+    const proto = HookStorage.prototype;
+    const original = proto.setItem;
+    proto.setItem = function (this: HookStorage, key: string, value: string) {
       writes += 1;
-      original(key, value);
+      original.call(this, key, value);
     };
     window.__ghiland?.armQuotaError();
     expect(() => localStorage.setItem('ghiland:settings', '{}')).toThrow(DOMException);
