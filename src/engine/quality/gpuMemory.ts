@@ -24,11 +24,40 @@ export function releaseComposerTargets(composer: ComposerBuffers): void {
   composer.outputBuffer.dispose();
 }
 
+export function shadowMapBytes(size: number): number {
+  if (size <= 0) return 0;
+  return size * size * 4;
+}
+
+function looksLikeTarget(value: object): value is { width: number; height: number; samples?: number; depthBuffer?: boolean; depthTexture?: unknown; texture?: unknown } {
+  const record = value as { width?: unknown; height?: unknown; texture?: unknown; depthTexture?: unknown; depthBuffer?: unknown; samples?: unknown };
+  return typeof record.width === 'number' && typeof record.height === 'number' && (record.texture != null || record.depthTexture != null || record.depthBuffer != null || record.samples != null);
+}
+
+function walkTargets(value: unknown, seen: Set<unknown>, depth: number): number {
+  if (!value || typeof value !== 'object' || seen.has(value) || depth > 4) return 0;
+  seen.add(value);
+  let total = 0;
+  if (looksLikeTarget(value)) {
+    total += renderTargetBytes(value.width, value.height, value.samples ?? 1, value.depthBuffer !== false || value.depthTexture != null);
+  }
+  for (const child of Object.values(value as Record<string, unknown>)) {
+    if (Array.isArray(child)) {
+      for (const item of child) total += walkTargets(item, seen, depth + 1);
+    } else {
+      total += walkTargets(child, seen, depth + 1);
+    }
+  }
+  return total;
+}
+
 export function composerGpuBytes(composer: {
   inputBuffer: { width: number; height: number; samples?: number; depthBuffer?: boolean };
   outputBuffer: { width: number; height: number; samples?: number; depthBuffer?: boolean };
   depthRenderTarget?: { width: number; height: number; samples?: number } | null;
+  passes?: readonly object[];
 }): number {
+  const seen = new Set<unknown>();
   const input = renderTargetBytes(
     composer.inputBuffer.width,
     composer.inputBuffer.height,
@@ -41,6 +70,8 @@ export function composerGpuBytes(composer: {
     composer.outputBuffer.samples ?? 0,
     false,
   );
+  seen.add(composer.inputBuffer);
+  seen.add(composer.outputBuffer);
   const depth = composer.depthRenderTarget
     ? renderTargetBytes(
         composer.depthRenderTarget.width,
@@ -49,7 +80,10 @@ export function composerGpuBytes(composer: {
         true,
       )
     : 0;
-  return input + output + depth;
+  if (composer.depthRenderTarget) seen.add(composer.depthRenderTarget);
+  let passes = 0;
+  for (const pass of composer.passes ?? []) passes += walkTargets(pass, seen, 0);
+  return input + output + depth + passes;
 }
 
 const tracked = new Map<number, number>();

@@ -5,7 +5,7 @@ import { useFrame, useThree } from '@react-three/fiber';
 import { BasicShadowMap, PCFSoftShadowMap } from 'three';
 import { Bloom, EffectComposer, EffectComposerContext, SMAA, ToneMapping } from '@react-three/postprocessing';
 import { COMPOSER_TONE_MODE, readComposerTone } from '@/engine/quality/toneState';
-import { composerGpuBytes, releaseComposerTargets, trackGpuBytes, trackedGpuBytes } from '@/engine/quality/gpuMemory';
+import { composerGpuBytes, releaseComposerTargets, shadowMapBytes, trackGpuBytes, trackedGpuBytes } from '@/engine/quality/gpuMemory';
 import { bus } from '@/engine/events/bus';
 import { heuristicTier, initialAutoClock, stepAutoQuality, ceilingStillValid, type AutoClock } from '@/engine/quality/autoQuality';
 import { qualityProfiles } from '@/engine/quality/profiles';
@@ -103,6 +103,8 @@ export function QualityDirector() {
       unsubSession();
     };
   }, []);
+
+  useEffect(() => trackGpuBytes(shadowMapBytes(profile.shadowMapSize)), [profile.shadowMapSize]);
 
   useEffect(() => {
     gl.shadowMap.enabled = profile.shadows !== 'off';
