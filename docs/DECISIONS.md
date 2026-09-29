@@ -127,3 +127,26 @@ After the first 60 s, AUTO makes at most 2 tier changes per rolling 5 minutes, u
 - Anchor occupancy is derived from open windows.
 - The D-021 preview and the pin use the same placement result.
 - migrateWindows goes through the guarded persist writer and never silently drops pinned windows.
+
+## D-033 Severity and merge gates for the PR #4 review (REVIEW_PR4_STEP_7.md)
+- S4-01 (leftover collision rails at coplanar seams and near corners) and S4-02 (taking "Use here" back overwrites the other tab) are BLOCKERs and gate the step-8 merge. S3-01 and S3-04 stay open until both pass at runtime.
+- S4-04 (world windows mirrored, clickable and pickable from behind) is MAJOR and gates the step-8 merge. From behind, a window shows an opaque back plate: the frame colour plus a small centred app glyph and title, never mirrored DOM. `backface-visibility: hidden` goes on the DOM. The back takes no pointer or keyboard input. Crosshair pick-up (E) and clicks work only from the front hemisphere (dot(view, normal) < 0).
+- S4-03 plus S4-22: only the inserted text is trimmed, computed from selectionStart/End, and never splits a surrogate pair. The caret is restored and the message stays accurate.
+- All other S4 MINOR and POLISH items are fixed in the step-8 follow-up, except the deferrals listed in D-035.
+
+## D-034 AUTO limiter clarifications (S4-07, open question 10)
+- An emergency demotion needs fps below 50% of target, sustained for 3 s on its own timer (independent of the 45 fps "low" counter).
+- Emergency demotions do NOT count toward the 2-per-5-minute budget, but they do set the session ceiling.
+- A manual tier change, or selecting AUTO again, clears both the session ceiling and the persisted ceiling (D-022 and D-031 already list a manual change as a reset).
+- Tests use boundary values (40 fps followed by 29 fps for 2.5 s gives no demotion; 29 fps for 3.1 s gives one).
+
+## D-035 Placement bounds and window-state gaps (S4-08, S4-09, S4-16, S4-12)
+- S4-09: float and auto-pin positions are clamped to the walkable volume. The window centre stays inside the current zone bounds and at least 0.15 m on the house side of the balustrade plane. If clamping leaves the centre under 0.7 m from the eye, the result is invalid (D-021). Nothing is ever placed over the sea.
+- S4-08: the placement result keeps the whole window rectangle out of floors, ceilings and walls. It is pushed along the surface normal or up so the bottom edge is at least 2 cm above the floor and the top at least 2 cm below the ceiling. If it cannot fit, the result is invalid. Wall pins sit 1 cm off the surface (S4-21).
+- S4-16:
+  - A minimized pinned window shows an ~8 cm pin tag at its pin location (a small disc with the app glyph, billboarded, and not a movement collider). Clicking the tag, or opening the app from the shelf, restores the window at its pin. The anchor stays taken while minimized, which is correct because the tag is visible.
+  - The far card beyond 6 m (WIN-09) is deferred to Alpha 0.2. Windows render normally at every distance in the Seaside House.
+  - Tray Recall/Show is deferred to 0.2. Shelf re-open plus SCR-07 recall covers it in 0.1.
+- S4-12: the windows file merges per-world, per-app state (it never rebuilds only from live windows), backs up a malformed pinned record to a quarantine key rather than dropping it, and removes a corrupt blob only after its backup write returns true.
+- S4-17: the synchronous localStorage mirror holds only notes that are dirty since the last IDB commit, and is cleared after the commit. It is written at most once per keystroke, and always synchronously on pagehide or when the page becomes hidden. If a mirror write fails, the old mirror is removed rather than left stale. The mirror must never make the settings or windows writes fail. Key-to-glyph time stays at or under 50 ms with a 2M-character note.
+- S4-14: add a BroadcastChannel leader-election fallback for when `navigator.locks` is missing. With neither available, the tab stays writer but shows a calm notice.
