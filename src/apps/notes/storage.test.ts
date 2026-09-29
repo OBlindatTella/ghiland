@@ -13,6 +13,7 @@ import {
   parseStoredNote,
   quarantineKey,
   electNotesLeader,
+  preferNewerNotes,
   startNotesSession,
   unpackNotes,
 } from './storage';
@@ -187,6 +188,56 @@ describe('notes storage', () => {
     expect(storage.notesLeaderNotice()).toBe(false);
     expect(await storage.startNotesSession()).toBe('writer');
     if (previous) Object.defineProperty(nav, 'locks', previous);
+  });
+
+  it('keeps the newer copy of each note when the mirror is only the dirty ones', () => {
+    const merged = preferNewerNotes(
+      [
+        { id: 'a', title: 'A', body: 'old', updatedAt: 1 },
+        { id: 'b', title: 'B', body: 'stay', updatedAt: 1 },
+      ],
+      [{ id: 'a', title: 'A', body: 'new', updatedAt: 2 }],
+    );
+    expect(merged.map((note) => note.body)).toEqual(['new', 'stay']);
+  });
+
+  it('mirrors only dirty notes, clears them after a commit, and removes the mirror when the write fails', async () => {
+    vi.resetModules();
+    const buckets = new Map<string, Map<string, unknown>>();
+    const store = new Map<string, string>();
+    let fail = false;
+    vi.stubGlobal('localStorage', {
+      getItem: (key: string) => store.get(key) ?? null,
+      setItem: (key: string, value: string) => {
+        if (fail) throw new Error('quota');
+        store.set(key, value);
+      },
+      removeItem: (key: string) => {
+        store.delete(key);
+      },
+    });
+    installMemoryIdb(buckets);
+    installLocks();
+    const storage = await import('./storage');
+    expect(await storage.startNotesSession()).toBe('writer');
+    const saved = { id: 'a', title: 'A', body: 'one', updatedAt: 1 };
+    expect(await storage.saveNotes([saved])).toBe('ok');
+    storage.rememberNotes([{ id: 'a', title: 'A', body: 'one+b', updatedAt: 2 }]);
+    storage.flushNotesMirror();
+    const mirrored = JSON.parse(store.get(storage.NOTES_FLUSH_KEY) ?? '{}') as { notes: { body: string }[] };
+    expect(mirrored.notes.map((note) => note.body)).toEqual(['one+b']);
+    expect(await storage.saveNotes([{ id: 'a', title: 'A', body: 'one+b', updatedAt: 2 }])).toBe('ok');
+    expect(store.has(storage.NOTES_FLUSH_KEY)).toBe(false);
+    store.set(storage.NOTES_FLUSH_KEY, 'stale');
+    fail = true;
+    storage.rememberNotes([{ id: 'a', title: 'A', body: 'x'.repeat(20), updatedAt: 3 }]);
+    storage.flushNotesMirror();
+    expect(store.has(storage.NOTES_FLUSH_KEY)).toBe(false);
+    fail = false;
+    storage.rememberNotes([{ id: 'a', title: 'A', body: 'y'.repeat(250_000), updatedAt: 4 }]);
+    storage.flushNotesMirror();
+    expect(store.has(storage.NOTES_FLUSH_KEY)).toBe(false);
+    vi.unstubAllGlobals();
   });
 
   it('renders a little markdown without letting HTML through', () => {

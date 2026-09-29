@@ -202,6 +202,9 @@ export function subscribeNotesRole(listener: RoleListener): () => void {
 function dropWriterMemory(): void {
   memoryCache = null;
   knownIds = [];
+  dirtyNotes.clear();
+  if (mirrorFrame && typeof cancelAnimationFrame === 'function') cancelAnimationFrame(mirrorFrame);
+  mirrorFrame = 0;
 }
 
 function setRole(next: Role): void {
@@ -322,17 +325,91 @@ export async function claimNotesHere(): Promise<Role> {
   return claimLock(true);
 }
 
+/** Above this, the mirror is removed so settings and windows can still be saved. */
+const MIRROR_MAX_CHARS = 200_000;
+const committedNotes = new Map<string, number>();
+const dirtyNotes = new Map<string, Note>();
+let mirrorFrame = 0;
+let mirrorBound = false;
+
+function cloneNote(note: Note): Note {
+  return { id: note.id, title: note.title, body: note.body, updatedAt: note.updatedAt };
+}
+
+function bindMirrorFlush(): void {
+  if (mirrorBound || typeof window === 'undefined') return;
+  mirrorBound = true;
+  const flush = () => flushNotesMirror();
+  window.addEventListener('pagehide', flush);
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') flush();
+  });
+}
+
 export function rememberNotes(notes: readonly Note[]): void {
-  memoryCache = notes.map((note) => ({ ...note }));
-  writeMirror(memoryCache);
+  memoryCache = notes.map(cloneNote);
+  if (notesRole() !== 'writer') return;
+  const live = new Set(memoryCache.map((note) => note.id));
+  for (const id of dirtyNotes.keys()) {
+    if (!live.has(id)) dirtyNotes.delete(id);
+  }
+  for (const note of memoryCache) {
+    if (committedNotes.get(note.id) === note.updatedAt) dirtyNotes.delete(note.id);
+    else dirtyNotes.set(note.id, note);
+  }
+  scheduleMirror();
+}
+
+function scheduleMirror(): void {
+  bindMirrorFlush();
+  if (typeof requestAnimationFrame !== 'function') return;
+  if (mirrorFrame) return;
+  mirrorFrame = requestAnimationFrame(() => {
+    mirrorFrame = 0;
+    writeMirror([...dirtyNotes.values()]);
+  });
+}
+
+/** Synchronous mirror write for pagehide and for when the page is hidden. */
+export function flushNotesMirror(): void {
+  if (mirrorFrame && typeof cancelAnimationFrame === 'function') cancelAnimationFrame(mirrorFrame);
+  mirrorFrame = 0;
+  writeMirror([...dirtyNotes.values()]);
+}
+
+function clearMirrorStore(): void {
+  try {
+    localStorage.removeItem(NOTES_FLUSH_KEY);
+  } catch {
+    /* The key is already unreachable. */
+  }
 }
 
 function writeMirror(notes: readonly Note[]): void {
   try {
-    localStorage.setItem(NOTES_FLUSH_KEY, JSON.stringify({ version: NOTES_RECORD_VERSION, notes }));
+    if (notes.length === 0) {
+      clearMirrorStore();
+      return;
+    }
+    const payload = JSON.stringify({ version: NOTES_RECORD_VERSION, notes });
+    if (payload.length > MIRROR_MAX_CHARS) {
+      clearMirrorStore();
+      return;
+    }
+    localStorage.setItem(NOTES_FLUSH_KEY, payload);
   } catch {
-    /* Quota or blocked storage. A committed IndexedDB transaction still has the notes. */
+    clearMirrorStore();
   }
+}
+
+function markCommitted(notes: readonly Note[]): void {
+  for (const note of notes) {
+    committedNotes.set(note.id, note.updatedAt);
+    const pending = dirtyNotes.get(note.id);
+    if (pending && pending.updatedAt === note.updatedAt) dirtyNotes.delete(note.id);
+  }
+  if (dirtyNotes.size === 0) clearMirrorStore();
+  else writeMirror([...dirtyNotes.values()]);
 }
 
 function readMirror(): Note[] | null {
@@ -359,12 +436,18 @@ function readMirror(): Note[] | null {
   }
 }
 
-function fresher(stored: readonly Note[], mirror: readonly Note[] | null): Note[] {
-  if (!mirror) return stored.map((note) => ({ ...note }));
-  const storedStamp = stored.reduce((max, note) => Math.max(max, note.updatedAt), 0);
-  const mirrorStamp = mirror.reduce((max, note) => Math.max(max, note.updatedAt), 0);
-  const chosen = mirrorStamp >= storedStamp ? mirror : stored;
-  return chosen.map((note) => ({ ...note }));
+export function preferNewerNotes(stored: readonly Note[], mirror: readonly Note[] | null): Note[] {
+  const merged = new Map<string, Note>();
+  for (const note of stored) merged.set(note.id, cloneNote(note));
+  for (const note of mirror ?? []) {
+    const current = merged.get(note.id);
+    if (!current || note.updatedAt >= current.updatedAt) merged.set(note.id, cloneNote(note));
+  }
+  const order = stored.map((note) => note.id);
+  for (const note of mirror ?? []) {
+    if (!order.includes(note.id)) order.push(note.id);
+  }
+  return order.map((id) => merged.get(id)!);
 }
 
 /** Open once and leave the connection up so a pagehide flush can start a transaction immediately. */
@@ -413,9 +496,11 @@ function flushOpenConnection(notes: readonly Note[]): Promise<SaveNotesResult> |
     };
     knownIds = nextIds;
     memoryCache = limited.map((note) => ({ ...note }));
-    writeMirror(memoryCache);
     return new Promise((resolve) => {
-      tx.oncomplete = () => resolve('ok');
+      tx.oncomplete = () => {
+        markCommitted(limited);
+        resolve('ok');
+      };
       tx.onerror = () => resolve(saveFailure(tx.error));
       tx.onabort = () => resolve(saveFailure(tx.error));
     });
@@ -670,7 +755,14 @@ export async function loadNotes(): Promise<LoadNotesResult> {
 
 function withFresherMirror(result: LoadNotesResult): LoadNotesResult {
   if (result.status !== 'ok') return result;
-  const notes = fresher(result.notes, readMirror());
+  const mirror = readMirror();
+  const notes = preferNewerNotes(result.notes, mirror);
+  committedNotes.clear();
+  for (const note of result.notes) committedNotes.set(note.id, note.updatedAt);
+  dirtyNotes.clear();
+  for (const note of notes) {
+    if (committedNotes.get(note.id) !== note.updatedAt) dirtyNotes.set(note.id, cloneNote(note));
+  }
   return { ...result, notes };
 }
 
@@ -690,6 +782,7 @@ export async function saveNotes(notes: readonly Note[]): Promise<SaveNotesResult
       await writeRecords(db, limited, previous);
     });
     knownIds = limited.map((note) => note.id);
+    markCommitted(limited);
     return 'ok';
   } catch (error) {
     return saveFailure(error);
@@ -697,6 +790,7 @@ export async function saveNotes(notes: readonly Note[]): Promise<SaveNotesResult
 }
 
 export function flushNotes(): Promise<SaveNotesResult> {
+  flushNotesMirror();
   if (!memoryCache || notesRole() !== 'writer') return Promise.resolve('ok');
   const kept = flushOpenConnection(memoryCache);
   if (kept) return kept;
