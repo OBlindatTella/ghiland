@@ -1,4 +1,5 @@
 import { CanvasTexture, RepeatWrapping, SRGBColorSpace, type Texture } from 'three';
+import { pmremTargetBytes } from '@/engine';
 
 export interface SeasideMaps {
   travertine: CanvasTexture;
@@ -192,11 +193,18 @@ export function dropSeasideTextures(): void {
   cache.clear();
 }
 
-/** GPU upload of the maps actually bound: seven tiled surfaces plus the leaf card, and a PMREM allowance. */
-export function estimateTextureBytes(size: number): number {
-  const leaf = 128 * 128 * 4;
-  const pmrem = 4 * 1024 * 1024;
-  return 7 * size * size * 4 + leaf + pmrem;
+const MIP_FACTOR = 4 / 3;
+
+export function cachedTextureSizes(): number[] {
+  return [...cache.keys()];
+}
+
+/** Seven tiled surfaces, the leaf card, mip chains, the real PMREM, and any set still cached. */
+export function estimateTextureBytes(size: number, extraSizes: readonly number[] = []): number {
+  let maps = 0;
+  for (const current of [size, ...extraSizes]) maps += 7 * current * current * 4 * MIP_FACTOR;
+  const leaf = 128 * 128 * 4 * MIP_FACTOR;
+  return maps + leaf + pmremTargetBytes();
 }
 
 export function cloneRepeat(source: Texture, x: number, y: number): Texture {

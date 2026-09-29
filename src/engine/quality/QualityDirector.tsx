@@ -5,7 +5,9 @@ import { useFrame, useThree } from '@react-three/fiber';
 import { BasicShadowMap, PCFSoftShadowMap } from 'three';
 import { Bloom, EffectComposer, EffectComposerContext, SMAA, ToneMapping } from '@react-three/postprocessing';
 import { COMPOSER_TONE_MODE, readComposerTone } from '@/engine/quality/toneState';
-import { composerGpuBytes, releaseComposerTargets, shadowMapBytes, trackGpuBytes, trackedGpuBytes, type ComposerBuffers } from '@/engine/quality/gpuMemory';
+import { composerGpuBytes, defaultFramebufferBytes, releaseComposerTargets, samplesWithinBudget, shadowMapBytes, trackGpuBytes, trackedGpuBytes, type ComposerBuffers } from '@/engine/quality/gpuMemory';
+import { estimateTextureBytes } from '@/worlds/seaside-house/art/textures';
+import { textureSizeForTier } from '@/worlds/seaside-house/art/scale';
 import { readFps } from '@/engine/quality/fakeFps';
 import { bus } from '@/engine/events/bus';
 import { heuristicTier, initialAutoClock, stepAutoQuality, ceilingStillValid, type AutoClock } from '@/engine/quality/autoQuality';
@@ -88,7 +90,8 @@ export function QualityDirector() {
       if (prev.lost && !state.lost) apply();
     });
     const unsubSettings = useSettings.subscribe((state, prev) => {
-      if (state.quality === prev.quality) return;
+      const selected = state.qualityEpoch !== prev.qualityEpoch;
+      if (state.quality === prev.quality && !selected) return;
       // A manual tier, or choosing AUTO again, clears the session ceiling (D-034).
       const tier = state.quality === 'AUTO' ? usePerfStore.getState().autoTier : state.quality;
       clock.current = initialAutoClock(tier, 'ULTRA');
@@ -113,6 +116,7 @@ export function QualityDirector() {
 
   useEffect(() => {
     gl.shadowMap.enabled = profile.shadows !== 'off';
+    // r186 resolves PCFSoftShadowMap to PCF. The enum is what the profile asks for.
     gl.shadowMap.type = profile.shadows === 'soft' ? PCFSoftShadowMap : BasicShadowMap;
     gl.shadowMap.needsUpdate = true;
   }, [profile, gl]);
@@ -176,9 +180,21 @@ function FrozenPost({ profile }: { profile: QualityProfile }) {
 
 /** SMAA on LOW/MED, bloom and MSAA on HIGH/ULTRA, AgX on every tier. */
 export function PostStack({ profile }: { profile: QualityProfile }) {
-  const smaa = profile.postprocessing.smaa;
+  const size = useThree((state) => state.size);
+  const dpr = useThree((state) => state.viewport.dpr);
+  const msaa =
+    profile.multisampling === 0
+      ? 0
+      : samplesWithinBudget(profile.tier === 'ULTRA' ? 'ULTRA' : 'HIGH', {
+          width: Math.max(1, Math.round(size.width * dpr)),
+          height: Math.max(1, Math.round(size.height * dpr)),
+          shadowMap: profile.shadowMapSize,
+          textureBytes: estimateTextureBytes(textureSizeForTier(profile.tier)),
+          bloom: profile.postprocessing.bloom,
+        });
+  const smaa = profile.postprocessing.smaa || msaa === 0;
   return (
-    <EffectComposer multisampling={smaa ? 0 : profile.multisampling} enableNormalPass={false} autoClear>
+    <EffectComposer multisampling={smaa ? 0 : msaa} enableNormalPass={false} autoClear>
       {smaa ? <SMAA /> : <Bloom intensity={0.12} luminanceThreshold={0.9} mipmapBlur />}
       <ToneMapping mode={COMPOSER_TONE_MODE} />
       <ComposerLifecycle />
@@ -230,7 +246,9 @@ function ComposerLifecycle() {
     const id = window.requestAnimationFrame(() => {
       if (useGlStore.getState().lost) return;
       composer.setSize(size.width, size.height);
-      release = trackGpuBytes(composerGpuBytes(composer));
+      const pixelsWide = Math.max(1, Math.round(size.width * dpr));
+      const pixelsHigh = Math.max(1, Math.round(size.height * dpr));
+      release = trackGpuBytes(composerGpuBytes(composer) + defaultFramebufferBytes(pixelsWide, pixelsHigh));
     });
     return () => {
       window.cancelAnimationFrame(id);

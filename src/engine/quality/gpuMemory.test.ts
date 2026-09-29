@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
-import { composerGpuBytes, releaseComposerTargets, trackedGpuBytes, trackGpuBytes } from '@/engine/quality/gpuMemory';
+import { composerGpuBytes, frameGpuBytes, releaseComposerTargets, samplesWithinBudget, trackedGpuBytes, trackGpuBytes } from '@/engine/quality/gpuMemory';
+import { estimateTextureBytes } from '@/worlds/seaside-house/art/textures';
 
 function target(width: number, height: number, samples: number) {
   return {
@@ -46,5 +47,16 @@ describe('composer GPU memory', () => {
     expect(trackedGpuBytes() - before).toBe(composerGpuBytes(current!));
     release();
     expect(trackedGpuBytes()).toBe(before);
+  });
+
+  it('keeps HIGH at DPR 1.5 under 384 MB by dropping to 2× MSAA', () => {
+    const width = Math.round(1920 * 1.5);
+    const height = Math.round(1080 * 1.5);
+    const textureBytes = estimateTextureBytes(1024);
+    const shared = { width, height, shadowMap: 2048, textureBytes, bloom: true };
+    const samples = samplesWithinBudget('HIGH', shared);
+    expect(samples).toBe(2);
+    expect(frameGpuBytes({ ...shared, samples })).toBeLessThanOrEqual(384 * 1024 * 1024);
+    expect(frameGpuBytes({ ...shared, samples: 4 })).toBeGreaterThan(384 * 1024 * 1024);
   });
 });

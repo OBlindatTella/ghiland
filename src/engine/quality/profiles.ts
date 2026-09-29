@@ -41,7 +41,7 @@ export const qualityProfiles: Record<QualityTier, QualityProfile> = {
   },
   HIGH: {
     tier: 'HIGH',
-    dpr: [1, 2],
+    dpr: [1, 1.5],
     shadows: 'soft',
     shadowMapSize: 2048,
     postprocessing: { enabled: true, bloom: true, smaa: false },
