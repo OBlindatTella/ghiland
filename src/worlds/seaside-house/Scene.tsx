@@ -348,8 +348,8 @@ export function SeasideHouseScene({ onReady, quality }: WorldSceneProps) {
       <pointLight position={[2.55, 1.45, -1.55]} intensity={3.5} distance={3.2} decay={2} color="#FFD2A8" />
       <SkyDome clouds={clouds} />
       <Ocean waves={waveCount(quality.tier)} segments={oceanSegments(quality.tier)} />
-      <mesh position={[0, -3.1, 14.2]} rotation={[-1.15, 0, 0]} material={materials.byKind.rock} receiveShadow={shadows}>
-        <planeGeometry args={[28, 12, 1, 6]} />
+      <mesh position={[0, -3.6, 11.4]} rotation={[-0.82, 0, 0]} material={materials.byKind.rock} receiveShadow={shadows}>
+        <planeGeometry args={[18, 4.5, 1, 3]} />
       </mesh>
       <mesh position={[52, 1.2, 78]} scale={[26, 8.5, 16]} material={headland} castShadow={shadows}>
         <sphereGeometry args={[1, 20, 12]} />

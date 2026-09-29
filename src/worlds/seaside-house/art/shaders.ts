@@ -22,14 +22,14 @@ vec3 seasideSky(vec3 dir, vec3 sun, float clouds, float time) {
   vec3 zenith = vec3(0.157, 0.275, 0.428);
   vec3 horizon = vec3(0.799, 0.571, 0.372);
   vec3 below = vec3(0.15, 0.12, 0.10);
-  vec3 col = mix(horizon, zenith, pow(elev, 0.58));
-  col = mix(col, horizon, smoothstep(0.42, 0.0, elev) * 0.85);
-  col = mix(col, mix(horizon, below, clamp(-n.y * 1.6, 0.0, 1.0)), step(n.y, 0.0));
+  vec3 col = mix(horizon, zenith, pow(elev, 0.4));
+  col = mix(col, horizon, smoothstep(0.18, 0.0, elev) * 0.4);
+  col = mix(col, mix(horizon, below, clamp(-n.y * 1.6, 0.0, 1.0)), step(0.0, -n.y));
   float sunDot = max(dot(n, normalize(sun)), 0.0);
   vec3 sunCol = vec3(1.0, 0.592, 0.281);
-  col += sunCol * pow(sunDot, 10.0) * 0.55;
-  col += sunCol * pow(sunDot, 160.0) * 1.6;
-  col += vec3(1.0, 0.86, 0.58) * smoothstep(0.99915, 0.99972, sunDot) * 7.0;
+  col += sunCol * pow(sunDot, 6.0) * 0.85;
+  col += sunCol * pow(sunDot, 96.0) * 2.2;
+  col += vec3(1.0, 0.9, 0.62) * smoothstep(0.9986, 0.99955, sunDot) * 8.0;
   vec2 uv = n.xz / max(n.y + 0.22, 0.12);
   float field = 0.0;
   field += step(0.5, clouds) * smoothstep(0.58, 0.8, skyNoise(uv * 0.12 + vec2(time * 0.004, 0.2)));
@@ -91,8 +91,8 @@ export function createOceanMaterial(waveCount: number): ShaderMaterial {
       uWave: { value: waves },
       uExtra: { value: extra },
       uFoam: { value: foam },
-      uDeep: { value: linear('#0C3A44') },
-      uShallow: { value: linear('#1E6A72') },
+      uDeep: { value: linear('#176878') },
+      uShallow: { value: linear('#3EAEA6') },
       uFog: { value: linear('#E7C7A4') },
     },
     vertexShader: /* glsl */ `
@@ -151,7 +151,7 @@ export function createOceanMaterial(waveCount: number): ShaderMaterial {
         float fres = pow(1.0 - max(dot(N, V), 0.0), 4.0);
         vec3 water = mix(uDeep, uShallow, clamp(0.35 + vHeight * 1.4, 0.0, 1.0));
         vec3 sky = seasideSky(R, uSun, 2.0, uTime);
-        vec3 col = mix(water, sky, clamp(fres, 0.0, 0.92));
+        vec3 col = mix(water, sky, clamp(fres * 0.65, 0.0, 0.72));
         vec3 H = normalize(normalize(uSun) + V);
         float spark = fract(sin(dot(floor(vWorld.xz * 3.5), vec2(127.1, 311.7))) * 43758.5);
         float glitter = pow(max(dot(N, H), 0.0), 220.0) * smoothstep(0.45, 0.92, spark);
