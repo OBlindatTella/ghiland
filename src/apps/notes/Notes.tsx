@@ -16,6 +16,7 @@ import {
   claimNotesHere,
   type Note,
 } from './storage';
+import { preferredNoteId, readNotesUi, writeNotesUi } from './uiMemory';
 
 function freshNote(): Note {
   return {
@@ -26,10 +27,11 @@ function freshNote(): Note {
   };
 }
 
-export default function Notes({ host }: AppProps) {
+export default function Notes({ windowId, host }: AppProps) {
+  const remembered = readNotesUi(windowId);
   const [notes, setNotes] = useState<Note[]>([]);
-  const [selected, setSelected] = useState<string | null>(null);
-  const [preview, setPreview] = useState(false);
+  const [selected, setSelected] = useState<string | null>(remembered?.selectedId ?? null);
+  const [preview, setPreview] = useState(remembered?.preview ?? false);
   const [status, setStatus] = useState('');
   const [role, setRole] = useState(notesRole);
   const [problem, setProblem] = useState<'blocked' | 'unavailable' | null>(null);
@@ -39,6 +41,21 @@ export default function Notes({ host }: AppProps) {
   const notesRef = useRef(notes);
   const bodyRef = useRef<HTMLTextAreaElement>(null);
   const caretRef = useRef<{ id: string; start: number; end: number } | null>(null);
+  const selectedRef = useRef(selected);
+  const previewRef = useRef(preview);
+  const restoreRef = useRef(remembered);
+
+  useEffect(() => {
+    selectedRef.current = selected;
+    previewRef.current = preview;
+    writeNotesUi(windowId, {
+      selectedId: selected,
+      preview,
+      scrollTop: bodyRef.current?.scrollTop ?? remembered?.scrollTop ?? 0,
+      selectionStart: bodyRef.current?.selectionStart ?? remembered?.selectionStart ?? 0,
+      selectionEnd: bodyRef.current?.selectionEnd ?? remembered?.selectionEnd ?? 0,
+    });
+  }, [windowId, selected, preview, remembered]);
 
   useEffect(() => subscribeNotesRole(setRole), []);
 
@@ -57,7 +74,7 @@ export default function Notes({ host }: AppProps) {
       }
       const next = loaded.notes.length > 0 ? loaded.notes : [freshNote()];
       setNotes(next);
-      setSelected(next[0]?.id ?? null);
+      setSelected(preferredNoteId(next.map((note) => note.id), readNotesUi(windowId)?.selectedId ?? null));
       if (loaded.indexRebuilt) setNotice('The notes list was repaired.');
       else if (loaded.quarantined > 0) setNotice('A saved note could not be read. It was set aside.');
       ready.current = claimed === 'writer';
@@ -101,11 +118,20 @@ export default function Notes({ host }: AppProps) {
   const current = notes.find((note) => note.id === selected) ?? notes[0];
 
   useLayoutEffect(() => {
-    const pending = caretRef.current;
     const field = bodyRef.current;
-    if (!pending || !field || pending.id !== current?.id) return;
-    field.setSelectionRange(pending.start, pending.end);
-    caretRef.current = null;
+    if (!field || !current) return;
+    const pending = caretRef.current;
+    if (pending && pending.id === current.id) {
+      field.setSelectionRange(pending.start, pending.end);
+      caretRef.current = null;
+      return;
+    }
+    const restore = restoreRef.current;
+    if (restore && restore.selectedId === current.id) {
+      field.scrollTop = restore.scrollTop;
+      field.setSelectionRange(restore.selectionStart, restore.selectionEnd);
+      restoreRef.current = null;
+    }
   }, [notes, current?.id]);
 
   useEffect(() => {
@@ -148,7 +174,7 @@ export default function Notes({ host }: AppProps) {
       }
       const next = loaded.notes.length > 0 ? loaded.notes : [freshNote()];
       setNotes(next);
-      setSelected(next[0]?.id ?? null);
+      setSelected(preferredNoteId(next.map((note) => note.id), readNotesUi(windowId)?.selectedId ?? null));
       ready.current = true;
       setProblem(null);
     })();
@@ -243,6 +269,24 @@ export default function Notes({ host }: AppProps) {
               className="min-h-0 flex-1 resize-none bg-transparent px-4 py-3 text-[15px] leading-6 outline-none"
               value={current.body}
               readOnly={role !== 'writer' || problem !== null}
+              onSelect={(event) => {
+                writeNotesUi(windowId, {
+                  selectedId: selectedRef.current,
+                  preview: previewRef.current,
+                  scrollTop: event.currentTarget.scrollTop,
+                  selectionStart: event.currentTarget.selectionStart,
+                  selectionEnd: event.currentTarget.selectionEnd,
+                });
+              }}
+              onScroll={(event) => {
+                writeNotesUi(windowId, {
+                  selectedId: selectedRef.current,
+                  preview: previewRef.current,
+                  scrollTop: event.currentTarget.scrollTop,
+                  selectionStart: event.currentTarget.selectionStart,
+                  selectionEnd: event.currentTarget.selectionEnd,
+                });
+              }}
               onChange={(event) => update({ body: event.target.value }, event.target.selectionStart ?? event.target.value.length)}
             />
           )}
