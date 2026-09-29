@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { flushNotes } from '@/apps/notes/storage';
 import { useGlStore } from '@/state/gl';
 
 function ReloadOffer({ lostAt }: { lostAt: number }) {
@@ -18,7 +19,9 @@ function ReloadOffer({ lostAt }: { lostAt: number }) {
     <button
       type="button"
       className="mt-4 rounded-[6px] border border-white/10 bg-[#1c1c1a] px-3 py-2 text-[13px] leading-5"
-      onClick={() => window.location.reload()}
+      onClick={() => {
+        void flushNotes().finally(() => window.location.reload());
+      }}
     >
       Reload
     </button>
