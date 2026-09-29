@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { curtainBillow, CURTAIN_BILLOW_MAX } from './curtainMath';
 import { estimateTextureBytes } from './textures';
+import { oceanGrid, oceanRadius, oceanUpNormalY } from './oceanMesh';
 import { rockLayout } from './rocks';
-import { cloudLayers, oceanSegments, textureSizeForTier, vertexWaveCount, waveCount } from './scale';
-import { WAVES } from './waves';
+import { cloudLayers, textureSizeForTier, waveCount } from './scale';
 import { shadowCoversHouse, shadowFrustum } from './shadowFit';
 import { CURTAIN_VERTEX_SNIPPET, createOceanMaterial } from './shaders';
 import { gerstnerDisplacement } from './waves';
@@ -14,23 +14,16 @@ describe('seaside art scale', () => {
     expect(waveCount('HIGH')).toBe(5);
     expect(waveCount('LOW')).toBeLessThan(waveCount('MED'));
     expect(waveCount('MED')).toBeLessThan(waveCount('HIGH'));
-    const low = oceanSegments('LOW');
-    const high = oceanSegments('HIGH');
-    expect(low[0] * low[1]).toBeLessThan(high[0] * high[1]);
+    const low = oceanGrid('LOW');
+    const high = oceanGrid('HIGH');
+    expect(low.rings * low.segments).toBeLessThan(high.rings * high.segments);
     expect(cloudLayers('LOW')).toBe(1);
-    expect(cloudLayers('HIGH')).toBe(3);
-    const plane: [number, number] = [380, 270];
-    for (const tier of ['LOW', 'MED', 'HIGH', 'ULTRA'] as const) {
-      const [sx, sz] = oceanSegments(tier);
-      const vertex = vertexWaveCount(tier, plane);
-      expect(vertex).toBeLessThan(waveCount(tier));
-      const lastVertex = WAVES[vertex - 1];
-      if (lastVertex) {
-        expect(lastVertex.length / (plane[0] / sx)).toBeGreaterThanOrEqual(4);
-        expect(lastVertex.length / (plane[1] / sz)).toBeGreaterThanOrEqual(4);
-      }
-    }
-    expect(createOceanMaterial(5, vertexWaveCount('HIGH')).fragmentShader).toContain('uVertexCount');
+    expect(cloudLayers('MED')).toBe(2);
+    expect(cloudLayers('HIGH')).toBe(2);
+    expect(oceanRadius(140)).toBeGreaterThan(3500);
+    expect(oceanRadius(140)).toBeLessThan(4200);
+    expect(oceanUpNormalY()).toBeGreaterThan(0);
+    expect(high.rings * high.segments * 2).toBeLessThan(80_000);
   });
 
   it('caps textures at 512 on LOW and 1k above', () => {
@@ -79,10 +72,11 @@ describe('seaside art scale', () => {
     ocean.dispose();
   });
 
-  it('keeps cove rocks past the balustrade', () => {
+  it('keeps cove rocks in the water under the terrace', () => {
+    expect(rockLayout()).toHaveLength(6);
     for (const rock of rockLayout()) {
-      expect(rock.position[2]).toBeGreaterThan(9.2);
-      expect(rock.position[1]).toBeLessThan(0);
+      expect(rock.position[1]).toBeLessThan(-5);
+      expect(Math.abs(rock.position[0])).toBeLessThan(30);
     }
   });
 });
