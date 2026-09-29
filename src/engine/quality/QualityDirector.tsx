@@ -209,7 +209,7 @@ export function readTrackedGpuBytes(): number {
 /** Context loss and restore both ask. The React unmount asks again; the release is idempotent. */
 export function releaseLiveComposer(): void {
   if (!liveComposer) return;
-  releaseComposerTargets(liveComposer as ComposerBuffers);
+  releaseComposerTargets(liveComposer as unknown as ComposerBuffers);
 }
 
 function ComposerLifecycle() {
