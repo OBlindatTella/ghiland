@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useContext, useRef, useState, type ReactElement } from 'react';
+import { memo, useEffect, useContext, useRef, useState } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
 import { BasicShadowMap, PCFSoftShadowMap } from 'three';
 import { Bloom, EffectComposer, EffectComposerContext, SMAA, ToneMapping } from '@react-three/postprocessing';
@@ -144,33 +144,28 @@ export function QualityDirector() {
   return <FrozenPost profile={profile} />;
 }
 
+const MemoPost = memo(PostStack);
+
 /**
- * While the context is lost, the same composer element is returned so EffectComposer
- * does not remove and re-add passes. After restore, a new element rebuilds the stack.
+ * While the context is lost, the post stack keeps the profile it had and does not
+ * re-render, so EffectComposer does not remove and re-add passes. After restore
+ * the key changes and the stack builds again.
  */
 function FrozenPost({ profile }: { profile: QualityProfile }) {
-  const cache = useRef<{ profile: QualityProfile; generation: number; element: ReactElement } | null>(null);
-  const generation = useRef(0);
-  const [, bump] = useState(0);
+  const [held, setHeld] = useState<QualityProfile | null>(null);
+  const [generation, setGeneration] = useState(0);
 
   useEffect(() => {
     return useGlStore.subscribe((state, prev) => {
-      if (!prev.lost || state.lost) return;
-      generation.current += 1;
-      cache.current = null;
-      bump((value) => value + 1);
+      if (!prev.lost && state.lost) setHeld(profile);
+      if (prev.lost && !state.lost) {
+        setHeld(null);
+        setGeneration((value) => value + 1);
+      }
     });
-  }, []);
+  }, [profile]);
 
-  if (useGlStore.getState().lost && cache.current) return cache.current.element;
-  if (!cache.current || cache.current.profile !== profile || cache.current.generation !== generation.current) {
-    cache.current = {
-      profile,
-      generation: generation.current,
-      element: <PostStack key={generation.current} profile={profile} />,
-    };
-  }
-  return cache.current.element;
+  return <MemoPost key={generation} profile={held ?? profile} />;
 }
 
 /** SMAA on LOW/MED, bloom and MSAA on HIGH/ULTRA, AgX on every tier. */
