@@ -91,6 +91,7 @@ function paintGhost(camera: Camera, carried: WindowInstance | null): void {
   ghost.dataset.placement = placement.placement;
   ghost.style.width = `${carried.lastScreenRect.w}px`;
   ghost.style.height = `${carried.lastScreenRect.h}px`;
+  ghost.style.transformOrigin = '0 0';
   if (projected.object) ghost.style.transform = projected.object;
   ghost.style.outlineColor = !placement.valid ? '#c45c4a' : placement.taken ? '#d7b15e' : '#86bdb2';
 }
@@ -185,6 +186,7 @@ export function WindowRig() {
       const projected = projectWindow(camera, worldPosition, worldQuaternion);
       element.style.width = `${item.lastScreenRect.w}px`;
       element.style.height = `${item.lastScreenRect.h}px`;
+      element.style.transformOrigin = '0 0';
       if (!projected.object) {
         element.style.visibility = 'hidden';
         continue;

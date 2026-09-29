@@ -38,8 +38,8 @@ export function WindowLayer() {
         <div
           ref={stageRef}
           data-testid="window-projector"
-          className="absolute inset-0"
-          style={{ transformStyle: 'preserve-3d', transformOrigin: '0 0', width: '100%', height: '100%' }}
+          className="absolute top-0 left-0"
+          style={{ transformStyle: 'preserve-3d', transformOrigin: '0 0', width: 0, height: 0 }}
         >
           <div
             ref={ghostRef}

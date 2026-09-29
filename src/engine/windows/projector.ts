@@ -62,15 +62,29 @@ export function objectCssMatrix(elements: ArrayLike<number>): string {
       epsilon(elements[15] ?? 0),
     ].join(',') +
     ')';
-  return `translate(-50%,-50%)${matrix3d}`;
+  // Percentage offset is applied in element pixels, then the world matrix scales it with the window.
+  return `${matrix3d} translate(-50%,-50%)`;
 }
 
 /** Full camera-element transform, including the viewport centre. Width and height are CSS pixels. */
+/**
+ * CSS3DRenderer treats matrix units as pixels. The world is in metres, so translations
+ * are scaled by 520 px/m. Rotations stay put. The half-viewport translate then shares that space.
+ */
+function pixelCameraElements(camera: Camera): number[] {
+  const elements = Array.from(camera.matrixWorldInverse.elements);
+  elements[12] = (elements[12] ?? 0) * PX_PER_METER;
+  elements[13] = (elements[13] ?? 0) * PX_PER_METER;
+  elements[14] = (elements[14] ?? 0) * PX_PER_METER;
+  return elements;
+}
+
 export function cameraStageTransform(camera: Camera, width: number, height: number): string {
   camera.updateMatrixWorld();
   const halfH = height / 2;
   const fov = (camera.projectionMatrix.elements[5] ?? 1) * halfH;
-  return `perspective(${fov}px) translateZ(${fov}px)${cameraCssMatrix(camera.matrixWorldInverse.elements)}translate(${width / 2}px,${height / 2}px)`;
+  // The half-viewport translate is applied last so it stays in screen pixels after perspective.
+  return `translate(${width / 2}px,${height / 2}px)perspective(${fov}px) translateZ(${fov}px)${cameraCssMatrix(pixelCameraElements(camera))}`;
 }
 
 export interface ProjectedWindow {
@@ -92,9 +106,9 @@ export function projectWindow(
   inverse.copy(camera.matrixWorldInverse);
   cameraSpace.set(worldPosition[0], worldPosition[1], worldPosition[2]).applyMatrix4(inverse);
   if (cameraSpace.z > -0.05) return { object: null, behind: true };
-  position.set(worldPosition[0], worldPosition[1], worldPosition[2]);
+  position.set(worldPosition[0] * PX_PER_METER, worldPosition[1] * PX_PER_METER, worldPosition[2] * PX_PER_METER);
   quaternion.set(worldQuaternion[0], worldQuaternion[1], worldQuaternion[2], worldQuaternion[3]);
-  scale.set(1 / PX_PER_METER, 1 / PX_PER_METER, 1 / PX_PER_METER);
+  scale.set(1, 1, 1);
   matrix.compose(position, quaternion, scale);
   return { object: objectCssMatrix(matrix.elements), behind: false };
 }
