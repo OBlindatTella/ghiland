@@ -22,7 +22,7 @@ import { onCrosshairHit, setWindowQuads, type WindowQuad } from '@/engine/window
 import { ghostElement, stageElement, windowElement } from '@/engine/windows/domRegistry';
 import { inputManager } from '@/engine/input/InputManager';
 import { installWindowBridge } from '@/engine/windows/bridge';
-import { physicalSize, rayAabb, resolvePlacement, type PlacementCollider } from '@/engine/windows/placement';
+import { physicalSize, rayAabb, resolvePlacement, type PlacementBounds, type PlacementCollider } from '@/engine/windows/placement';
 import { blocksOcclusion } from '@/engine/windows/raySets';
 import { cameraStageTransform, projectWindow } from '@/engine/windows/projector';
 import { frontFacesView, windowFrontNormal } from '@/shell/windows/frameBack';
@@ -80,12 +80,25 @@ function paintGhost(camera: Camera, carried: WindowInstance | null): void {
     if (item.id === carried.id || item.mode.kind !== 'worldPinned' || !item.mode.anchorId) continue;
     occupied.add(item.mode.anchorId);
   }
+  const rail = world?.collision.kind === 'boxes' ? world.collision.colliders.find((item) => item.id === 'rail-north') : undefined;
+  const walk = world?.collision.kind === 'boxes' ? world.collision.walkable : undefined;
+  const bounds: PlacementBounds | undefined = walk
+    ? {
+        min: [walk.min[0], walk.min[1], walk.min[2]],
+        max: [walk.max[0], walk.max[1], walk.max[2]],
+        floorY: world?.collision.kind === 'boxes' ? world.collision.floorY : 0,
+        ceilingY: pose.origin[2] > 4.5 ? null : pose.origin[2] < -3.5 ? 2.4 : 3.2,
+        railZ: rail ? rail.box.min[2] : null,
+      }
+    : undefined;
   const placement = resolvePlacement({
     ray: { origin: pose.origin, direction: pose.direction },
     colliders: colliders(),
     anchors: world?.pinAnchors ?? [],
     occupied,
     heightPx: carried.lastScreenRect.h,
+    widthPx: carried.lastScreenRect.w,
+    bounds,
   });
   const projected = projectWindow(camera, placement.position, placement.quaternion);
   ghost.hidden = projected.behind || !projected.object;

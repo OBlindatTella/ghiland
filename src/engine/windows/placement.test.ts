@@ -10,6 +10,8 @@ import {
   physicalSize,
   PX_PER_METER,
   resolvePlacement,
+  SURFACE_OFFSET,
+  type PlacementBounds,
   type PlacementCollider,
   type PlacementQuery,
 } from '@/engine/windows/placement';
@@ -152,6 +154,45 @@ describe('resolvePlacement', () => {
   });
 });
 
+const houseBounds: PlacementBounds = {
+  min: [-7, 0, -9],
+  max: [7, 0, 9],
+  floorY: 0,
+  ceilingY: null,
+  railZ: 9,
+};
+
+describe('placement bounds', () => {
+  it('keeps a float on the house side of the balustrade', () => {
+    const result = resolvePlacement({
+      ray: { origin: [0, 1.62, 8.7], direction: [0, Math.sin((5 * Math.PI) / 180), Math.cos((5 * Math.PI) / 180)] },
+      colliders,
+      anchors: [],
+      occupied: new Set(),
+      heightPx: 560,
+      bounds: houseBounds,
+    });
+    expect(result.position[2]).toBeLessThanOrEqual(9 - 0.15);
+    expect(result.valid).toBe(false);
+  });
+
+  it('sits a wall pin 1 cm off the surface and 2 cm clear of the floor', () => {
+    expect(SURFACE_OFFSET).toBeCloseTo(0.01, 5);
+    const result = resolvePlacement({
+      ray: { origin: [0, 0.2, 1], direction: [0, -1, 0] },
+      colliders,
+      anchors: [],
+      occupied: new Set(),
+      heightPx: 560,
+      bounds: { ...houseBounds, ceilingY: 3.2 },
+    });
+    if (result.placement !== 'anchor') {
+      const half = 560 / PX_PER_METER / 2;
+      expect(result.position[1] - half).toBeGreaterThanOrEqual(0.02 - 1e-4);
+    }
+  });
+});
+
 describe('auto-pin pose', () => {
   it('pulls a carried window back to the player side of the glass', () => {
     const eye: Vec3 = [3, 1.62, 4];
@@ -161,6 +202,13 @@ describe('auto-pin pose', () => {
     expect(result.placement).toBe('float');
     expect(result.position[2]).toBeLessThan(4.47);
     expect(4.47 - result.position[2]).toBeGreaterThanOrEqual(0.25);
+  });
+
+  it('does not auto-pin over the sea', () => {
+    const eye: Vec3 = [0, 1.62, 8.7];
+    const beyond: Vec3 = [0, 1.8, 10.4];
+    const result = autoPinPlacement(eye, beyond, [0, 0, 0, 1], colliders, houseBounds);
+    expect(result.position[2]).toBeLessThanOrEqual(9 - 0.15);
   });
 });
 

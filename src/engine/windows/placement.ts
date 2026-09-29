@@ -10,7 +10,17 @@ export const ANCHOR_RADIUS = 1.5;
 export const MIN_EYE_DISTANCE = 0.7;
 export const GLASS_CLEARANCE = 0.3;
 export const FLOAT_DISTANCE = 1.6;
-export const SURFACE_OFFSET = 0.005;
+export const SURFACE_OFFSET = 0.01;
+export const EDGE_CLEARANCE = 0.02;
+export const RAIL_CLEARANCE = 0.15;
+
+export interface PlacementBounds {
+  min: Vec3;
+  max: Vec3;
+  floorY: number;
+  ceilingY: number | null;
+  railZ: number | null;
+}
 export const TABLE_TILT = (10 * Math.PI) / 180;
 
 export interface PlacementCollider {
@@ -55,6 +65,8 @@ export interface PlacementQuery {
   occupied: ReadonlySet<string>;
   /** CSS pixel height, used so a table pose rests its bottom edge on the surface. */
   heightPx: number;
+  widthPx?: number;
+  bounds?: PlacementBounds;
 }
 
 function sub(a: Vec3, b: Vec3): Vec3 {
@@ -247,27 +259,33 @@ export function resolvePlacement(query: PlacementQuery): Placement {
         hit.point[1] + half * Math.cos(TABLE_TILT),
         hit.point[2] - Math.cos(yaw) * back,
       ];
-      return withEyeCheck(
+      return containPlacement(
+        withEyeCheck(
+          {
+            valid: true,
+            taken,
+            position,
+            quaternion: mulQuat(face, pitchQuat(-TABLE_TILT)),
+            placement: 'surface',
+          },
+          eye,
+        ),
+        query,
+      );
+    }
+    const position = add(hit.point, scale(hit.normal, SURFACE_OFFSET));
+    return containPlacement(
+      withEyeCheck(
         {
           valid: true,
           taken,
           position,
-          quaternion: mulQuat(face, pitchQuat(-TABLE_TILT)),
+          quaternion: quatFromNormal(hit.normal),
           placement: 'surface',
         },
         eye,
-      );
-    }
-    const position = add(hit.point, scale(hit.normal, SURFACE_OFFSET));
-    return withEyeCheck(
-      {
-        valid: true,
-        taken,
-        position,
-        quaternion: quatFromNormal(hit.normal),
-        placement: 'surface',
-      },
-      eye,
+      ),
+      query,
     );
   }
 
@@ -277,23 +295,59 @@ export function resolvePlacement(query: PlacementQuery): Placement {
     along = blocked ? Math.min(FLOAT_DISTANCE, hit.distance - GLASS_CLEARANCE) : Math.min(FLOAT_DISTANCE, Math.max(0.05, hit.distance - SURFACE_OFFSET));
   }
   const position = add(eye, scale(direction, along));
-  return withEyeCheck(
-    {
-      valid: true,
-      taken,
-      position,
-      quaternion: facingQuat(position, eye),
-      placement: 'float',
-    },
-    eye,
+  return containPlacement(
+    withEyeCheck(
+      {
+        valid: true,
+        taken,
+        position,
+        quaternion: facingQuat(position, eye),
+        placement: 'float',
+      },
+      eye,
+    ),
+    query,
   );
+}
+
+function containPlacement(placement: Placement, query: PlacementQuery): Placement {
+  const bounds = query.bounds;
+  if (!bounds || placement.placement === 'anchor') return placement;
+  const halfH = query.heightPx / PX_PER_METER / 2;
+  const halfW = (query.widthPx ?? 440) / PX_PER_METER / 2;
+  let x = placement.position[0];
+  let y = placement.position[1];
+  let z = placement.position[2];
+  const minX = bounds.min[0] + halfW + EDGE_CLEARANCE;
+  const maxX = bounds.max[0] - halfW - EDGE_CLEARANCE;
+  const minZ = bounds.min[2] + EDGE_CLEARANCE;
+  let maxZ = bounds.max[2] - EDGE_CLEARANCE;
+  if (bounds.railZ !== null) maxZ = Math.min(maxZ, bounds.railZ - RAIL_CLEARANCE);
+  if (minX > maxX || minZ > maxZ) return { ...placement, valid: false };
+  x = Math.min(maxX, Math.max(minX, x));
+  z = Math.min(maxZ, Math.max(minZ, z));
+  const minY = bounds.floorY + EDGE_CLEARANCE + halfH;
+  if (bounds.ceilingY === null) y = Math.max(minY, y);
+  else {
+    const maxY = bounds.ceilingY - EDGE_CLEARANCE - halfH;
+    if (minY > maxY) return { ...placement, position: [x, y, z], valid: false };
+    y = Math.min(maxY, Math.max(minY, y));
+  }
+  return withEyeCheck({ ...placement, position: [x, y, z] }, query.ray.origin);
 }
 
 /**
  * Lock-loss landing (D-017). Always valid: a carried window is never dropped.
  * If the pose is past a movement collider, pull it back to the player's side.
  */
-export function autoPinPlacement(eye: Vec3, pose: Vec3, quaternion: Quat, colliders: readonly PlacementCollider[]): Placement {
+export function autoPinPlacement(
+  eye: Vec3,
+  pose: Vec3,
+  quaternion: Quat,
+  colliders: readonly PlacementCollider[],
+  bounds?: PlacementBounds,
+  heightPx = 560,
+): Placement {
   const delta = sub(pose, eye);
   const span = length(delta);
   const direction = span > 1e-4 ? scale(delta, 1 / span) : ([0, 0, -1] as Vec3);
@@ -303,13 +357,23 @@ export function autoPinPlacement(eye: Vec3, pose: Vec3, quaternion: Quat, collid
     const along = Math.max(0.15, Math.min(span, hit.distance - GLASS_CLEARANCE));
     position = add(eye, scale(direction, along));
   }
-  return {
-    valid: true,
-    taken: false,
-    position,
-    quaternion,
-    placement: 'float',
-  };
+  return containPlacement(
+    {
+      valid: true,
+      taken: false,
+      position,
+      quaternion,
+      placement: 'float',
+    },
+    {
+      ray: { origin: eye, direction },
+      colliders,
+      anchors: [],
+      occupied: new Set(),
+      heightPx,
+      bounds,
+    },
+  );
 }
 
 export function physicalSize(widthPx: number, heightPx: number): { w: number; h: number } {
