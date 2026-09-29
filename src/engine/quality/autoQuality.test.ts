@@ -63,6 +63,20 @@ describe('quality tier hysteresis', () => {
     expect(clock.changed).toBe(false);
   });
 
+  it('allows at most two tier changes in five minutes after the first minute, unless fps stays under half the target', () => {
+    let clock = initialAutoClock('ULTRA');
+    clock = advance(clock, 55, 61);
+    clock = advance(clock, 20, 5);
+    expect(clock.tier).toBe('HIGH');
+    clock = advance(clock, 55, 30);
+    clock = advance(clock, 20, 5);
+    expect(clock.tier).toBe('MED');
+    const limited = advance(clock, 40, 6);
+    expect(limited.tier).toBe('MED');
+    const emergency = advance(limited, 10, 4);
+    expect(emergency.tier).toBe('LOW');
+  });
+
   it('remembers a tier only after it has held for 60 seconds', () => {
     let clock = initialAutoClock('HIGH');
     let remembered: string | null = null;
