@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { renderLightMarkdown } from './markdown';
 import {
   guardNotes,
@@ -65,9 +65,148 @@ describe('notes storage', () => {
     expect(requests).toBe(1);
   });
 
+  it('reloads the other tab’s notes when Use here is taken back', async () => {
+    vi.resetModules();
+    const buckets = new Map<string, Map<string, unknown>>();
+    installMemoryIdb(buckets);
+    installLocks();
+    const storage = await import('./storage');
+    const noteA = { id: 'a', title: 'A', body: 'a1', updatedAt: 1_000 };
+    expect(await storage.startNotesSession()).toBe('writer');
+    expect(await storage.saveNotes([noteA])).toBe('ok');
+
+    const store = buckets.get('ghiland');
+    expect(store).toBeTruthy();
+    store?.set(storage.recordKey('a'), {
+      version: 1,
+      updatedAt: 2_000,
+      id: 'a',
+      title: 'A',
+      body: 'a1+b',
+    });
+    store?.set(storage.recordKey('b1'), {
+      version: 1,
+      updatedAt: 2_000,
+      id: 'b1',
+      title: 'B1',
+      body: 'from B',
+    });
+    store?.set(storage.NOTES_INDEX_KEY, { version: 1, ids: ['a', 'b1'] });
+
+    expect(await storage.claimNotesHere()).toBe('writer');
+    const loaded = await storage.loadNotes();
+    expect(loaded.status).toBe('ok');
+    if (loaded.status !== 'ok') return;
+    expect(loaded.notes.map((note) => note.id).sort()).toEqual(['a', 'b1']);
+    expect(loaded.notes.find((note) => note.id === 'a')?.body).toBe('a1+b');
+    expect(loaded.notes.find((note) => note.id === 'b1')?.body).toBe('from B');
+  });
+
   it('renders a little markdown without letting HTML through', () => {
     expect(renderLightMarkdown('**q** and *space*\n<script>')).toBe(
       '<strong>q</strong> and <em>space</em><br>&lt;script&gt;',
     );
   });
 });
+
+function installLocks(): void {
+  const nav = globalThis.navigator ?? ({} as Navigator);
+  Object.defineProperty(globalThis, 'navigator', { value: nav, configurable: true });
+  Object.defineProperty(nav, 'locks', {
+    configurable: true,
+    value: {
+      request(_name: string, _options: LockOptions, callback: (lock: Lock | null) => unknown) {
+        return callback({ name: 'ghiland-notes-writer' } as Lock);
+      },
+    },
+  });
+}
+
+function installMemoryIdb(buckets: Map<string, Map<string, unknown>>): void {
+  const created = new Set<string>();
+  const indexedDB = {
+    open(name: string) {
+      const request: {
+        result?: unknown;
+        onsuccess: (() => void) | null;
+        onerror: (() => void) | null;
+        onupgradeneeded: ((event: unknown) => void) | null;
+      } = { onsuccess: null, onerror: null, onupgradeneeded: null };
+      const bucket = () => {
+        let store = buckets.get(name);
+        if (!store) {
+          store = new Map();
+          buckets.set(name, store);
+        }
+        return store;
+      };
+      const names = new Set<string>(created.has(name) ? ['kv'] : []);
+      const db = {
+        objectStoreNames: { contains: (key: string) => names.has(key) },
+        createObjectStore(key: string) {
+          names.add(key);
+          created.add(name);
+          bucket();
+        },
+        transaction() {
+          let pending = 0;
+          let settled = false;
+          const finish = () => {
+            if (pending === 0 && !settled) {
+              settled = true;
+              tx.oncomplete?.();
+            }
+          };
+          const enqueue = (work: () => void) => {
+            pending += 1;
+            queueMicrotask(() => {
+              work();
+              pending -= 1;
+              queueMicrotask(finish);
+            });
+          };
+          const api = {
+            get(key: string) {
+              const req: { result?: unknown; onsuccess: (() => void) | null; onerror: (() => void) | null } = {
+                onsuccess: null,
+                onerror: null,
+              };
+              enqueue(() => {
+                req.result = bucket().get(key);
+                req.onsuccess?.();
+              });
+              return req;
+            },
+            put(value: unknown, key: string) {
+              enqueue(() => {
+                bucket().set(key, value);
+              });
+            },
+            delete(key: string) {
+              enqueue(() => {
+                bucket().delete(key);
+              });
+            },
+          };
+          const tx = {
+            error: null as Error | null,
+            oncomplete: null as (() => void) | null,
+            onerror: null as (() => void) | null,
+            onabort: null as (() => void) | null,
+            objectStore: () => api,
+          };
+          return tx;
+        },
+        close() {},
+        onversionchange: null as (() => void) | null,
+      };
+      request.result = db;
+      queueMicrotask(() => {
+        if (!names.has('kv')) request.onupgradeneeded?.({});
+        request.onsuccess?.();
+      });
+      return request;
+    },
+  };
+  Object.defineProperty(globalThis, 'indexedDB', { value: indexedDB, configurable: true });
+}

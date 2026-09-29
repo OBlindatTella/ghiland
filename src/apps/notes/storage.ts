@@ -146,7 +146,13 @@ export function subscribeNotesRole(listener: RoleListener): () => void {
   };
 }
 
+function dropWriterMemory(): void {
+  memoryCache = null;
+  knownIds = [];
+}
+
 function setRole(next: Role): void {
+  if (next === 'reader' && role !== 'reader') dropWriterMemory();
   role = next;
   for (const listener of roleListeners) listener(next);
 }
@@ -206,6 +212,8 @@ export async function claimNotesHere(): Promise<Role> {
   await new Promise((resolve) => {
     setTimeout(resolve, 40);
   });
+  // The yield may have been our own tab. Either way the next load must not reuse this cache.
+  dropWriterMemory();
   return claimLock(true);
 }
 
@@ -283,16 +291,21 @@ function flushOpenConnection(notes: readonly Note[]): Promise<SaveNotesResult> |
   if (!keptDb) return null;
   const limited = notes.map(limitNote);
   const nextIds = limited.map((note) => note.id);
-  const stale = knownIds.filter((id) => !nextIds.includes(id) && !heldIds.has(id));
   try {
     const tx = keptDb.transaction('kv', 'readwrite');
     const store = tx.objectStore('kv');
-    for (const id of stale) store.delete(recordKey(id));
-    for (const note of limited) {
-      if (heldIds.has(note.id)) continue;
-      store.put(toStored(note), recordKey(note.id));
-    }
-    store.put({ version: NOTES_RECORD_VERSION, ids: nextIds }, NOTES_INDEX_KEY);
+    const indexRequest = store.get(NOTES_INDEX_KEY);
+    indexRequest.onsuccess = () => {
+      const index = parseIndexValue(indexRequest.result);
+      const previous = index.kind === 'ids' ? index.ids : [];
+      const stale = previous.filter((id) => !nextIds.includes(id) && !heldIds.has(id));
+      for (const id of stale) store.delete(recordKey(id));
+      for (const note of limited) {
+        if (heldIds.has(note.id)) continue;
+        store.put(toStored(note), recordKey(note.id));
+      }
+      store.put({ version: NOTES_RECORD_VERSION, ids: nextIds }, NOTES_INDEX_KEY);
+    };
     knownIds = nextIds;
     memoryCache = limited.map((note) => ({ ...note }));
     writeMirror(memoryCache);
