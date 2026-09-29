@@ -3,7 +3,7 @@
 import { memo, useEffect, useContext, useMemo, useRef, useState, type ReactElement } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
 import { BasicShadowMap, PCFSoftShadowMap } from 'three';
-import { Bloom, EffectComposer, EffectComposerContext, SMAA, ToneMapping } from '@react-three/postprocessing';
+import { Bloom, EffectComposer, EffectComposerContext, N8AO, SMAA, ToneMapping } from '@react-three/postprocessing';
 import { COMPOSER_TONE_MODE, readComposerTone } from '@/engine/quality/toneState';
 import { composerGpuBytes, defaultFramebufferBytes, releaseComposerTargets, resolvePresentation, shadowMapBytes, trackGpuBytes, trackedGpuBytes, type ComposerBuffers } from '@/engine/quality/gpuMemory';
 import { estimateTextureBytes } from '@/worlds/seaside-house/art/textures';
@@ -207,6 +207,20 @@ export function PostStack({ profile, samples = 0 }: { profile: QualityProfile; s
   const smaa = msaa === 0;
   const bloom = profile.postprocessing.bloom;
   const passes: ReactElement[] = [];
+  if (profile.tier === 'HIGH' || profile.tier === 'ULTRA') {
+    passes.push(
+      <N8AO
+        key="n8ao"
+        halfRes={profile.tier !== 'ULTRA'}
+        aoRadius={0.5}
+        distanceFalloff={0.5}
+        intensity={2.5}
+        color="#1E1712"
+        quality="performance"
+        screenSpaceRadius={false}
+      />,
+    );
+  }
   if (bloom) passes.push(<Bloom key="bloom" intensity={0.12} luminanceThreshold={0.9} mipmapBlur />);
   if (smaa) passes.push(<SMAA key="smaa" />);
   passes.push(<ToneMapping key="tone" mode={COMPOSER_TONE_MODE} />);

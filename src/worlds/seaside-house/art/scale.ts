@@ -12,10 +12,10 @@ export function cloudLayers(tier: QualityTier): number {
 }
 
 export function curtainSegments(tier: QualityTier): [number, number] {
-  if (tier === 'LOW') return [8, 12];
-  if (tier === 'MED') return [14, 18];
-  if (tier === 'HIGH') return [20, 28];
-  return [24, 32];
+  if (tier === 'LOW') return [12, 16];
+  if (tier === 'MED') return [24, 20];
+  if (tier === 'HIGH') return [36, 32];
+  return [48, 40];
 }
 
 /** User cap: 512 on LOW, 1k on HIGH. ULTRA stays at 1k so the GPU budget has room. */

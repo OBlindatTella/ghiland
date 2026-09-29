@@ -5,6 +5,9 @@ import { oceanGrid, oceanRadius, oceanUpNormalY } from './oceanMesh';
 import { rockLayout } from './rocks';
 import { cloudLayers, textureSizeForTier, waveCount } from './scale';
 import { shadowCoversHouse, shadowFrustum } from './shadowFit';
+import { createCurtainMaterial } from './curtains';
+import { createFresnelGlass } from './glass';
+import { ROOM_OCCLUSION_SNIPPET } from './occlusion';
 import { CURTAIN_VERTEX_SNIPPET, createOceanMaterial } from './shaders';
 import { gerstnerDisplacement } from './waves';
 
@@ -52,6 +55,22 @@ describe('seaside art scale', () => {
     expect(curtainBillow(1, 0, 0).z).toBe(0);
     expect(CURTAIN_VERTEX_SNIPPET).toContain('min(0.35');
     expect(CURTAIN_VERTEX_SNIPPET).toContain('objectNormal');
+    expect(CURTAIN_VERTEX_SNIPPET).toContain('0.035 * pleat');
+    expect(CURTAIN_VERTEX_SNIPPET).toContain('vCurtainWorldN');
+    const curtain = createCurtainMaterial();
+    const shader = { uniforms: {}, vertexShader: '#include <common>\n#include <begin_vertex>\n', fragmentShader: '#include <common>\n#include <opaque_fragment>\n' };
+    curtain.onBeforeCompile(shader as never, null as never);
+    expect(shader.fragmentShader).toContain('vCurtainWorld');
+    expect(shader.fragmentShader).toContain('ghTransmit');
+    expect(shader.fragmentShader).not.toContain('vec3(-0.367');
+    curtain.dispose();
+    const glass = createFresnelGlass(false);
+    const glassShader = { uniforms: {}, vertexShader: '', fragmentShader: '#include <opaque_fragment>\n' };
+    glass.onBeforeCompile(glassShader as never, null as never);
+    expect(glassShader.fragmentShader).toContain('mix(0.04, 0.35');
+    glass.dispose();
+    expect(ROOM_OCCLUSION_SNIPPET).toContain('mix(0.22, 0.45');
+    expect(ROOM_OCCLUSION_SNIPPET).toContain('mix(0.50, 1.00');
   });
 
   it('moves the sea with Gerstner waves and stays a calm amplitude', () => {

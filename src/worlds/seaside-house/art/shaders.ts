@@ -167,6 +167,9 @@ export function createOceanMaterial(waveCount: number): ShaderMaterial {
 
 export const CURTAIN_VERTEX_SNIPPET = /* glsl */ `
 float hem = 1.0 - uv.y;
+float pleat = sin(transformed.x / 0.11 * 6.2831853);
+transformed.z += 0.035 * pleat;
+float pleatSlope = 0.035 * 6.2831853 / 0.11 * cos(transformed.x / 0.11 * 6.2831853);
 float gust = 0.20 + 0.15 * sin(uTime * 0.65 + uv.x * 5.0);
 float rawBillow = hem * hem * gust;
 float billow = min(0.35, rawBillow);
@@ -177,7 +180,10 @@ float open = rawBillow < 0.35 ? 1.0 : 0.0;
 float dGustDu = 0.15 * cos(uTime * 0.65 + uv.x * 5.0) * 5.0;
 float dhDu = -hem * hem * dGustDu * open;
 float dhDv = 2.0 * hem * gust * open;
-objectNormal = normalize(vec3(-dhDu / uCurtainSize.x, -dhDv / uCurtainSize.y, 1.0));
+objectNormal = normalize(vec3(-dhDu / uCurtainSize.x - clamp(pleatSlope, -1.6, 1.6), -dhDv / uCurtainSize.y, 1.0));
 transformedNormal = normalMatrix * objectNormal;
 vNormal = normalize(transformedNormal);
+vCurtainUv = uv;
+vCurtainWorld = (modelMatrix * vec4(transformed, 1.0)).xyz;
+vCurtainWorldN = normalize(mat3(modelMatrix) * objectNormal);
 `;

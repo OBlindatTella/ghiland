@@ -48,14 +48,14 @@ const visual: ColliderLayer[] = [];
 export const SPAWN: { x: number; y: number; z: number } = { x: 0, y: 1.62, z: -8.2 };
 export const SEA_Y = -6;
 
-const corridorFloor = '#8C7356';
-const corridorWall = '#6E5E4C';
-const corridorCeiling = '#5A4C3E';
-const livingFloor = '#C4A574';
-const livingWall = '#E6D9C8';
-const livingCeiling = '#EFE6DA';
+const corridorFloor = '#F3E6D3';
+const corridorWall = '#E6DDCF';
+const corridorCeiling = '#C9A67E';
+const livingFloor = '#F3E6D3';
+const livingWall = '#EDE6DA';
+const livingCeiling = '#F2EEE8';
 const finColor = '#D4C6B4';
-const terraceFloor = '#A89070';
+const terraceFloor = '#C9BBA6';
 const glassColor = '#C5DDE0';
 const railColor = '#D7E6E8';
 const smokedOak = '#4A3B2E';
@@ -95,7 +95,7 @@ export const levelBoxes: readonly LevelBox[] = [
   box('rail-north', -7, 0, 9, 7, 1.05, 9.06, glass, railColor, 0.32),
   box('rail-west', -7, 0, 4.5, -6.94, 1.05, 9, glass, railColor, 0.32),
   box('rail-east', 7, 0, 4.5, 7.06, 1.05, 9, glass, railColor, 0.32),
-  box('rail-cap-north', -7, 1.02, 8.98, 7, 1.08, 9.08, visual, '#F2EFE8'),
+  box('rail-cap-north', -7, 1.05, 9.015, 7, 1.075, 9.045, visual, '#3B2F25'),
   // Placeholder curtains. Visual only: they never occlude and never block movement (D-027).
   box('curtain-left', 1.8, 0.05, 4.24, 2.6, 3.15, 4.36, visual, linen, 0.42),
   box('curtain-right', -2.6, 0.05, 4.24, -1.8, 3.15, 4.36, visual, linen, 0.42),
