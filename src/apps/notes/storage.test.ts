@@ -3,6 +3,7 @@ import { renderLightMarkdown } from './markdown';
 import {
   guardNotes,
   limitNoteText,
+  trimInsertion,
   NOTES_MAX_CHARS,
   NOTES_WARN_AT,
   noteNearingLimit,
@@ -26,6 +27,24 @@ describe('notes storage', () => {
     expect(limited.text.length).toBe(NOTES_MAX_CHARS);
     expect(noteNearingLimit('x'.repeat(NOTES_WARN_AT))).toBe(true);
     expect(noteNearingLimit('short')).toBe(false);
+  });
+
+  it('trims a mid-text insert and keeps the tail, including a surrogate pair', () => {
+    const tail = 'END';
+    const previous = `${'a'.repeat(NOTES_MAX_CHARS - tail.length)}${tail}`;
+    const next = `${previous.slice(0, 10)}Z${previous.slice(10)}`;
+    const trimmed = trimInsertion(previous, next, 11);
+    expect(trimmed.clipped).toBe(true);
+    expect(trimmed.text.endsWith('END')).toBe(true);
+    expect(trimmed.text.length).toBeLessThanOrEqual(NOTES_MAX_CHARS);
+    expect(trimmed.caret).toBe(10);
+    const pair = `\uD83D\uDE00`;
+    const stuffed = `${previous.slice(0, 10)}${pair}${previous.slice(10)}`;
+    const paired = trimInsertion(previous, stuffed, 12);
+    expect(paired.text.endsWith('END')).toBe(true);
+    expect(paired.text.includes('\uD83D') && !paired.text.includes(pair)).toBe(false);
+    const cut = limitNoteText(`${'b'.repeat(NOTES_MAX_CHARS - 1)}\uD83D\uDE00`);
+    expect(cut.text.charCodeAt(cut.text.length - 1)).toBeLessThan(0xd800);
   });
 
   it('migrates a legacy array and quarantines a corrupt record without treating it as empty notes', () => {

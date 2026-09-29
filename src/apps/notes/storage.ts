@@ -25,9 +25,48 @@ export interface StoredNote {
   body: string;
 }
 
+function withoutSplitPair(text: string): string {
+  if (text.length === 0) return text;
+  const last = text.charCodeAt(text.length - 1);
+  if (last >= 0xd800 && last <= 0xdbff) return text.slice(0, -1);
+  return text;
+}
+
 export function limitNoteText(text: string): { text: string; clipped: boolean } {
   if (text.length <= NOTES_MAX_CHARS) return { text, clipped: false };
-  return { text: text.slice(0, NOTES_MAX_CHARS), clipped: true };
+  const trimmed = withoutSplitPair(text.slice(0, NOTES_MAX_CHARS));
+  return { text: trimmed, clipped: true };
+}
+
+/**
+ * Keep the existing note and shorten only the characters that were just inserted.
+ * A mid-text edit at the limit leaves the tail, including a trailing "END", intact.
+ */
+export function trimInsertion(
+  previous: string,
+  next: string,
+  caret: number,
+  max = NOTES_MAX_CHARS,
+): { text: string; caret: number; clipped: boolean } {
+  if (next.length <= max) return { text: next, caret, clipped: false };
+  let prefix = 0;
+  const shared = Math.min(previous.length, next.length);
+  while (prefix < shared && previous.charCodeAt(prefix) === next.charCodeAt(prefix)) prefix += 1;
+  let suffix = 0;
+  while (
+    suffix < previous.length - prefix &&
+    suffix < next.length - prefix &&
+    previous.charCodeAt(previous.length - 1 - suffix) === next.charCodeAt(next.length - 1 - suffix)
+  ) {
+    suffix += 1;
+  }
+  const inserted = next.slice(prefix, next.length - suffix);
+  const keptBefore = previous.slice(0, prefix);
+  const keptAfter = suffix > 0 ? previous.slice(previous.length - suffix) : '';
+  const room = Math.max(0, max - keptBefore.length - keptAfter.length);
+  const trimmed = withoutSplitPair(inserted.slice(0, room));
+  const text = `${keptBefore}${trimmed}${keptAfter}`;
+  return { text, caret: keptBefore.length + trimmed.length, clipped: trimmed.length < inserted.length };
 }
 
 export function noteNearingLimit(text: string): boolean {

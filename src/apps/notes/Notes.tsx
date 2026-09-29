@@ -1,12 +1,12 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { AppProps } from '@/contracts/app';
 import { renderLightMarkdown } from './markdown';
 import {
   flushNotes,
-  limitNoteText,
   loadNotes,
+  trimInsertion,
   noteNearingLimit,
   notesRole,
   rememberNotes,
@@ -36,6 +36,8 @@ export default function Notes({ host }: AppProps) {
   const [sessionReady, setSessionReady] = useState(false);
   const ready = useRef(false);
   const notesRef = useRef(notes);
+  const bodyRef = useRef<HTMLTextAreaElement>(null);
+  const caretRef = useRef<{ id: string; start: number; end: number } | null>(null);
 
   useEffect(() => subscribeNotesRole(setRole), []);
 
@@ -95,23 +97,32 @@ export default function Notes({ host }: AppProps) {
 
   const current = notes.find((note) => note.id === selected) ?? notes[0];
 
+  useLayoutEffect(() => {
+    const pending = caretRef.current;
+    const field = bodyRef.current;
+    if (!pending || !field || pending.id !== current?.id) return;
+    field.setSelectionRange(pending.start, pending.end);
+    caretRef.current = null;
+  }, [notes, current?.id]);
+
   useEffect(() => {
     if (current) host.setTitle(current.title || 'Notes');
   }, [current, host]);
 
-  const update = (patch: Partial<Note>) => {
+  const update = (patch: Partial<Note>, caret?: number) => {
     if (!current || role !== 'writer' || problem) return;
     let clipped = false;
     const nextPatch = { ...patch };
     if (nextPatch.title !== undefined) {
-      const limited = limitNoteText(nextPatch.title);
+      const limited = trimInsertion(current.title, nextPatch.title, caret ?? nextPatch.title.length);
       nextPatch.title = limited.text;
       clipped = clipped || limited.clipped;
     }
     if (nextPatch.body !== undefined) {
-      const limited = limitNoteText(nextPatch.body);
+      const limited = trimInsertion(current.body, nextPatch.body, caret ?? nextPatch.body.length);
       nextPatch.body = limited.text;
       clipped = clipped || limited.clipped;
+      if (limited.clipped) caretRef.current = { id: current.id, start: limited.caret, end: limited.caret };
     }
     if (clipped) setStatus("The rest of that paste didn't fit.");
     const next = notesRef.current.map((note) =>
@@ -199,7 +210,7 @@ export default function Notes({ host }: AppProps) {
             className="h-10 border-b border-white/10 bg-transparent px-4 text-[15px] leading-6 outline-none"
             value={current.title}
             readOnly={role !== 'writer' || problem !== null}
-            onChange={(event) => update({ title: event.target.value })}
+            onChange={(event) => update({ title: event.target.value }, event.target.selectionStart ?? event.target.value.length)}
           />
           <div className="flex items-center justify-between px-4 pt-2 text-[12px] leading-4 text-[#f2f0eb]/64">
             <span className="flex min-w-0 flex-col">
@@ -217,13 +228,14 @@ export default function Notes({ host }: AppProps) {
             />
           ) : (
             <textarea
+              ref={bodyRef}
               data-testid="notes-body"
               aria-label="Note"
               autoFocus
               className="min-h-0 flex-1 resize-none bg-transparent px-4 py-3 text-[15px] leading-6 outline-none"
               value={current.body}
               readOnly={role !== 'writer' || problem !== null}
-              onChange={(event) => update({ body: event.target.value })}
+              onChange={(event) => update({ body: event.target.value }, event.target.selectionStart ?? event.target.value.length)}
             />
           )}
         </div>
