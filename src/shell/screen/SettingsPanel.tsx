@@ -183,11 +183,20 @@ export function SettingsPanel() {
         <ul data-testid="settings-credits" className="mt-2 space-y-2 text-[13px] leading-5 text-[#f2f0eb]/80">
           <li>Ocean. Joseph Sardin, small waves at Houlgate, facing the Channel. CC0.</li>
           <li>
-            Wind. Beeld en Geluid, “Waaien”.{' '}
+            Wind, by Beeld en Geluid.{' '}
+            <a
+              className="underline"
+              href="https://commons.wikimedia.org/wiki/File:Wind_-_SoundCloud_-_Beeld_en_Geluid.ogg"
+              target="_blank"
+              rel="noreferrer"
+            >
+              Wikimedia Commons
+            </a>
+            .{' '}
             <a className="underline" href="https://creativecommons.org/licenses/by-sa/3.0/" target="_blank" rel="noreferrer">
               CC BY-SA 3.0
             </a>
-            . Lightly limited.
+            . Modifications: trim, high-pass, compression, limiting, fades, Opus re-encode. The modified wind.ogg is licensed CC BY-SA 3.0.
           </li>
           <li>Gull. Sonothèque ADVL, European herring gull flight call. CC0.</li>
         </ul>
