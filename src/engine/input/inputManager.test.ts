@@ -122,6 +122,26 @@ describe('iframe focus', () => {
     expect(useInputStore.getState().shellState).toBe('RELEASED');
     manager.detach();
   });
+
+  it('does not keep the external-open hold when a popup never hides the page', async () => {
+    vi.useFakeTimers();
+    const dom = installDom();
+    const manager = new InputManager();
+    useInputStore.setState({ shellState: 'WORLD', owner: 'world', showClickToWalk: false });
+    manager.attach(dom.canvas);
+    manager.noteExternalOpen();
+    dom.setFocused(false);
+    dom.fireWindow('blur', {});
+    await vi.advanceTimersByTimeAsync(0);
+    expect(useInputStore.getState().shellState).toBe('RELEASED');
+    useInputStore.setState({ shellState: 'WORLD', owner: 'world', showClickToWalk: false });
+    await vi.advanceTimersByTimeAsync(600);
+    dom.documentStub.hidden = true;
+    dom.fireDoc('visibilitychange', {});
+    expect(useInputStore.getState().shellState).toBe('RELEASED');
+    manager.detach();
+    vi.useRealTimers();
+  });
 });
 
 describe('pointer lock without a promise', () => {
@@ -215,11 +235,11 @@ describe('IME composition', () => {
     expect(useInputStore.getState().shellState).toBe('SCREEN');
 
     dom.fireDoc('compositionend', {});
+    await Promise.resolve();
     dom.fireWindow('keydown', escape);
     expect(blur).not.toHaveBeenCalled();
     expect(useInputStore.getState().shellState).toBe('SCREEN');
 
-    await Promise.resolve();
     dom.fireWindow('keydown', escape);
     expect(blur).toHaveBeenCalledTimes(1);
     expect(useInputStore.getState().shellState).toBe('SCREEN');

@@ -39,6 +39,7 @@ export class InputManager {
   private composing = false;
   /** The Escape that ends a composition must not also blur or step the shell. */
   private compositionEscape = false;
+  private compositionTimer = 0;
 
   attach(canvas: HTMLElement): () => void {
     this.detach();
@@ -69,6 +70,7 @@ export class InputManager {
     document.removeEventListener('compositionend', this.onCompositionEnd);
     this.composing = false;
     this.compositionEscape = false;
+    window.clearTimeout(this.compositionTimer);
     this.canvas.removeEventListener('pointerdown', this.onPointerDown);
     this.canvas.removeEventListener('click', this.onClick);
     window.clearTimeout(this.blurTimer);
@@ -241,7 +243,10 @@ export class InputManager {
       Boolean(event.isComposing) ||
       event.keyCode === 229 ||
       (event.code === 'Escape' && this.compositionEscape);
-    if (event.code === 'Escape') this.compositionEscape = false;
+    if (this.compositionEscape) {
+      this.compositionEscape = false;
+      window.clearTimeout(this.compositionTimer);
+    }
     const decision = decideKey(
       event.code,
       editable,
@@ -296,19 +301,20 @@ export class InputManager {
   private onCompositionEnd = (): void => {
     this.composing = false;
     this.compositionEscape = true;
-    queueMicrotask(() => {
+    window.clearTimeout(this.compositionTimer);
+    // Survive until the keydown that follows compositionend. A microtask runs before that key on Safari.
+    this.compositionTimer = window.setTimeout(() => {
       this.compositionEscape = false;
-    });
+    }, 1000);
   };
 
   private onBlur = (): void => {
     window.clearTimeout(this.blurTimer);
     // Focus moving into an iframe blurs the parent window while document.hasFocus() stays true.
+    // A popup that never hides the page must not stick the external-open hold (S5-15).
     this.blurTimer = window.setTimeout(() => {
       if (!this.canvas) return;
-      const held = externalOpenKeepsScreen(Date.now(), this.externalOpenUntil, this.externalHold, true);
-      this.externalHold = held.holding;
-      if (held.stay) return;
+      if (this.externalHold) return;
       const active = document.activeElement as { tagName?: string } | null;
       if (document.hasFocus() && active?.tagName === 'IFRAME') return;
       this.keys.clear();
