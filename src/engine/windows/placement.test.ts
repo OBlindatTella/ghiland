@@ -140,10 +140,29 @@ describe('resolvePlacement', () => {
     expect(result.placement).toBe('surface');
     const half = 560 / PX_PER_METER / 2;
     const bottom = result.position[1] - half * Math.cos((10 * Math.PI) / 180);
-    expect(bottom).toBeCloseTo(0.76, 2);
+    expect(bottom).toBeCloseTo(0.78, 2);
     const up = rotate(result.quaternion, [0, 1, 0]);
     expect(up[1]).toBeGreaterThan(0.95);
     expect(up[2]).toBeGreaterThan(0);
+  });
+
+  it('rejects a table pin that overhangs by more than 10% of its width', () => {
+    const table: PlacementCollider = {
+      id: 'coffee-table',
+      box: { min: [0, 0.3, 0], max: [0.4, 0.38, 0.4] },
+      layers: ['movement', 'pinSurface'],
+    };
+    const result = resolvePlacement({
+      ray: { origin: [0.2, 1.4, -0.6], direction: [0, -0.8, 0.6] },
+      colliders: [table],
+      anchors: [],
+      occupied: new Set(),
+      heightPx: 560,
+      widthPx: 440,
+    });
+    expect(result.placement).toBe('surface');
+    expect(result.valid).toBe(false);
+    expect(result.reason).toBe('outOfBounds');
   });
 
   it('keeps Notes at about 0.85 by 1.08 m', () => {

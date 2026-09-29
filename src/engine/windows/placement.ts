@@ -55,7 +55,7 @@ export interface Placement {
   quaternion: Quat;
   placement: 'anchor' | 'surface' | 'float';
   anchorId?: string;
-  reason?: 'tooClose';
+  reason?: 'tooClose' | 'outOfBounds';
 }
 
 export interface PlacementQuery {
@@ -266,20 +266,21 @@ export function resolvePlacement(query: PlacementQuery): Placement {
       const back = half * Math.sin(TABLE_TILT);
       const position: Vec3 = [
         hit.point[0] - Math.sin(yaw) * back,
-        hit.point[1] + half * Math.cos(TABLE_TILT),
+        hit.point[1] + EDGE_CLEARANCE + half * Math.cos(TABLE_TILT),
         hit.point[2] - Math.cos(yaw) * back,
       ];
+      const posed = {
+        valid: true,
+        taken,
+        position,
+        quaternion: mulQuat(face, pitchQuat(-TABLE_TILT)),
+        placement: 'surface' as const,
+      };
+      if (tableOverhangs(posed.position, posed.quaternion, half, (query.widthPx ?? 440) / PX_PER_METER / 2, hit.collider.box)) {
+        return { ...posed, valid: false, reason: 'outOfBounds' };
+      }
       return containPlacement(
-        withEyeCheck(
-          {
-            valid: true,
-            taken,
-            position,
-            quaternion: mulQuat(face, pitchQuat(-TABLE_TILT)),
-            placement: 'surface',
-          },
-          eye,
-        ),
+        withEyeCheck(posed, eye),
         query,
       );
     }
@@ -345,6 +346,19 @@ function containPlacement(placement: Placement, query: PlacementQuery): Placemen
     y = Math.min(maxY, Math.max(minY, y));
   }
   return withEyeCheck({ ...placement, position: [x, y, z] }, query.ray.origin);
+}
+
+function tableOverhangs(position: Vec3, quaternion: Quat, halfH: number, halfW: number, box: AABB): boolean {
+  const right = rotateVec(quaternion, [1, 0, 0]);
+  const up = rotateVec(quaternion, [0, 1, 0]);
+  const bottom = sub(position, scale(up, halfH));
+  const limit = halfW * 2 * 0.1;
+  for (const end of [add(bottom, scale(right, halfW)), add(bottom, scale(right, -halfW))]) {
+    const dx = end[0] < box.min[0] ? box.min[0] - end[0] : end[0] > box.max[0] ? end[0] - box.max[0] : 0;
+    const dz = end[2] < box.min[2] ? box.min[2] - end[2] : end[2] > box.max[2] ? end[2] - box.max[2] : 0;
+    if (Math.hypot(dx, dz) > limit + 1e-4) return true;
+  }
+  return false;
 }
 
 /** Slide a surface pin inside the volume without leaving the wall it was placed on. */
