@@ -303,6 +303,10 @@ export function WindowRig() {
         const front = frontFacesView(windowFrontNormal(worldQuaternion), view);
         element.style.pointerEvents = front ? 'auto' : 'none';
         element.toggleAttribute('data-facing-back', !front);
+        element.inert = !front;
+        if (!front && element.contains(document.activeElement)) (document.activeElement as HTMLElement | null)?.blur();
+      } else if (element.inert) {
+        element.inert = false;
       }
       if (item.mode.kind !== 'worldPinned') {
         element.style.opacity = '1';

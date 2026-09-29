@@ -32,7 +32,11 @@ export function FocusGuard() {
       const root = document.querySelector('[data-ghiland-screen]');
       if (!root) return;
       const items = [...root.querySelectorAll<HTMLElement>(FOCUSABLE)].filter(
-        (item) => !item.hidden && item.tabIndex !== -1 && !item.hasAttribute('disabled'),
+        (item) =>
+          !item.hidden &&
+          item.tabIndex !== -1 &&
+          !item.hasAttribute('disabled') &&
+          !item.closest('[data-facing-back], [inert]'),
       );
       if (items.length === 0) return;
       const first = items[0];
@@ -54,6 +58,10 @@ export function FocusGuard() {
     const onFocus = (event: FocusEvent) => {
       syncOwner();
       const windowNode = (event.target as HTMLElement | null)?.closest?.('[data-ghiland-window]');
+      if (windowNode?.hasAttribute('data-facing-back') || windowNode?.hasAttribute('inert')) {
+        (event.target as HTMLElement | null)?.blur();
+        return;
+      }
       const id = windowNode?.getAttribute('data-ghiland-window');
       if (id) focusAppWindow(id);
     };
