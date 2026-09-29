@@ -52,6 +52,15 @@ export function openWindow(
   const existing = Object.values(book.windows).find((item) => item.appId === input.appId);
   if (existing) {
     if (existing.mode.kind === 'worldPinned') {
+      if (existing.state === 'minimized') {
+        recallArmed.delete(existing.id);
+        const restored: WindowInstance = { ...existing, state: 'normal' };
+        return {
+          book: raise({ windows: { ...book.windows, [existing.id]: restored }, focusedId: book.focusedId }, existing.id),
+          created: false,
+          effect: 'focus',
+        };
+      }
       if (recallReady(existing.id, input.now)) {
         recallArmed.delete(existing.id);
         const recalled: WindowInstance = {

@@ -5,7 +5,7 @@ Alpha 0.1 steps 0–8, plus the PR #2 review fixes through S2. Items below are e
 ## Not built yet
 
 - Sailboat, visual gulls, dust motes, grass cards, baked lightmaps, cloud shadows, and the slow sunset are not in this pass. The lighthouse is a small marker, not a sweeping beam. Micro props are a cup and a book. See the step 8 deferrals below.
-- Snap, magnet, and double-click maximize are not built. Minimizing a pinned window does not collapse it to an 8 cm pin tag, and the tray does not yet offer Recall / Show. There is no far card past 6 m and no reticle dot. The carry follow is the damped spring; it is not a separate 360 ms tween.
+- Snap, magnet, and double-click maximize are not built. A minimized pinned window collapses to an 8 cm pin tag; clicking the tag or the shelf restores it at the pin. The tray does not offer Recall / Show, and there is no far card past 6 m. Both are deferred to Alpha 0.2 (D-035). There is no reticle dot. The carry follow is the damped spring; it is not a separate 360 ms tween.
 - NY Balcony and Golden Hour Farm are preview cards. A click shows "Alpha 0.2" and does not load a world.
 - The Seaside card click unlocks the audio context, starts the beds, and starts loading. It does not lock the pointer. The first lock is "Click to walk".
 - Idle breathing, head bob, footsteps, and drag-to-look are not in this build. There is no jump and no sprint.

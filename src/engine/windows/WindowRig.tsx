@@ -250,6 +250,22 @@ export function WindowRig() {
         element.style.opacity = '0';
         continue;
       }
+      if (item.state === 'minimized' && item.mode.kind === 'worldPinned') {
+        const billboard = pose?.quaternion ?? item.mode.quaternion;
+        const tag = projectWindow(camera, item.mode.position, billboard, { w: 0.04, h: 0.04 });
+        element.style.width = '42px';
+        element.style.height = '42px';
+        element.style.transformOrigin = '0 0';
+        element.style.opacity = '1';
+        element.style.pointerEvents = 'auto';
+        if (!tag.object) {
+          element.style.visibility = 'hidden';
+          continue;
+        }
+        element.style.visibility = 'visible';
+        element.style.transform = tag.object;
+        continue;
+      }
       if (item.mode.kind === 'overlay' || item.state === 'minimized') {
         element.style.transform = '';
         element.style.visibility = '';

@@ -138,6 +138,30 @@ describe('window book', () => {
     expect(Object.keys(again.book.windows)).toEqual(['a']);
   });
 
+  it('restores a minimized pinned window at its pin instead of recalling it', () => {
+    const opened = openWindow(emptyWindowBook, {
+      id: 'a',
+      appId: 'notes',
+      title: 'Notes',
+      defaultSize: size,
+      viewport,
+      now: 1,
+    });
+    const pinned = setWindowMode(opened.book, 'a', {
+      kind: 'worldPinned',
+      worldId: 'seaside-house',
+      position: [1, 1.4, 2],
+      quaternion: [0, 0, 0, 1],
+      pxPerMeter: 520,
+      placement: 'float',
+    });
+    const hidden = setWindowState(pinned, 'a', 'minimized');
+    const again = openWindow(hidden, { id: 'x', appId: 'notes', title: 'Notes', defaultSize: size, viewport, now: 2 });
+    expect(again.effect).toBe('focus');
+    expect(again.book.windows.a?.state).toBe('normal');
+    expect(again.book.windows.a?.mode.kind).toBe('worldPinned');
+  });
+
   it('forgets a recall arm after 10 seconds and after the window is picked up', () => {
     const opened = openWindow(emptyWindowBook, {
       id: 'a',
