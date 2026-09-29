@@ -4,8 +4,10 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "prebuild": "node scripts/copy-decoders.mjs",
     "build": "next build",
-    "start": "next start",
+    "postbuild": "node scripts/pages-fallback.mjs",
+    "start": "serve out",
     "lint": "eslint",
     "test": "vitest run"
   },
@@ -27,6 +29,7 @@
     "@types/three": "0.186.0",
     "eslint": "^9",
     "eslint-config-next": "16.3.6",
+    "serve": "^14.2.6",
     "tailwindcss": "^4",
     "typescript": "^5",
     "vitest": "^4.1.0"
