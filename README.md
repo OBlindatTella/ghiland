@@ -4,6 +4,8 @@ A browser-based first-person world. Alpha 0.1 through the Seaside greybox, the w
 
 Play: https://oblindattella.github.io/ghiland/
 
+Poly Haven CC0 cliffs, rocks, and the sky HDRI are credited in `docs/ASSET_CREDITS.md`. House surfaces are painted in the app; ambientCG textures were not shipped. Ocean and wind are not the Freesound picks (those need an account and were not used). The files that shipped are credited in `docs/AUDIO_CREDITS.md`.
+
 ## How to play
 
 Play it in the browser: [https://oblindattella.github.io/ghiland/](https://oblindattella.github.io/ghiland/)
