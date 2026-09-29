@@ -28,8 +28,10 @@ function scheduleIdle(task: () => void): () => void {
 export function GhilandApp() {
   const pathname = usePathname();
   const phase = useSession((state) => state.phase);
-  const preselected = pathname === '/w/seaside-house';
-  const unknown = pathname.startsWith('/w/') && !preselected;
+  // The static export uses trailingSlash, so a Pages deep link ends with /.
+  const path = pathname.endsWith('/') && pathname !== '/' ? pathname.slice(0, -1) : pathname;
+  const preselected = path === '/w/seaside-house';
+  const unknown = path.startsWith('/w/') && !preselected;
   const inWorld = phase !== 'landing';
 
   useEffect(() => scheduleIdle(() => void loadExperience()), []);
