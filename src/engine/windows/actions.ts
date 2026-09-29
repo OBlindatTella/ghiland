@@ -54,7 +54,7 @@ function detached(): WindowInstance | null {
 
 export function persistWindows(): void {
   const previous = readWindowsFile();
-  writeWindowsFile(fileFromWindows(Object.values(useWindows.getState().windows), previous));
+  writeWindowsFile(fileFromWindows(Object.values(useWindows.getState().windows), previous, useSession.getState().worldId));
 }
 
 export function restorePinnedForWorld(worldId: string): void {

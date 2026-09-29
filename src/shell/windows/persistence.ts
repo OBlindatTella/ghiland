@@ -117,26 +117,82 @@ export function migrateWindowsFile(raw: unknown, fromVersion: number): WindowsFi
   return { pinned, rects };
 }
 
-export function fileFromWindows(windows: readonly WindowInstance[], previous: WindowsFile = emptyWindowsFile): WindowsFile {
-  const pinned: PinnedRecord[] = [];
+function pinOf(item: WindowInstance): PinnedRecord {
+  if (item.mode.kind !== 'worldPinned') throw new Error('pin');
+  return {
+    id: item.id,
+    appId: item.appId,
+    title: item.title,
+    worldId: item.mode.worldId,
+    w: item.lastScreenRect.w,
+    h: item.lastScreenRect.h,
+    position: item.mode.position,
+    quaternion: item.mode.quaternion,
+    placement: item.mode.placement,
+    anchorId: item.mode.anchorId,
+  };
+}
+
+/**
+ * Live windows replace pins for the active world. Pins for any other world stay.
+ * Rects are merged per app and are never rebuilt from an empty list.
+ */
+export function fileFromWindows(
+  windows: readonly WindowInstance[],
+  previous: WindowsFile = emptyWindowsFile,
+  activeWorldId?: string | null,
+): WindowsFile {
   const rects: Record<string, ScreenRect> = { ...previous.rects };
+  const live: PinnedRecord[] = [];
+  const touched = new Set<string>();
+  if (activeWorldId) touched.add(activeWorldId);
   for (const item of windows) {
     rects[item.appId] = item.lastScreenRect;
     if (item.mode.kind !== 'worldPinned') continue;
-    pinned.push({
+    touched.add(item.mode.worldId);
+    live.push(pinOf(item));
+  }
+  const pinned = [...live];
+  for (const record of previous.pinned) {
+    if (touched.has(record.worldId)) continue;
+    pinned.push(record);
+  }
+  return { pinned, rects };
+}
+
+export function malformedPinned(raw: unknown): unknown[] {
+  if (!isRecord(raw)) return [];
+  const dropped: unknown[] = [];
+  if (Array.isArray(raw.pinned)) {
+    for (const item of raw.pinned) {
+      if (!pinnedFromUnknown(item)) dropped.push(item);
+    }
+    return dropped;
+  }
+  if (!Array.isArray(raw.windows)) return dropped;
+  for (const item of raw.windows) {
+    if (!isRecord(item)) {
+      dropped.push(item);
+      continue;
+    }
+    const mode = isRecord(item.mode) ? item.mode : null;
+    if (!mode || mode.kind !== 'worldPinned') continue;
+    const saved = rect(item.lastScreenRect);
+    const record = pinnedFromUnknown({
       id: item.id,
       appId: item.appId,
       title: item.title,
-      worldId: item.mode.worldId,
-      w: item.lastScreenRect.w,
-      h: item.lastScreenRect.h,
-      position: item.mode.position,
-      quaternion: item.mode.quaternion,
-      placement: item.mode.placement,
-      anchorId: item.mode.anchorId,
+      worldId: mode.worldId,
+      w: saved?.w,
+      h: saved?.h,
+      position: mode.position,
+      quaternion: mode.quaternion,
+      placement: mode.placement,
+      anchorId: mode.anchorId,
     });
+    if (!record) dropped.push(item);
   }
-  return { pinned, rects };
+  return dropped;
 }
 
 export function modeFromPinned(record: PinnedRecord): WindowMode {
@@ -163,6 +219,14 @@ export function windowsWritesHeld(): boolean {
   return writesHeld;
 }
 
+function quarantineValues(items: readonly unknown[]): boolean {
+  for (const item of items) {
+    const key = `${windowsStorageKey}:quarantine-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    if (localStorageAdapter.set(key, JSON.stringify(item)) === false) return false;
+  }
+  return true;
+}
+
 export function readWindowsFile(): WindowsFile {
   writesHeld = false;
   const raw = localStorageAdapter.get(windowsStorageKey);
@@ -171,11 +235,16 @@ export function readWindowsFile(): WindowsFile {
     const parsed = JSON.parse(raw) as Envelope;
     const version = typeof parsed.version === 'number' ? parsed.version : 0;
     if (version > windowsPersistVersion) writesHeld = true;
-    return migrateWindowsFile(parsed.state ?? parsed, version);
+    const state = parsed.state ?? parsed;
+    const dropped = malformedPinned(state);
+    if (dropped.length > 0 && !quarantineValues(dropped)) writesHeld = true;
+    return migrateWindowsFile(state, version);
   } catch {
     const stamp = Date.now();
     const corrupt = localStorageAdapter.get(windowsStorageKey);
-    if (corrupt) localStorageAdapter.set(`${windowsStorageKey}:corrupt-${stamp}`, corrupt);
+    if (corrupt && localStorageAdapter.set(`${windowsStorageKey}:corrupt-${stamp}`, corrupt) === false) {
+      return emptyWindowsFile;
+    }
     localStorageAdapter.remove(windowsStorageKey);
     return emptyWindowsFile;
   }
