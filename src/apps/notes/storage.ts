@@ -230,7 +230,21 @@ function setRole(next: Role): void {
   for (const listener of roleListeners) listener(next);
 }
 
+let pagehideBound = false;
+
+function announceLeaderGone(): void {
+  if (!channelLeader && !releaseHold) return;
+  channel?.postMessage({ type: 'released', id: TAB_ID });
+  channelLeader = false;
+  releaseHold?.();
+  releaseHold = null;
+}
+
 function bindChannel(): void {
+  if (typeof window !== 'undefined' && !pagehideBound) {
+    pagehideBound = true;
+    window.addEventListener('pagehide', announceLeaderGone);
+  }
   if (channel || typeof BroadcastChannel === 'undefined') return;
   channel = new BroadcastChannel('ghiland-notes');
   channel.onmessage = (event: MessageEvent<{ type?: string; id?: string }>) => {
@@ -238,6 +252,10 @@ function bindChannel(): void {
     if (!data) return;
     if (data.type === 'yield' && role === 'writer') {
       void releaseNotesWriter();
+      return;
+    }
+    if (data.type === 'released' && data.id !== TAB_ID && role === 'reader') {
+      void claimLock(false);
       return;
     }
     if (data.type === 'present?' && (channelLeader || releaseHold) && data.id !== TAB_ID) {

@@ -196,6 +196,37 @@ describe('notes storage', () => {
     if (previous) Object.defineProperty(nav, 'locks', previous);
   });
 
+  it('posts a release on pagehide so a reader can re-elect', async () => {
+    vi.resetModules();
+    const pagehide = new Set<() => void>();
+    vi.stubGlobal('window', {
+      addEventListener(type: string, fn: () => void) {
+        if (type === 'pagehide') pagehide.add(fn);
+      },
+      removeEventListener() {},
+    });
+    const messages: { type?: string; id?: string }[] = [];
+    class FakeChannel {
+      onmessage: ((event: MessageEvent<{ type?: string; id?: string }>) => void) | null = null;
+      postMessage(data: { type?: string; id?: string }) {
+        messages.push(data);
+      }
+      addEventListener() {}
+      removeEventListener() {}
+    }
+    vi.stubGlobal('BroadcastChannel', FakeChannel);
+    const nav = globalThis.navigator ?? ({} as Navigator);
+    Object.defineProperty(globalThis, 'navigator', { value: nav, configurable: true });
+    const previous = Object.getOwnPropertyDescriptor(nav, 'locks');
+    Object.defineProperty(nav, 'locks', { configurable: true, value: undefined });
+    const storage = await import('./storage');
+    expect(await storage.startNotesSession()).toBe('writer');
+    for (const fn of pagehide) fn();
+    expect(messages.some((item) => item.type === 'released')).toBe(true);
+    if (previous) Object.defineProperty(nav, 'locks', previous);
+    vi.unstubAllGlobals();
+  });
+
   it('keeps the newer copy of each note when the mirror is only the dirty ones', () => {
     const merged = preferNewerNotes(
       [
