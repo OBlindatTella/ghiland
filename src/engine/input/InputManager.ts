@@ -34,8 +34,6 @@ export class InputManager {
   private beforeShell: ((from: ShellState, to: ShellState) => void) | null = null;
   /** Blur, tab hide, or context loss, including when the shell was already RELEASED (S6-10). */
   private onFocusLoss: (() => void) | null = null;
-  /** A composing Escape already arrived, so the next Escape is the player's (S6-14). */
-  private sawComposingEscape = false;
   /** Ignore blur and tab-hide caused by our own window.open, so the Web tile stays on SCREEN. */
   private externalOpenUntil = 0;
   private externalHold = false;
@@ -44,6 +42,12 @@ export class InputManager {
   /** The Escape that ends a composition must not also blur or step the shell. */
   private compositionEscape = false;
   private compositionTimer = 0;
+  /**
+   * Key that arrived while a composition was open.
+   * Chrome delivers the composing Escape before compositionend; arming after that swallows the next Esc.
+   * Null means the ending key has not been seen yet (Safari delivers it after compositionend).
+   */
+  private compositionKey: string | null = null;
 
   attach(canvas: HTMLElement): () => void {
     this.detach();
@@ -74,7 +78,7 @@ export class InputManager {
     document.removeEventListener('compositionend', this.onCompositionEnd);
     this.composing = false;
     this.compositionEscape = false;
-    this.sawComposingEscape = false;
+    this.compositionKey = null;
     window.clearTimeout(this.compositionTimer);
     this.canvas.removeEventListener('pointerdown', this.onPointerDown);
     this.canvas.removeEventListener('click', this.onClick);
@@ -246,10 +250,10 @@ export class InputManager {
   };
 
   private onKeyDown = (event: KeyboardEvent): void => {
+    const duringComposition = this.composing || Boolean(event.isComposing) || event.keyCode === 229;
+    if (duringComposition && event.code) this.compositionKey = event.code;
     if (!this.gameplayOpen()) return;
     const editable = isEditableElement(event.target) || isEditableElement(document.activeElement);
-    const duringComposition = this.composing || Boolean(event.isComposing) || event.keyCode === 229;
-    if (duringComposition && event.code === 'Escape') this.sawComposingEscape = true;
     const composing =
       duringComposition ||
       (event.code === 'Escape' && this.compositionEscape);
@@ -306,17 +310,23 @@ export class InputManager {
   private onCompositionStart = (): void => {
     this.composing = true;
     this.compositionEscape = false;
-    this.sawComposingEscape = false;
+    this.compositionKey = null;
+    window.clearTimeout(this.compositionTimer);
   };
 
   private onCompositionEnd = (): void => {
     this.composing = false;
-    // Chrome delivers the composing Escape before compositionend, so that key already
-    // consumed the dismiss. Arm only when it has not been seen, and only until the
-    // next turn, so a later deliberate Escape is not swallowed (S6-14).
-    this.compositionEscape = !this.sawComposingEscape;
-    this.sawComposingEscape = false;
+    const endingKey = this.compositionKey;
+    this.compositionKey = null;
     window.clearTimeout(this.compositionTimer);
+    // Arm only for the Safari order: no keydown was seen during the composition, so the
+    // ending Escape still follows compositionend. A composing Escape (Chrome) or a commit
+    // via Enter must not arm the flag. It lasts only until the next turn (S6-14).
+    if (endingKey !== null) {
+      this.compositionEscape = false;
+      return;
+    }
+    this.compositionEscape = true;
     this.compositionTimer = window.setTimeout(() => {
       this.compositionEscape = false;
     }, 0);

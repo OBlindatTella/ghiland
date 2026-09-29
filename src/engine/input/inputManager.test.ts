@@ -229,7 +229,7 @@ describe('IME composition', () => {
     manager.attach(dom.canvas);
     const escape = { code: 'Escape', repeat: false, isComposing: false, keyCode: 27, preventDefault() {}, target: dom.documentStub.activeElement };
 
-    // Safari delivers compositionend, then the Esc that ended it.
+    // Safari delivers compositionend, then the Esc that ended it. No keydown has been seen yet.
     dom.fireDoc('compositionstart', {});
     dom.fireDoc('compositionend', {});
     await Promise.resolve();
@@ -243,7 +243,7 @@ describe('IME composition', () => {
     manager.detach();
   });
 
-  it('does not swallow a later Escape after a composing Escape or a committed word', async () => {
+  it('does not swallow the first Esc after a composing Esc that already arrived', async () => {
     const dom = installDom();
     const manager = new InputManager();
     const blur = vi.fn();
@@ -258,8 +258,37 @@ describe('IME composition', () => {
     await Promise.resolve();
     dom.fireWindow('keydown', escape);
     expect(blur).toHaveBeenCalledTimes(1);
+    expect(useInputStore.getState().shellState).toBe('SCREEN');
+    manager.detach();
+  });
 
-    blur.mockClear();
+  it('does not swallow Esc after an IME commit with Enter', async () => {
+    const dom = installDom();
+    const manager = new InputManager();
+    const blur = vi.fn();
+    useInputStore.setState({ shellState: 'SCREEN', owner: 'ui', showClickToWalk: false });
+    dom.documentStub.activeElement = { tagName: 'TEXTAREA', blur };
+    manager.attach(dom.canvas);
+    const escape = { code: 'Escape', repeat: false, isComposing: false, keyCode: 27, preventDefault() {}, target: dom.documentStub.activeElement };
+
+    dom.fireDoc('compositionstart', {});
+    dom.fireWindow('keydown', { code: 'Enter', repeat: false, isComposing: true, keyCode: 229, preventDefault() {}, target: dom.documentStub.activeElement });
+    dom.fireDoc('compositionend', {});
+    await Promise.resolve();
+    dom.fireWindow('keydown', escape);
+    expect(blur).toHaveBeenCalledTimes(1);
+    manager.detach();
+  });
+
+  it('does not swallow a later Escape once the composition flag has expired', async () => {
+    const dom = installDom();
+    const manager = new InputManager();
+    const blur = vi.fn();
+    useInputStore.setState({ shellState: 'SCREEN', owner: 'ui', showClickToWalk: false });
+    dom.documentStub.activeElement = { tagName: 'TEXTAREA', blur };
+    manager.attach(dom.canvas);
+    const escape = { code: 'Escape', repeat: false, isComposing: false, keyCode: 27, preventDefault() {}, target: dom.documentStub.activeElement };
+
     dom.fireDoc('compositionstart', {});
     dom.fireDoc('compositionend', {});
     await new Promise((resolve) => setTimeout(resolve, 0));

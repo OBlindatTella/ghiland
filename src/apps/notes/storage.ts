@@ -12,6 +12,13 @@ export const NOTES_FLUSH_KEY = 'ghiland:app:notes:flush';
 /** One localStorage key per dirty note. Notes over {@link MIRROR_MAX_CHARS} are not mirrored. */
 export const NOTES_MIRROR_PREFIX = 'ghiland:app:notes:mirror:';
 export const MIRROR_MAX_CHARS = 1_000_000;
+/** Trailing mirror write. A burst of keystrokes produces at most one write per interval. */
+export const MIRROR_TRAIL_MS = 300;
+/**
+ * Total mirrored characters. Past this, the largest mirrors are dropped first so a notes
+ * mirror cannot fill the origin quota that settings and windows also use.
+ */
+export const MIRROR_BUDGET_CHARS = 3_000_000;
 
 /** Trailing debounce, but never longer than a second after the first dirty key. */
 export function notesSaveDelay(sinceFirstDirtyMs: number, trailingMs = 300, maxWaitMs = 1000): number {
@@ -28,6 +35,8 @@ const LOCK_NAME = 'ghiland-notes-writer';
 export interface StoredNote {
   version: number;
   updatedAt: number;
+  /** Monotonic per note. A mirror wins at load only when its revision is newer. */
+  revision: number;
   id: string;
   title: string;
   body: string;
@@ -143,7 +152,7 @@ export function parseLegacyPack(raw: unknown): LegacyParse {
 }
 
 export type RecordParse =
-  | { kind: 'note'; note: Note; version: number }
+  | { kind: 'note'; note: Note; version: number; revision: number }
   | { kind: 'corrupt' }
   | { kind: 'empty' };
 
@@ -166,7 +175,8 @@ export function parseStoredNote(raw: unknown): RecordParse {
   const note = nested ?? flat;
   if (!note) return { kind: 'corrupt' };
   if (typeof stored.updatedAt === 'number') note.updatedAt = stored.updatedAt;
-  return { kind: 'note', note, version };
+  const revision = typeof stored.revision === 'number' && Number.isFinite(stored.revision) ? stored.revision : 0;
+  return { kind: 'note', note, version, revision };
 }
 
 export function isSiteDataBlocked(error: unknown): boolean {
@@ -220,8 +230,7 @@ export function subscribeNotesRole(listener: RoleListener): () => void {
 function dropWriterMemory(): void {
   memoryCache = null;
   dirtyNotes.clear();
-  if (mirrorFrame && typeof cancelAnimationFrame === 'function') cancelAnimationFrame(mirrorFrame);
-  mirrorFrame = 0;
+  cancelMirrorTimer();
 }
 
 function setRole(next: Role): void {
@@ -231,31 +240,75 @@ function setRole(next: Role): void {
 }
 
 let pagehideBound = false;
+let claimDepth = 0;
+let inheriting = false;
+let suppressInheritUntil = 0;
+const YIELD_SUPPRESS_MS = 3_000;
+const handoffListeners = new Set<(result: LoadNotesResult) => void>();
 
 function announceLeaderGone(): void {
   if (!channelLeader && !releaseHold) return;
+  // Flush while this tab is still the writer. The role drop below clears the in-memory notes.
+  if (role === 'writer') void flushNotes();
   channel?.postMessage({ type: 'released', id: TAB_ID });
   channelLeader = false;
-  releaseHold?.();
+  const release = releaseHold;
   releaseHold = null;
+  release?.();
+  if (role === 'writer') setRole('reader');
+}
+
+function onPageShow(event: PageTransitionEvent): void {
+  if (!event.persisted || role !== 'reader') return;
+  void inheritWriterLock();
+}
+
+export function subscribeNotesHandoff(listener: (result: LoadNotesResult) => void): () => void {
+  handoffListeners.add(listener);
+  return () => {
+    handoffListeners.delete(listener);
+  };
+}
+
+/**
+ * A reader that receives the lock (the leader closed) reloads after the lock is held.
+ * It does not keep the text it loaded while someone else was writing.
+ */
+export async function inheritWriterLock(): Promise<Role> {
+  if (inheriting || claimDepth > 0 || role !== 'reader') return role;
+  inheriting = true;
+  try {
+    const claimed = await claimLock(false);
+    if (claimed !== 'writer') return claimed;
+    dropWriterMemory();
+    const loaded = await loadNotes();
+    for (const listener of [...handoffListeners]) listener(loaded);
+    return claimed;
+  } finally {
+    inheriting = false;
+  }
 }
 
 function bindChannel(): void {
   if (typeof window !== 'undefined' && !pagehideBound) {
     pagehideBound = true;
     window.addEventListener('pagehide', announceLeaderGone);
+    window.addEventListener('pageshow', onPageShow as EventListener);
   }
   if (channel || typeof BroadcastChannel === 'undefined') return;
   channel = new BroadcastChannel('ghiland-notes');
   channel.onmessage = (event: MessageEvent<{ type?: string; id?: string }>) => {
     const data = event.data;
     if (!data) return;
-    if (data.type === 'yield' && role === 'writer') {
-      void releaseNotesWriter();
+    if (data.type === 'yield') {
+      // "Use here" is about to take the lock. Other readers must not elect themselves on the release.
+      suppressInheritUntil = Date.now() + YIELD_SUPPRESS_MS;
+      if (role === 'writer') void releaseNotesWriter();
       return;
     }
     if (data.type === 'released' && data.id !== TAB_ID && role === 'reader') {
-      void claimLock(false);
+      if (claimDepth > 0 || inheriting || Date.now() < suppressInheritUntil) return;
+      void inheritWriterLock();
       return;
     }
     if (data.type === 'present?' && (channelLeader || releaseHold) && data.id !== TAB_ID) {
@@ -311,18 +364,38 @@ function claimByChannel(wait: boolean): Promise<Role> {
 }
 
 function claimLock(wait: boolean): Promise<Role> {
+  claimDepth += 1;
+  let settled = false;
+  const finish = () => {
+    if (settled) return;
+    settled = true;
+    claimDepth -= 1;
+  };
   const locks = typeof navigator === 'undefined' ? undefined : navigator.locks;
-  if (!locks) return claimByChannel(wait);
+  if (!locks) {
+    return claimByChannel(wait).then(
+      (result) => {
+        finish();
+        return result;
+      },
+      (error: unknown) => {
+        finish();
+        throw error;
+      },
+    );
+  }
   leaderNotice = false;
   return new Promise((resolve) => {
     const options: LockOptions = wait ? { mode: 'exclusive' } : { mode: 'exclusive', ifAvailable: true };
     void locks.request(LOCK_NAME, options, (lock) => {
       if (!lock) {
         setRole('reader');
+        finish();
         resolve('reader');
         return undefined;
       }
       setRole('writer');
+      finish();
       resolve('writer');
       return new Promise<void>((done) => {
         releaseHold = () => {
@@ -358,12 +431,39 @@ export async function claimNotesHere(): Promise<Role> {
 }
 
 const committedNotes = new Map<string, number>();
+const committedRevision = new Map<string, number>();
+const noteRevision = new Map<string, number>();
+const bumpedFor = new Map<string, { updatedAt: number; revision: number }>();
 const dirtyNotes = new Map<string, Note>();
-let mirrorFrame = 0;
+const lastMirrored = new Map<string, number>();
+const ownedMirrorKeys = new Set<string>();
+let mirrorKeysKnown = false;
+let mirrorTimer = 0;
+let mirrorWaitFrom = 0;
 let mirrorBound = false;
+let inMirror = false;
+let bodyPull: (() => void) | null = null;
 
 function cloneNote(note: Note): Note {
   return { id: note.id, title: note.title, body: note.body, updatedAt: note.updatedAt };
+}
+
+function later(fn: () => void, ms: number): number {
+  const host = typeof window !== 'undefined' && typeof window.setTimeout === 'function' ? window : globalThis;
+  return host.setTimeout(fn, ms) as unknown as number;
+}
+
+function cancelLater(id: number): void {
+  if (!id) return;
+  const host = typeof window !== 'undefined' && typeof window.clearTimeout === 'function' ? window : globalThis;
+  host.clearTimeout(id);
+}
+
+function cancelMirrorTimer(): void {
+  if (!mirrorTimer) return;
+  cancelLater(mirrorTimer);
+  mirrorTimer = 0;
+  mirrorWaitFrom = 0;
 }
 
 function bindMirrorFlush(): void {
@@ -376,6 +476,24 @@ function bindMirrorFlush(): void {
   });
 }
 
+/** The textarea pulls its value at mirror and commit time, not on the keystroke. */
+export function bindNotesBodyPull(pull: () => void): () => void {
+  bodyPull = pull;
+  return () => {
+    if (bodyPull === pull) bodyPull = null;
+  };
+}
+
+function bumpRevision(note: Note): number {
+  const known = bumpedFor.get(note.id);
+  if (known && known.updatedAt === note.updatedAt) return known.revision;
+  const base = Math.max(committedRevision.get(note.id) ?? 0, noteRevision.get(note.id) ?? 0);
+  const next = base + 1;
+  bumpedFor.set(note.id, { updatedAt: note.updatedAt, revision: next });
+  noteRevision.set(note.id, next);
+  return next;
+}
+
 export function rememberNotes(notes: readonly Note[]): void {
   memoryCache = notes.map(cloneNote);
   if (notesRole() !== 'writer') return;
@@ -384,27 +502,53 @@ export function rememberNotes(notes: readonly Note[]): void {
     if (!live.has(id)) dirtyNotes.delete(id);
   }
   for (const note of memoryCache) {
-    if (committedNotes.get(note.id) === note.updatedAt) dirtyNotes.delete(note.id);
-    else dirtyNotes.set(note.id, note);
+    if (committedNotes.get(note.id) === note.updatedAt) {
+      dirtyNotes.delete(note.id);
+      continue;
+    }
+    bumpRevision(note);
+    dirtyNotes.set(note.id, note);
   }
+  if (!inMirror) scheduleMirror();
+}
+
+/** Keystroke entry. Sets the dirty flag and arms the trailing mirror. It does not read the note. */
+export function noteTyped(): void {
+  if (notesRole() !== 'writer') return;
   scheduleMirror();
 }
 
 function scheduleMirror(): void {
+  if (notesRole() !== 'writer') return;
   bindMirrorFlush();
-  if (typeof requestAnimationFrame !== 'function') return;
-  if (mirrorFrame) return;
-  mirrorFrame = requestAnimationFrame(() => {
-    mirrorFrame = 0;
-    writeMirror([...dirtyNotes.values()]);
-  });
+  const now = Date.now();
+  if (mirrorWaitFrom === 0) mirrorWaitFrom = now;
+  if (mirrorTimer) return;
+  const delay = Math.max(0, Math.min(MIRROR_TRAIL_MS, MIRROR_TRAIL_MS - (now - mirrorWaitFrom)));
+  mirrorTimer = later(() => {
+    mirrorTimer = 0;
+    mirrorWaitFrom = 0;
+    if (notesRole() !== 'writer') return;
+    runPullAndWrite();
+  }, delay);
 }
 
-/** Synchronous mirror write for pagehide and for when the page is hidden. */
-export function flushNotesMirror(): void {
-  if (mirrorFrame && typeof cancelAnimationFrame === 'function') cancelAnimationFrame(mirrorFrame);
-  mirrorFrame = 0;
+function runPullAndWrite(): void {
+  if (notesRole() !== 'writer' || inMirror) return;
+  inMirror = true;
+  try {
+    bodyPull?.();
+  } finally {
+    inMirror = false;
+  }
   writeMirror([...dirtyNotes.values()]);
+}
+
+/** Synchronous mirror write for pagehide and for when the page is hidden. Readers never write. */
+export function flushNotesMirror(): void {
+  cancelMirrorTimer();
+  if (notesRole() !== 'writer') return;
+  runPullAndWrite();
 }
 
 function mirrorKey(id: string): string {
@@ -426,6 +570,7 @@ function listMirrorKeys(): string[] {
 }
 
 function removeMirrorKey(key: string): void {
+  ownedMirrorKeys.delete(key);
   try {
     localStorage.removeItem(key);
   } catch {
@@ -433,68 +578,130 @@ function removeMirrorKey(key: string): void {
   }
 }
 
+function knownMirrorKeys(): string[] {
+  if (!mirrorKeysKnown) {
+    for (const key of listMirrorKeys()) ownedMirrorKeys.add(key);
+    mirrorKeysKnown = true;
+  }
+  return [...ownedMirrorKeys];
+}
+
+function mirrorWeight(note: Note): number {
+  return note.body.length + note.title.length;
+}
+
 function clearMirrorStore(): void {
   removeMirrorKey(NOTES_FLUSH_KEY);
-  for (const key of listMirrorKeys()) removeMirrorKey(key);
+  for (const key of knownMirrorKeys()) removeMirrorKey(key);
+  lastMirrored.clear();
+  ownedMirrorKeys.clear();
 }
 
 function writeOneMirror(note: Note): void {
   const key = mirrorKey(note.id);
-  if (note.body.length + note.title.length > MIRROR_MAX_CHARS) {
+  if (mirrorWeight(note) > MIRROR_MAX_CHARS) {
     removeMirrorKey(key);
+    lastMirrored.delete(note.id);
     return;
   }
+  if (lastMirrored.get(note.id) === note.updatedAt) return;
   try {
-    localStorage.setItem(key, JSON.stringify({ version: NOTES_RECORD_VERSION, note: cloneNote(note) }));
+    localStorage.setItem(
+      key,
+      JSON.stringify({
+        version: NOTES_RECORD_VERSION,
+        revision: noteRevision.get(note.id) ?? 0,
+        writtenAt: Date.now(),
+        note: cloneNote(note),
+      }),
+    );
+    ownedMirrorKeys.add(key);
+    lastMirrored.set(note.id, note.updatedAt);
   } catch {
     removeMirrorKey(key);
+    lastMirrored.delete(note.id);
   }
 }
 
 function writeMirror(notes: readonly Note[]): void {
   removeMirrorKey(NOTES_FLUSH_KEY);
-  const live = new Set(notes.map((note) => note.id));
-  for (const key of listMirrorKeys()) {
+  const ranked = [...notes].sort((a, b) => mirrorWeight(a) - mirrorWeight(b));
+  const accepted: Note[] = [];
+  let total = 0;
+  for (const note of ranked) {
+    const weight = mirrorWeight(note);
+    if (weight > MIRROR_MAX_CHARS) {
+      removeMirrorKey(mirrorKey(note.id));
+      lastMirrored.delete(note.id);
+      continue;
+    }
+    if (total + weight > MIRROR_BUDGET_CHARS) continue;
+    accepted.push(note);
+    total += weight;
+  }
+  const live = new Set(accepted.map((note) => note.id));
+  for (const key of knownMirrorKeys()) {
     if (!live.has(key.slice(NOTES_MIRROR_PREFIX.length))) removeMirrorKey(key);
   }
-  for (const note of notes) writeOneMirror(note);
+  for (const note of notes) {
+    if (!live.has(note.id)) {
+      removeMirrorKey(mirrorKey(note.id));
+      lastMirrored.delete(note.id);
+    }
+  }
+  for (const note of accepted) writeOneMirror(note);
 }
 
 function markCommitted(notes: readonly Note[]): void {
   for (const note of notes) {
     committedNotes.set(note.id, note.updatedAt);
+    committedRevision.set(note.id, noteRevision.get(note.id) ?? committedRevision.get(note.id) ?? 0);
     const pending = dirtyNotes.get(note.id);
-    if (pending && pending.updatedAt === note.updatedAt) dirtyNotes.delete(note.id);
+    if (pending && pending.updatedAt === note.updatedAt) {
+      dirtyNotes.delete(note.id);
+      lastMirrored.delete(note.id);
+    }
   }
   if (dirtyNotes.size === 0) clearMirrorStore();
   else writeMirror([...dirtyNotes.values()]);
 }
 
-function readStoredMirror(raw: string): Note | null {
-  const parsed = JSON.parse(raw) as { note?: Note };
+interface MirrorEntry {
+  note: Note;
+  revision: number;
+  writtenAt: number;
+}
+
+function readStoredMirror(raw: string): MirrorEntry | null {
+  const parsed = JSON.parse(raw) as { note?: Note; revision?: number; writtenAt?: number };
   const note = parsed.note;
   if (!note || typeof note.id !== 'string' || typeof note.title !== 'string' || typeof note.body !== 'string') return null;
-  return {
+  const stored = {
     id: note.id,
     title: note.title,
     body: note.body,
     updatedAt: typeof note.updatedAt === 'number' ? note.updatedAt : 0,
   };
+  return {
+    note: stored,
+    revision: typeof parsed.revision === 'number' && Number.isFinite(parsed.revision) ? parsed.revision : 0,
+    writtenAt: typeof parsed.writtenAt === 'number' && Number.isFinite(parsed.writtenAt) ? parsed.writtenAt : stored.updatedAt,
+  };
 }
 
-function readMirror(): Note[] | null {
-  const notes: Note[] = [];
-  for (const key of listMirrorKeys()) {
+function readMirror(): MirrorEntry[] {
+  const notes: MirrorEntry[] = [];
+  for (const key of knownMirrorKeys()) {
     try {
       const raw = localStorage.getItem(key);
       if (!raw) continue;
-      const note = readStoredMirror(raw);
-      if (note) notes.push(note);
+      const entry = readStoredMirror(raw);
+      if (entry) notes.push(entry);
     } catch {
       removeMirrorKey(key);
     }
   }
-  return notes.length > 0 ? notes : null;
+  return notes;
 }
 
 /** Commit dirty notes, waiting at most 2 s, then give up the writer lock. */
@@ -507,12 +714,34 @@ export async function releaseNotesWriter(): Promise<void> {
   setRole('reader');
 }
 
+export interface MirrorStamp {
+  revision?: number;
+  writtenAt?: number;
+  updatedAt: number;
+}
+
+/**
+ * A mirror wins only when it is strictly newer than the IndexedDB record.
+ * Revision decides when either side has one. Legacy mirrors fall back to the timestamp.
+ */
+export function mirrorIsNewer(mirror: MirrorStamp, stored: { revision?: number; updatedAt: number }): boolean {
+  const mirrorRev = mirror.revision ?? 0;
+  const storedRev = stored.revision ?? 0;
+  if (mirrorRev > 0 || storedRev > 0) return mirrorRev > storedRev;
+  const mirrorTime = mirror.writtenAt ?? mirror.updatedAt;
+  return mirrorTime > stored.updatedAt;
+}
+
 export function preferNewerNotes(stored: readonly Note[], mirror: readonly Note[] | null): Note[] {
   const merged = new Map<string, Note>();
   for (const note of stored) merged.set(note.id, cloneNote(note));
   for (const note of mirror ?? []) {
     const current = merged.get(note.id);
-    if (!current || note.updatedAt >= current.updatedAt) merged.set(note.id, cloneNote(note));
+    const newer = mirrorIsNewer(
+      { revision: 0, writtenAt: note.updatedAt, updatedAt: note.updatedAt },
+      { revision: 0, updatedAt: current?.updatedAt ?? 0 },
+    );
+    if (!current || newer) merged.set(note.id, cloneNote(note));
   }
   const order = stored.map((note) => note.id);
   for (const note of mirror ?? []) {
@@ -551,15 +780,17 @@ function flushOpenConnection(notes: readonly Note[]): Promise<SaveNotesResult> |
   const limited = notes.map(limitNote);
   const nextIds = limited.map((note) => note.id);
   try {
-    const tx = keptDb.transaction('kv', 'readwrite');
-    const store = tx.objectStore('kv');
     const previous = memoryCache?.map((note) => note.id) ?? [...committedNotes.keys()];
     const stale = previous.filter((id) => !nextIds.includes(id) && !heldIds.has(id));
-    for (const id of stale) store.delete(recordKey(id));
-    for (const note of limited) {
-      if (heldIds.has(note.id)) continue;
-      store.put(toStored(note), recordKey(note.id));
+    const changed = limited.filter((note) => !heldIds.has(note.id) && committedNotes.get(note.id) !== note.updatedAt);
+    if (stale.length === 0 && changed.length === 0) {
+      markCommitted(limited);
+      return Promise.resolve('ok');
     }
+    const tx = keptDb.transaction('kv', 'readwrite');
+    const store = tx.objectStore('kv');
+    for (const id of stale) store.delete(recordKey(id));
+    for (const note of changed) store.put(toStored(note), recordKey(note.id));
     store.put({ version: NOTES_RECORD_VERSION, ids: nextIds }, NOTES_INDEX_KEY);
     if ('commit' in tx && typeof tx.commit === 'function') tx.commit();
     memoryCache = limited.map((note) => ({ ...note }));
@@ -699,6 +930,7 @@ function toStored(note: Note): StoredNote {
   return {
     version: NOTES_RECORD_VERSION,
     updatedAt: note.updatedAt,
+    revision: noteRevision.get(note.id) ?? 0,
     id: note.id,
     title: note.title,
     body: note.body,
@@ -739,13 +971,20 @@ async function migrateLegacy(db: IDBDatabase): Promise<'ok' | 'unavailable'> {
   return 'ok';
 }
 
-async function writeRecords(db: IDBDatabase, notes: readonly Note[], previousIds: readonly string[]): Promise<void> {
-  const nextIds = new Set(notes.map((note) => note.id));
-  const deletes = previousIds.filter((id) => !nextIds.has(id) && !heldIds.has(id)).map(recordKey);
+async function writeRecords(
+  db: IDBDatabase,
+  notes: readonly Note[],
+  previousIds: readonly string[],
+  dirtyOnly = false,
+): Promise<void> {
+  const nextIds = notes.map((note) => note.id);
+  const nextSet = new Set(nextIds);
+  const deletes = previousIds.filter((id) => !nextSet.has(id) && !heldIds.has(id)).map(recordKey);
   const writes: { key: string; value: unknown }[] = notes
-    .filter((note) => !heldIds.has(note.id))
+    .filter((note) => !heldIds.has(note.id) && (!dirtyOnly || committedNotes.get(note.id) !== note.updatedAt))
     .map((note) => ({ key: recordKey(note.id), value: toStored(note) }));
-  writes.push({ key: NOTES_INDEX_KEY, value: { version: NOTES_RECORD_VERSION, ids: notes.map((note) => note.id) } });
+  if (dirtyOnly && writes.length === 0 && deletes.length === 0) return;
+  writes.push({ key: NOTES_INDEX_KEY, value: { version: NOTES_RECORD_VERSION, ids: nextIds } });
   await idbWrite(db, writes, deletes);
 }
 
@@ -774,6 +1013,8 @@ async function readNoteRecords(db: IDBDatabase, ids: readonly string[], write: b
       continue;
     }
     if (parsed.version > NOTES_RECORD_VERSION) heldIds.add(parsed.note.id);
+    noteRevision.set(parsed.note.id, parsed.revision);
+    committedRevision.set(parsed.note.id, parsed.revision);
     notes.push(parsed.note);
   }
   return okLoad(notes, quarantined);
@@ -821,9 +1062,28 @@ export async function loadNotes(): Promise<LoadNotesResult> {
 function withFresherMirror(result: LoadNotesResult): LoadNotesResult {
   if (result.status !== 'ok') return result;
   const mirror = readMirror();
-  const notes = preferNewerNotes(result.notes, mirror);
+  const storedUpdated = new Map(result.notes.map((note) => [note.id, note.updatedAt]));
+  const storedRevision = new Map(result.notes.map((note) => [note.id, committedRevision.get(note.id) ?? 0]));
+  const merged = new Map<string, Note>();
+  for (const note of result.notes) merged.set(note.id, cloneNote(note));
+  for (const entry of mirror) {
+    const current = merged.get(entry.note.id);
+    const newer = mirrorIsNewer(
+      { revision: entry.revision, writtenAt: entry.writtenAt, updatedAt: entry.note.updatedAt },
+      { revision: storedRevision.get(entry.note.id) ?? 0, updatedAt: current?.updatedAt ?? 0 },
+    );
+    if (!current || newer) {
+      merged.set(entry.note.id, cloneNote(entry.note));
+      noteRevision.set(entry.note.id, Math.max(entry.revision, noteRevision.get(entry.note.id) ?? 0));
+    }
+  }
+  const order = result.notes.map((note) => note.id);
+  for (const entry of mirror) {
+    if (!order.includes(entry.note.id)) order.push(entry.note.id);
+  }
+  const notes = order.map((id) => merged.get(id)!);
   committedNotes.clear();
-  for (const note of result.notes) committedNotes.set(note.id, note.updatedAt);
+  for (const note of result.notes) committedNotes.set(note.id, storedUpdated.get(note.id) ?? note.updatedAt);
   dirtyNotes.clear();
   for (const note of notes) {
     if (committedNotes.get(note.id) !== note.updatedAt) dirtyNotes.set(note.id, cloneNote(note));
@@ -844,7 +1104,7 @@ export async function saveNotes(notes: readonly Note[]): Promise<SaveNotesResult
       const index = parseIndexValue(await idbGet(db, NOTES_INDEX_KEY));
       if (index.kind === 'corrupt') throw new Error('notes-index');
       const previous = index.kind === 'ids' ? index.ids : [];
-      await writeRecords(db, limited, previous);
+      await writeRecords(db, limited, previous, true);
     });
     markCommitted(limited);
     return 'ok';

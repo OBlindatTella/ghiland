@@ -1,22 +1,32 @@
 'use client';
 
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type FormEvent } from 'react';
 import type { AppProps } from '@/contracts/app';
 import { renderLightMarkdown } from './markdown';
 import {
+  assignNoteBody,
+  dispatchNoteInput,
+  insertClippedText,
+  planBeforeInput,
+  trimOverflowAtCaret,
+} from './editorInput';
+import {
+  bindNotesBodyPull,
+  claimNotesHere,
   flushNotes,
   loadNotes,
-  trimInsertion,
-  NOTES_MAX_CHARS,
-  noteNearingLimit,
+  NOTES_WARN_AT,
+  noteTyped,
   notesLeaderNotice,
   notesRole,
-  rememberNotes,
   notesSaveDelay,
+  rememberNotes,
   saveNotes,
   startNotesSession,
+  trimInsertion,
+  subscribeNotesHandoff,
   subscribeNotesRole,
-  claimNotesHere,
+  type LoadNotesResult,
   type Note,
 } from './storage';
 import { preferredNoteId, readNotesUi, writeNotesUi } from './uiMemory';
@@ -42,7 +52,10 @@ export default function Notes({ windowId, host }: AppProps) {
   const [notice, setNotice] = useState('');
   const [leaderNotice, setLeaderNotice] = useState(notesLeaderNotice);
   const [sessionReady, setSessionReady] = useState(false);
-  const ready = useRef(false);
+  const [bodyEpoch, setBodyEpoch] = useState(0);
+  const [editEpoch, setEditEpoch] = useState(0);
+  const acceptRef = useRef(false);
+  const epochRef = useRef(0);
   const notesRef = useRef(notes);
   const bodyRef = useRef<HTMLTextAreaElement>(null);
   const selectedRef = useRef(selected);
@@ -52,6 +65,9 @@ export default function Notes({ windowId, host }: AppProps) {
   const saveArmed = useRef(0);
   const statusText = useRef('');
   const longRef = useRef(false);
+  const lengthRef = useRef(0);
+  const bodyDirty = useRef(false);
+  const pullRef = useRef<() => void>(() => {});
 
   const showStatus = (text: string) => {
     if (statusText.current === text) return;
@@ -59,20 +75,63 @@ export default function Notes({ windowId, host }: AppProps) {
     setStatus(text);
   };
 
-  const markLength = (body: string) => {
-    const next = noteNearingLimit(body);
+  const markLengthCount = (length: number) => {
+    const next = length >= NOTES_WARN_AT;
     if (longRef.current === next) return;
     longRef.current = next;
     setLongNote(next);
   };
 
+  const disarm = () => {
+    acceptRef.current = false;
+    setEditEpoch(-1);
+    window.clearTimeout(saveTimer.current);
+    saveArmed.current = 0;
+  };
+
+  const bumpEpoch = () => {
+    epochRef.current += 1;
+    const nextEpoch = epochRef.current;
+    setBodyEpoch(nextEpoch);
+    setEditEpoch(nextEpoch);
+    return nextEpoch;
+  };
+
+  const applyLoaded = (next: Note[], selectedId: string | null) => {
+    acceptRef.current = false;
+    notesRef.current = next;
+    const body = next.find((note) => note.id === selectedId)?.body ?? next[0]?.body ?? '';
+    lengthRef.current = body.length;
+    markLengthCount(body.length);
+    bodyDirty.current = false;
+    setNotes(next);
+    setSelected(selectedId);
+    bumpEpoch();
+  };
+
+  const pullBody = () => {
+    const field = bodyRef.current;
+    if (!field || !bodyDirty.current || !acceptRef.current || notesRole() !== 'writer') return;
+    const body = field.value;
+    bodyDirty.current = false;
+    lengthRef.current = body.length;
+    markLengthCount(body.length);
+    const live = notesRef.current.find((note) => note.id === selectedRef.current);
+    if (!live || live.body === body) return;
+    const next = notesRef.current.map((note) => (note.id === live.id ? { ...note, body, updatedAt: Date.now() } : note));
+    notesRef.current = next;
+    rememberNotes(next);
+  };
+
   const scheduleSave = () => {
+    if (notesRole() !== 'writer') return;
     const now = Date.now();
     if (saveArmed.current === 0) saveArmed.current = now;
     window.clearTimeout(saveTimer.current);
     saveTimer.current = window.setTimeout(() => {
       saveArmed.current = 0;
-      if (!ready.current) return;
+      if (!acceptRef.current || notesRole() !== 'writer') return;
+      pullBody();
       void saveNotes(notesRef.current).then((result) => {
         if (result === 'ok') showStatus('Saved');
         else if (result === 'blocked') setProblem('blocked');
@@ -81,6 +140,27 @@ export default function Notes({ windowId, host }: AppProps) {
       });
     }, notesSaveDelay(now - saveArmed.current));
   };
+
+  const showLoadedRef = useRef<(loaded: LoadNotesResult) => void>(() => {});
+  const scheduleSaveRef = useRef<() => void>(() => {});
+
+  useEffect(() => {
+    pullRef.current = pullBody;
+    scheduleSaveRef.current = scheduleSave;
+    showLoadedRef.current = (loaded) => {
+      if (loaded.status !== 'ok') {
+        setProblem(loaded.status);
+        return;
+      }
+      const next = loaded.notes.length > 0 ? loaded.notes : [freshNote()];
+      const selectedId = preferredNoteId(next.map((note) => note.id), readNotesUi(windowId)?.selectedId ?? selectedRef.current);
+      if (loaded.indexRebuilt) setNotice('The notes list was repaired.');
+      else if (loaded.quarantined > 0) setNotice('A saved note could not be read. It was set aside.');
+      applyLoaded(next, selectedId);
+      setProblem(null);
+      if (notesRole() === 'writer') rememberNotes(next);
+    };
+  });
 
   useEffect(() => {
     selectedRef.current = selected;
@@ -99,9 +179,19 @@ export default function Notes({ windowId, host }: AppProps) {
       subscribeNotesRole((next) => {
         setRole(next);
         setLeaderNotice(notesLeaderNotice());
+        acceptRef.current = false;
+        setEditEpoch(-1);
+        if (next !== 'writer') {
+          window.clearTimeout(saveTimer.current);
+          saveArmed.current = 0;
+        }
       }),
     [],
   );
+
+  useEffect(() => bindNotesBodyPull(() => pullRef.current()), []);
+
+  useEffect(() => subscribeNotesHandoff((loaded) => showLoadedRef.current(loaded)), []);
 
   useEffect(() => {
     let live = true;
@@ -113,20 +203,7 @@ export default function Notes({ windowId, host }: AppProps) {
       setSessionReady(true);
       const loaded = await loadNotes();
       if (!live) return;
-      if (loaded.status !== 'ok') {
-        setProblem(loaded.status);
-        return;
-      }
-      const next = loaded.notes.length > 0 ? loaded.notes : [freshNote()];
-      notesRef.current = next;
-      const selectedId = preferredNoteId(next.map((note) => note.id), readNotesUi(windowId)?.selectedId ?? null);
-      markLength(next.find((note) => note.id === selectedId)?.body ?? next[0]?.body ?? '');
-      setNotes(next);
-      setSelected(selectedId);
-      if (loaded.indexRebuilt) setNotice('The notes list was repaired.');
-      else if (loaded.quarantined > 0) setNotice('A saved note could not be read. It was set aside.');
-      ready.current = claimed === 'writer';
-      if (ready.current) rememberNotes(next);
+      showLoadedRef.current(loaded);
     })();
     return () => {
       live = false;
@@ -135,7 +212,9 @@ export default function Notes({ windowId, host }: AppProps) {
 
   useEffect(() => {
     const flush = () => {
-      if (ready.current) void flushNotes();
+      if (!acceptRef.current || notesRole() !== 'writer') return;
+      pullRef.current();
+      void flushNotes();
     };
     const onVisibility = () => {
       if (document.visibilityState === 'hidden') flush();
@@ -145,67 +224,90 @@ export default function Notes({ windowId, host }: AppProps) {
     return () => {
       window.removeEventListener('pagehide', flush);
       document.removeEventListener('visibilitychange', onVisibility);
-      if (ready.current) void saveNotes(notesRef.current);
+      if (acceptRef.current && notesRole() === 'writer') {
+        pullRef.current();
+        void saveNotes(notesRef.current);
+      }
     };
   }, []);
 
   const current = notes.find((note) => note.id === selected) ?? notes[0];
 
+  const writable = role === 'writer' && problem === null && editEpoch === bodyEpoch && bodyEpoch > 0;
+
   useLayoutEffect(() => {
+    acceptRef.current = writable;
     const field = bodyRef.current;
-    if (!field || !current) return;
+    if (!field || !current || preview) return;
+    const body = current.body;
+    assignNoteBody(field, body);
     const restore = restoreRef.current;
     if (restore?.selectedId === current.id) {
       field.scrollTop = restore.scrollTop;
-      const start = Math.min(restore.selectionStart, field.value.length);
-      const end = Math.min(restore.selectionEnd, field.value.length);
+      const start = Math.min(restore.selectionStart, body.length);
+      const end = Math.min(restore.selectionEnd, body.length);
       field.setSelectionRange(start, end);
       restoreRef.current = null;
     }
-  }, [current]);
-
-  const commitBody = (body: string) => {
-    const live = notesRef.current.find((note) => note.id === selectedRef.current);
-    if (!live || live.body === body) return;
-    const next = notesRef.current.map((note) => (note.id === live.id ? { ...note, body, updatedAt: Date.now() } : note));
-    notesRef.current = next;
-    rememberNotes(next);
-    scheduleSave();
-    markLength(body);
-  };
+    lengthRef.current = body.length;
+  }, [current, preview, writable]);
 
   useEffect(() => {
     const field = bodyRef.current;
     if (!field) return;
     const onBefore = (event: Event) => {
-      if (!(event instanceof InputEvent) || notesRole() !== 'writer' || field.readOnly) return;
-      if (!event.inputType.startsWith('insert')) return;
-      if (event.inputType === 'insertCompositionText') return;
+      if (!(event instanceof InputEvent) || notesRole() !== 'writer' || !acceptRef.current || field.readOnly) return;
       const start = field.selectionStart ?? 0;
       const end = field.selectionEnd ?? start;
-      const incoming =
-        event.data ?? (event.inputType === 'insertLineBreak' || event.inputType === 'insertParagraph' ? '\n' : '');
-      if (!incoming) return;
-      const room = NOTES_MAX_CHARS - (field.value.length - (end - start));
-      if (room >= incoming.length) return;
+      const plan = planBeforeInput(
+        lengthRef.current,
+        start,
+        end,
+        event.inputType,
+        event.data,
+        event.dataTransfer?.getData('text/plain') ?? null,
+      );
+      if (plan.nextLength !== null) lengthRef.current = plan.nextLength;
+      if (!plan.prevent) return;
       event.preventDefault();
-      if (room > 0) {
-        let piece = incoming.slice(0, room);
-        const code = piece.charCodeAt(piece.length - 1);
-        if (code >= 0xd800 && code <= 0xdbff) piece = piece.slice(0, -1);
-        if (piece.length > 0) field.setRangeText(piece, start, end, 'end');
+      if (plan.text.length > 0) insertClippedText(field, start, end, plan.text);
+      if (plan.clipped) showStatus("The rest of that paste didn't fit.");
+      if (plan.dirty) {
+        bodyDirty.current = true;
+        noteTyped();
+        scheduleSaveRef.current();
       }
-      showStatus("The rest of that paste didn't fit.");
+      markLengthCount(lengthRef.current);
+    };
+    const onCompose = () => {
+      if (!acceptRef.current || notesRole() !== 'writer') return;
+      const caret = field.selectionStart ?? 0;
+      const trimmed = trimOverflowAtCaret(field.value, caret);
+      if (trimmed.clipped) {
+        field.value = trimmed.text;
+        field.setSelectionRange(trimmed.caret, trimmed.caret);
+        showStatus("The rest of that paste didn't fit.");
+      }
+      lengthRef.current = trimmed.text.length;
+      markLengthCount(lengthRef.current);
+      bodyDirty.current = true;
+      noteTyped();
+      scheduleSaveRef.current();
     };
     field.addEventListener('beforeinput', onBefore);
-    return () => field.removeEventListener('beforeinput', onBefore);
-  }, [current?.id, preview]);
+    field.addEventListener('compositionend', onCompose);
+    return () => {
+      field.removeEventListener('beforeinput', onBefore);
+      field.removeEventListener('compositionend', onCompose);
+    };
+  }, [current?.id, bodyEpoch, preview]);
 
   useEffect(() => {
     if (current) host.setTitle(current.title || 'Notes');
   }, [current, host]);
 
   const update = (patch: Partial<Note>, caret?: number) => {
+    pullBody();
     const live = notesRef.current.find((note) => note.id === selectedRef.current) ?? current;
     if (!live || role !== 'writer' || problem) return;
     let clipped = false;
@@ -214,12 +316,6 @@ export default function Notes({ windowId, host }: AppProps) {
       const limited = trimInsertion(live.title, nextPatch.title, caret ?? nextPatch.title.length);
       nextPatch.title = limited.text;
       clipped = clipped || limited.clipped;
-    }
-    if (nextPatch.body !== undefined) {
-      const limited = trimInsertion(live.body, nextPatch.body, caret ?? nextPatch.body.length, NOTES_MAX_CHARS);
-      nextPatch.body = limited.text;
-      clipped = clipped || limited.clipped;
-      markLength(limited.text);
     }
     if (clipped) showStatus("The rest of that paste didn't fit.");
     const next = notesRef.current.map((note) =>
@@ -233,26 +329,35 @@ export default function Notes({ windowId, host }: AppProps) {
   };
 
   const takeOver = () => {
+    disarm();
     void (async () => {
       const claimed = await claimNotesHere();
       setRole(claimed);
       if (claimed !== 'writer') return;
       const loaded = await loadNotes();
-      if (loaded.status !== 'ok') {
-        setProblem(loaded.status);
-        return;
-      }
-      const next = loaded.notes.length > 0 ? loaded.notes : [freshNote()];
-      notesRef.current = next;
-      const selectedId = preferredNoteId(next.map((note) => note.id), readNotesUi(windowId)?.selectedId ?? null);
-      markLength(next.find((note) => note.id === selectedId)?.body ?? next[0]?.body ?? '');
-      setNotes(next);
-      setSelected(selectedId);
-      ready.current = true;
-      setProblem(null);
-      rememberNotes(next);
-      scheduleSave();
+      showLoadedRef.current(loaded);
     })();
+  };
+
+  const onBodyInput = (event: FormEvent<HTMLTextAreaElement>) => {
+    if (!acceptRef.current || notesRole() !== 'writer') return;
+    const inputType = (event.nativeEvent as InputEvent).inputType;
+    const mark = dispatchNoteInput(
+      { dirty: bodyDirty.current, length: lengthRef.current },
+      { nativeEvent: { inputType }, currentTarget: event.currentTarget },
+      trimOverflowAtCaret,
+    );
+    if (mark.clipped && mark.value !== undefined) {
+      event.currentTarget.value = mark.value;
+      const caret = mark.caret ?? mark.value.length;
+      event.currentTarget.setSelectionRange(caret, caret);
+      showStatus("The rest of that paste didn't fit.");
+    }
+    lengthRef.current = mark.mark.length;
+    bodyDirty.current = true;
+    noteTyped();
+    scheduleSave();
+    markLengthCount(lengthRef.current);
   };
 
   return (
@@ -294,12 +399,17 @@ export default function Notes({ windowId, host }: AppProps) {
           disabled={role !== 'writer' || problem !== null}
           onClick={() => {
             if (role !== 'writer' || problem) return;
+            pullBody();
             const note = freshNote();
             const next = [note, ...notesRef.current];
             notesRef.current = next;
-            markLength('');
+            lengthRef.current = 0;
+            markLengthCount(0);
             setNotes(next);
             setSelected(note.id);
+            bumpEpoch();
+            rememberNotes(next);
+            scheduleSave();
           }}
         >
           New
@@ -312,7 +422,11 @@ export default function Notes({ windowId, host }: AppProps) {
                 className="w-full truncate px-3 py-2 text-left text-[13px] leading-5"
                 style={{ background: note.id === current?.id ? 'rgba(134,189,178,0.16)' : 'transparent' }}
                 onClick={() => {
-                  markLength(notesRef.current.find((item) => item.id === note.id)?.body ?? note.body);
+                  pullBody();
+                  setNotes(notesRef.current);
+                  const body = notesRef.current.find((item) => item.id === note.id)?.body ?? note.body;
+                  lengthRef.current = body.length;
+                  markLengthCount(body.length);
                   setSelected(note.id);
                 }}
               >
@@ -340,7 +454,10 @@ export default function Notes({ windowId, host }: AppProps) {
             <button
               type="button"
               onClick={() => {
-                if (!preview) setNotes(notesRef.current);
+                if (!preview) {
+                  pullBody();
+                  setNotes(notesRef.current);
+                }
                 setPreview((value) => !value);
               }}
             >
@@ -355,12 +472,12 @@ export default function Notes({ windowId, host }: AppProps) {
           ) : (
             <textarea
               ref={bodyRef}
-              key={current.id}
+              key={`${current.id}:${bodyEpoch}`}
               data-testid="notes-body"
               aria-label="Note"
               className="min-h-0 flex-1 resize-none bg-transparent px-4 py-3 text-[15px] leading-6 outline-none"
-              defaultValue={notesRef.current.find((note) => note.id === current.id)?.body ?? current.body}
-              readOnly={role !== 'writer' || problem !== null}
+              defaultValue={current.body}
+              readOnly={!writable}
               onSelect={(event) => {
                 writeNotesUi(windowId, {
                   selectedId: selectedRef.current,
@@ -379,7 +496,7 @@ export default function Notes({ windowId, host }: AppProps) {
                   selectionEnd: event.currentTarget.selectionEnd,
                 });
               }}
-              onInput={(event) => commitBody(event.currentTarget.value)}
+              onInput={onBodyInput}
             />
           )}
         </div>

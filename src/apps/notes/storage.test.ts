@@ -65,6 +65,7 @@ describe('notes storage', () => {
     expect(parseStoredNote({ version: 1, id: '1', title: 'Sea', body: 'grey', updatedAt: 4 })).toEqual({
       kind: 'note',
       version: 1,
+      revision: 0,
       note: { id: '1', title: 'Sea', body: 'grey', updatedAt: 4 },
     });
     expect(parseStoredNote('{"version":1')).toEqual({ kind: 'corrupt' });
@@ -327,12 +328,386 @@ describe('notes storage', () => {
     vi.unstubAllGlobals();
   });
 
+  it('writes the mirror on a 300 ms trail and again immediately on flush', async () => {
+    vi.useFakeTimers();
+    vi.resetModules();
+    const store = new Map<string, string>();
+    vi.stubGlobal('localStorage', memoryStorage(store));
+    installLocks();
+    const storage = await import('./storage');
+    expect(await storage.startNotesSession()).toBe('writer');
+    storage.rememberNotes([{ id: 'a', title: 'A', body: 'one', updatedAt: 2 }]);
+    const key = `${storage.NOTES_MIRROR_PREFIX}a`;
+    vi.advanceTimersByTime(299);
+    expect(store.has(key)).toBe(false);
+    vi.advanceTimersByTime(1);
+    const first = JSON.parse(store.get(key) ?? '{}') as { revision: number; writtenAt: number; note: { body: string } };
+    expect(first.note.body).toBe('one');
+    expect(first.revision).toBeGreaterThan(0);
+    expect(first.writtenAt).toBeGreaterThan(0);
+    storage.rememberNotes([{ id: 'a', title: 'A', body: 'two', updatedAt: 3 }]);
+    expect(JSON.parse(store.get(key) ?? '{}').note.body).toBe('one');
+    storage.flushNotesMirror();
+    expect(JSON.parse(store.get(key) ?? '{}').note.body).toBe('two');
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  it('keeps IndexedDB after an A → B → A hand-back and saves the reset textarea', async () => {
+    vi.resetModules();
+    const harness = installTabHarness();
+    const tabA = await import('./storage');
+    vi.resetModules();
+    const tabB = await import('./storage');
+    expect(await tabA.startNotesSession()).toBe('writer');
+    await wait(20);
+    expect(await tabA.saveNotes([{ id: 'x', title: 'T', body: 'hello', updatedAt: 1_000 }])).toBe('ok');
+    expect(await tabB.startNotesSession()).toBe('reader');
+    expect(await tabB.claimNotesHere()).toBe('writer');
+    expect(tabA.notesRole()).toBe('reader');
+    const loadedB = await tabB.loadNotes();
+    expect(loadedB.status).toBe('ok');
+    if (loadedB.status !== 'ok') return;
+    expect(loadedB.notes.find((note) => note.id === 'x')?.body).toBe('hello');
+    expect(await tabB.saveNotes([{ id: 'x', title: 'T', body: 'hello world', updatedAt: 2_000 }])).toBe('ok');
+    expect(await tabA.claimNotesHere()).toBe('writer');
+    const loadedA = await tabA.loadNotes();
+    expect(loadedA.status).toBe('ok');
+    if (loadedA.status !== 'ok') return;
+    expect(loadedA.notes.find((note) => note.id === 'x')?.body).toBe('hello world');
+    const field = { value: 'hello' };
+    const { assignNoteBody } = await import('./editorInput');
+    assignNoteBody(field, loadedA.notes.find((note) => note.id === 'x')?.body ?? '');
+    expect(field.value).toBe('hello world');
+    field.value += '!';
+    expect(await tabA.saveNotes([{ id: 'x', title: 'T', body: field.value, updatedAt: 3_000 }])).toBe('ok');
+    expect(noteBody(harness.buckets, 'x')).toBe('hello world!');
+    harness.restore();
+  });
+
+  it('reloads IndexedDB when the leader closes and does not let a reader mirror wipe it', async () => {
+    vi.resetModules();
+    const harness = installTabHarness();
+    const tabA = await import('./storage');
+    vi.resetModules();
+    const tabB = await import('./storage');
+    expect(await tabA.startNotesSession()).toBe('writer');
+    await wait(20);
+    expect(await tabA.saveNotes([{ id: 'x', title: 'T', body: 'hello', updatedAt: 1_000 }])).toBe('ok');
+    expect(await tabB.startNotesSession()).toBe('reader');
+    const stale = await tabB.loadNotes();
+    expect(stale.status).toBe('ok');
+    if (stale.status !== 'ok') return;
+    expect(stale.notes[0]?.body).toBe('hello');
+    tabB.rememberNotes([{ id: 'x', title: 'T', body: 'hello plus stale', updatedAt: Date.now() }]);
+    tabB.flushNotesMirror();
+    expect([...harness.store.keys()].some((key) => key.startsWith(tabB.NOTES_MIRROR_PREFIX))).toBe(false);
+    expect(await tabA.saveNotes([{ id: 'x', title: 'T', body: 'hello world', updatedAt: 2_000 }])).toBe('ok');
+    const handed = new Promise<import('./storage').LoadNotesResult>((resolve) => {
+      tabB.subscribeNotesHandoff(resolve);
+    });
+    for (const fn of harness.pagehide) fn();
+    expect(tabA.notesRole()).toBe('reader');
+    const loaded = await handed;
+    expect(loaded.status).toBe('ok');
+    if (loaded.status !== 'ok') return;
+    expect(loaded.notes.find((note) => note.id === 'x')?.body).toBe('hello world');
+    expect(noteBody(harness.buckets, 'x')).toBe('hello world');
+    expect(tabB.notesRole()).toBe('writer');
+    const field = { value: 'hello' };
+    const { assignNoteBody } = await import('./editorInput');
+    assignNoteBody(field, 'hello world');
+    field.value += '!';
+    expect(await tabB.saveNotes([{ id: 'x', title: 'T', body: field.value, updatedAt: 3_000 }])).toBe('ok');
+    expect(noteBody(harness.buckets, 'x')).toBe('hello world!');
+    harness.restore();
+  });
+
+  it('lets a mirror win only when its revision is newer than IndexedDB', async () => {
+    vi.resetModules();
+    const buckets = new Map<string, Map<string, unknown>>();
+    const store = new Map<string, string>();
+    installMemoryIdb(buckets);
+    vi.stubGlobal('localStorage', memoryStorage(store));
+    installLocks();
+    const storage = await import('./storage');
+    const bucket = new Map<string, unknown>();
+    buckets.set('ghiland', bucket);
+    bucket.set(storage.NOTES_INDEX_KEY, { version: 1, ids: ['x'] });
+    bucket.set(storage.recordKey('x'), {
+      version: 1,
+      revision: 4,
+      updatedAt: 10,
+      id: 'x',
+      title: 'T',
+      body: 'committed',
+    });
+    store.set(
+      `${storage.NOTES_MIRROR_PREFIX}x`,
+      JSON.stringify({
+        version: 1,
+        revision: 2,
+        writtenAt: 9_999,
+        note: { id: 'x', title: 'T', body: 'stale', updatedAt: 9_999 },
+      }),
+    );
+    expect(await storage.startNotesSession()).toBe('writer');
+    const older = await storage.loadNotes();
+    expect(older.status).toBe('ok');
+    if (older.status !== 'ok') return;
+    expect(older.notes[0]?.body).toBe('committed');
+    vi.resetModules();
+    installMemoryIdb(buckets);
+    vi.stubGlobal('localStorage', memoryStorage(store));
+    installLocks();
+    store.set(
+      `${storage.NOTES_MIRROR_PREFIX}x`,
+      JSON.stringify({
+        version: 1,
+        revision: 5,
+        writtenAt: 11,
+        note: { id: 'x', title: 'T', body: 'crashed-edit', updatedAt: 11 },
+      }),
+    );
+    const again = await import('./storage');
+    expect(await again.startNotesSession()).toBe('writer');
+    const newer = await again.loadNotes();
+    expect(newer.status).toBe('ok');
+    if (newer.status !== 'ok') return;
+    expect(newer.notes[0]?.body).toBe('crashed-edit');
+    expect(storage.mirrorIsNewer({ revision: 2, writtenAt: 99, updatedAt: 99 }, { revision: 4, updatedAt: 10 })).toBe(false);
+    expect(storage.mirrorIsNewer({ revision: 5, writtenAt: 11, updatedAt: 11 }, { revision: 4, updatedAt: 10 })).toBe(true);
+    vi.unstubAllGlobals();
+  });
+
+  it('drops the largest mirrors past the budget and does not rewrite an unchanged note', async () => {
+    vi.resetModules();
+    const store = new Map<string, string>();
+    const sets: string[] = [];
+    const storageApi = memoryStorage(store);
+    const write = storageApi.setItem;
+    storageApi.setItem = (key, value) => {
+      sets.push(key);
+      write(key, value);
+    };
+    vi.stubGlobal('localStorage', storageApi);
+    installLocks();
+    const storage = await import('./storage');
+    expect(await storage.startNotesSession()).toBe('writer');
+    const small = { id: 's', title: 'S', body: 'kept', updatedAt: 1 };
+    const other = { id: 'o', title: 'O', body: 'same', updatedAt: 1 };
+    storage.rememberNotes([small, other]);
+    storage.flushNotesMirror();
+    const before = sets.length;
+    storage.flushNotesMirror();
+    expect(sets.length).toBe(before);
+    storage.rememberNotes([{ ...small, body: 'kept!', updatedAt: 2 }, other]);
+    sets.length = 0;
+    storage.flushNotesMirror();
+    expect(sets.filter((key) => key.endsWith(':s'))).toHaveLength(1);
+    expect(sets.filter((key) => key.endsWith(':o'))).toHaveLength(0);
+    const bulky = [0, 1, 2, 3].map((index) => ({
+      id: `b${index}`,
+      title: 'B',
+      body: 'y'.repeat(900_000),
+      updatedAt: 4,
+    }));
+    storage.rememberNotes(bulky);
+    storage.flushNotesMirror();
+    const mirrored = [...store.keys()].filter((key) => key.startsWith(storage.NOTES_MIRROR_PREFIX) && key.includes(':b'));
+    expect(mirrored.length).toBe(3);
+    expect(mirrored.reduce((sum, key) => sum + (store.get(key)?.length ?? 0), 0)).toBeLessThanOrEqual(storage.MIRROR_BUDGET_CHARS + 200);
+    vi.unstubAllGlobals();
+  });
+
+  it('returns to reader on pagehide and reloads IndexedDB when the page is restored', async () => {
+    vi.resetModules();
+    const harness = installTabHarness();
+    const storage = await import('./storage');
+    expect(await storage.startNotesSession()).toBe('writer');
+    await wait(20);
+    expect(await storage.saveNotes([{ id: 'x', title: 'T', body: 'kept', updatedAt: 4 }])).toBe('ok');
+    for (const fn of harness.pagehide) fn();
+    await wait(10);
+    expect(storage.notesRole()).toBe('reader');
+    const bucket = harness.buckets.get('ghiland');
+    bucket?.set(storage.recordKey('x'), {
+      version: 1,
+      revision: 2,
+      updatedAt: 8,
+      id: 'x',
+      title: 'T',
+      body: 'from-disk',
+    });
+    const handed = new Promise<import('./storage').LoadNotesResult>((resolve) => {
+      storage.subscribeNotesHandoff(resolve);
+    });
+    for (const fn of harness.pageshow) fn({ persisted: true });
+    const loaded = await handed;
+    expect(storage.notesRole()).toBe('writer');
+    expect(loaded.status).toBe('ok');
+    if (loaded.status !== 'ok') return;
+    expect(loaded.notes[0]?.body).toBe('from-disk');
+    harness.restore();
+  });
+
+  it('does not elect a third tab while Use here is taking the lock', async () => {
+    vi.resetModules();
+    const harness = installTabHarness();
+    const tabA = await import('./storage');
+    vi.resetModules();
+    const tabB = await import('./storage');
+    vi.resetModules();
+    const tabC = await import('./storage');
+    expect(await tabA.startNotesSession()).toBe('writer');
+    await wait(20);
+    expect(await tabA.saveNotes([{ id: 'x', title: 'T', body: 'owned', updatedAt: 1 }])).toBe('ok');
+    expect(await tabC.startNotesSession()).toBe('reader');
+    const roles: string[] = [];
+    tabC.subscribeNotesRole((role) => roles.push(role));
+    expect(await tabB.startNotesSession()).toBe('reader');
+    expect(await tabB.claimNotesHere()).toBe('writer');
+    await wait(30);
+    expect(tabA.notesRole()).toBe('reader');
+    expect(tabC.notesRole()).toBe('reader');
+    expect(roles).not.toContain('writer');
+    const loaded = await tabB.loadNotes();
+    expect(loaded.status).toBe('ok');
+    if (loaded.status !== 'ok') return;
+    expect(loaded.notes[0]?.body).toBe('owned');
+    expect(noteBody(harness.buckets, 'x')).toBe('owned');
+    harness.restore();
+  });
+
   it('renders a little markdown without letting HTML through', () => {
     expect(renderLightMarkdown('**q** and *space*\n<script>')).toBe(
       '<strong>q</strong> and <em>space</em><br>&lt;script&gt;',
     );
   });
 });
+
+function wait(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function noteBody(buckets: Map<string, Map<string, unknown>>, id: string): string | undefined {
+  const record = buckets.get('ghiland')?.get(`ghiland:app:notes:note:${id}`) as { body?: string } | undefined;
+  return record?.body;
+}
+
+function memoryStorage(store: Map<string, string>) {
+  return {
+    get length() {
+      return store.size;
+    },
+    key: (index: number) => [...store.keys()][index] ?? null,
+    getItem: (key: string) => store.get(key) ?? null,
+    setItem: (key: string, value: string) => {
+      store.set(key, value);
+    },
+    removeItem: (key: string) => {
+      store.delete(key);
+    },
+  };
+}
+
+function installTabHarness() {
+  const buckets = new Map<string, Map<string, unknown>>();
+  const store = new Map<string, string>();
+  const pagehide = new Set<() => void>();
+  const pageshow = new Set<(event: { persisted?: boolean }) => void>();
+  const peers = new Set<FakeBus>();
+  class FakeBus {
+    onmessage: ((event: { data: { type?: string; id?: string } }) => void) | null = null;
+    private listeners = new Set<(event: { data: { type?: string; id?: string } }) => void>();
+    constructor() {
+      peers.add(this);
+    }
+    postMessage(data: { type?: string; id?: string }) {
+      for (const peer of peers) {
+        if (peer === this) continue;
+        const event = { data };
+        setTimeout(() => {
+          peer.onmessage?.(event);
+          for (const listener of peer.listeners) listener(event);
+        }, 0);
+      }
+    }
+    addEventListener(_type: string, fn: (event: { data: { type?: string; id?: string } }) => void) {
+      this.listeners.add(fn);
+    }
+    removeEventListener(_type: string, fn: (event: { data: { type?: string; id?: string } }) => void) {
+      this.listeners.delete(fn);
+    }
+  }
+  vi.stubGlobal('document', {
+    visibilityState: 'visible',
+    hidden: false,
+    addEventListener() {},
+    removeEventListener() {},
+  });
+  vi.stubGlobal('window', {
+    addEventListener(type: string, fn: (event?: { persisted?: boolean }) => void) {
+      if (type === 'pagehide') pagehide.add(fn as () => void);
+      if (type === 'pageshow') pageshow.add(fn as (event: { persisted?: boolean }) => void);
+    },
+    removeEventListener() {},
+    setTimeout: globalThis.setTimeout.bind(globalThis),
+    clearTimeout: globalThis.clearTimeout.bind(globalThis),
+  });
+  vi.stubGlobal('BroadcastChannel', FakeBus);
+  vi.stubGlobal('localStorage', memoryStorage(store));
+  installMemoryIdb(buckets);
+  installExclusiveLocks();
+  return {
+    buckets,
+    store,
+    pagehide,
+    pageshow,
+    restore() {
+      vi.unstubAllGlobals();
+    },
+  };
+}
+
+function installExclusiveLocks(): void {
+  let holder: Promise<unknown> | null = null;
+  const waiters: Array<(lock: Lock | null) => unknown> = [];
+  const pump = () => {
+    if (holder || waiters.length === 0) return;
+    const callback = waiters.shift();
+    if (!callback) return;
+    const result = callback({ name: 'ghiland-notes-writer' } as Lock);
+    holder = Promise.resolve(result).then(() => {
+      holder = null;
+      pump();
+    });
+  };
+  const nav = globalThis.navigator ?? ({} as Navigator);
+  Object.defineProperty(globalThis, 'navigator', { value: nav, configurable: true });
+  Object.defineProperty(nav, 'locks', {
+    configurable: true,
+    value: {
+      request(_name: string, options: LockOptions | null, callback: (lock: Lock | null) => unknown) {
+        const wait = !options || options.ifAvailable !== true;
+        if (!holder) {
+          const result = callback({ name: 'ghiland-notes-writer' } as Lock);
+          holder = Promise.resolve(result).then(() => {
+            holder = null;
+            pump();
+          });
+          return Promise.resolve();
+        }
+        if (!wait) {
+          callback(null);
+          return Promise.resolve();
+        }
+        waiters.push(callback);
+        return Promise.resolve();
+      },
+    },
+  });
+}
 
 function installReaderLocks(): void {
   const nav = globalThis.navigator ?? ({} as Navigator);
