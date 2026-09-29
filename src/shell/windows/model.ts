@@ -132,7 +132,11 @@ export function setWindowMode(book: WindowBook, id: string, mode: WindowMode): W
   return { ...book, windows: { ...book.windows, [id]: { ...current, mode, state: 'normal' } } };
 }
 
-export function restorePinned(book: WindowBook, records: readonly PinnedRecord[]): WindowBook {
+export function restorePinned(
+  book: WindowBook,
+  records: readonly PinnedRecord[],
+  rects: Record<string, ScreenRect> = {},
+): WindowBook {
   const windows = { ...book.windows };
   for (const record of records) {
     if (Object.values(windows).some((item) => item.appId === record.appId)) continue;
@@ -149,7 +153,7 @@ export function restorePinned(book: WindowBook, records: readonly PinnedRecord[]
         placement: record.placement,
         anchorId: record.anchorId,
       },
-      lastScreenRect: { x: 48, y: 48, w: record.w, h: record.h },
+      lastScreenRect: rects[record.appId] ?? { x: 48, y: 48, w: record.w, h: record.h },
       state: 'normal',
       z: 1,
       owner: 'local',

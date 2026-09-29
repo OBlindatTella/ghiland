@@ -37,12 +37,16 @@ function detached(): WindowInstance | null {
 }
 
 export function persistWindows(): void {
-  writeWindowsFile(fileFromWindows(Object.values(useWindows.getState().windows)));
+  const previous = readWindowsFile();
+  writeWindowsFile(fileFromWindows(Object.values(useWindows.getState().windows), previous));
 }
 
 export function restorePinnedForWorld(worldId: string): void {
   const file = readWindowsFile();
-  useWindows.getState().restoreWorld(file.pinned.filter((item) => item.worldId === worldId));
+  useWindows.getState().restoreWorld(
+    file.pinned.filter((item) => item.worldId === worldId),
+    file.rects,
+  );
 }
 
 function overlayMode(item: WindowInstance): void {

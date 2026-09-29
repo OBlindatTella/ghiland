@@ -29,7 +29,7 @@ interface WindowsStore {
   setRect: (id: string, rect: ScreenRect) => void;
   setTitle: (id: string, title: string) => void;
   setMode: (id: string, mode: WindowMode) => void;
-  restoreWorld: (records: readonly PinnedRecord[]) => void;
+  restoreWorld: (records: readonly PinnedRecord[], rects?: Record<string, ScreenRect>) => void;
 }
 
 export const useWindows = create<WindowsStore>((set, get) => ({
@@ -59,5 +59,6 @@ export const useWindows = create<WindowsStore>((set, get) => ({
   setRect: (id, rect) => set(setWindowRect({ windows: get().windows, focusedId: get().focusedId }, id, rect)),
   setTitle: (id, title) => set(setWindowTitle({ windows: get().windows, focusedId: get().focusedId }, id, title)),
   setMode: (id, mode) => set(setWindowMode({ windows: get().windows, focusedId: get().focusedId }, id, mode)),
-  restoreWorld: (records) => set(restorePinned({ windows: get().windows, focusedId: get().focusedId }, records)),
+  restoreWorld: (records, rects) =>
+    set(restorePinned({ windows: get().windows, focusedId: get().focusedId }, records, rects)),
 }));

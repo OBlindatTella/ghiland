@@ -117,9 +117,9 @@ export function migrateWindowsFile(raw: unknown, fromVersion: number): WindowsFi
   return { pinned, rects };
 }
 
-export function fileFromWindows(windows: readonly WindowInstance[]): WindowsFile {
+export function fileFromWindows(windows: readonly WindowInstance[], previous: WindowsFile = emptyWindowsFile): WindowsFile {
   const pinned: PinnedRecord[] = [];
-  const rects: Record<string, ScreenRect> = {};
+  const rects: Record<string, ScreenRect> = { ...previous.rects };
   for (const item of windows) {
     rects[item.appId] = item.lastScreenRect;
     if (item.mode.kind !== 'worldPinned') continue;

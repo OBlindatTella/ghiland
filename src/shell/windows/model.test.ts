@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { closeWindow, emptyWindowBook, migrateWindows, openWindow, setWindowMode, setWindowRect, setWindowState } from '@/shell/windows/model';
+import { closeWindow, emptyWindowBook, migrateWindows, openWindow, restorePinned, setWindowMode, setWindowRect, setWindowState } from '@/shell/windows/model';
+import { fileFromWindows } from '@/shell/windows/persistence';
 
 const viewport = { w: 1280, h: 800 };
 const size = { w: 440, h: 560 };
@@ -135,5 +136,40 @@ describe('window book', () => {
     });
     expect(again.effect).toBe('focus');
     expect(Object.keys(again.book.windows)).toEqual(['a']);
+  });
+
+  it('keeps a closed app rect and restores a pinned window on its saved rect', () => {
+    const opened = openWindow(emptyWindowBook, {
+      id: 'a',
+      appId: 'notes',
+      title: 'Notes',
+      defaultSize: size,
+      viewport,
+      now: 1,
+      savedRect: { x: 120, y: 80, w: 440, h: 560 },
+    });
+    const moved = setWindowRect(opened.book, 'a', { x: 120, y: 80, w: 440, h: 560 });
+    const previous = fileFromWindows(Object.values(moved.windows));
+    const merged = fileFromWindows([], previous);
+    expect(merged.rects.notes).toEqual({ x: 120, y: 80, w: 440, h: 560 });
+    const restored = restorePinned(
+      emptyWindowBook,
+      [
+        {
+          id: 'a',
+          appId: 'notes',
+          title: 'Notes',
+          worldId: 'seaside-house',
+          w: 440,
+          h: 560,
+          position: [5.1, 1.45, 3.9],
+          quaternion: [0, 0, 0, 1],
+          placement: 'anchor',
+          anchorId: 'hero-sea',
+        },
+      ],
+      merged.rects,
+    );
+    expect(restored.windows.a?.lastScreenRect).toEqual({ x: 120, y: 80, w: 440, h: 560 });
   });
 });
