@@ -120,7 +120,7 @@ export class InputManager {
   }
 
   noteExternalOpen(): void {
-    this.externalOpenUntil = Date.now() + 1000;
+    this.externalOpenUntil = Date.now() + 500;
   }
 
   /** Detach closes the Screen and asks for pointer lock. */
