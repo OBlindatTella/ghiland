@@ -176,6 +176,26 @@ describe('placement bounds', () => {
     expect(result.valid).toBe(false);
   });
 
+  it('keeps a side-wall pin 1 cm off the wall that was hit', () => {
+    const east: PlacementCollider = {
+      id: 'living-east',
+      box: { min: [7, 0, -3.5], max: [7.2, 3.2, 4.5] },
+      layers: ['movement', 'occluder', 'pinSurface'],
+    };
+    const result = resolvePlacement({
+      ray: { origin: [4, 1.5, 0], direction: [1, 0, 0] },
+      colliders: [east],
+      anchors: [],
+      occupied: new Set(),
+      heightPx: 560,
+      widthPx: 440,
+      bounds: { min: [-7, 0, -9], max: [7, 3.2, 9], floorY: 0, ceilingY: 3.2, railZ: 9 },
+    });
+    expect(result.placement).toBe('surface');
+    expect(result.valid).toBe(true);
+    expect(result.position[0]).toBeCloseTo(6.99, 2);
+  });
+
   it('sits a wall pin 1 cm off the surface and 2 cm clear of the floor', () => {
     expect(SURFACE_OFFSET).toBeCloseTo(0.01, 5);
     const result = resolvePlacement({

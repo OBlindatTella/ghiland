@@ -77,6 +77,16 @@ function add(a: Vec3, b: Vec3): Vec3 {
   return [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
 }
 
+function cross(a: Vec3, b: Vec3): Vec3 {
+  return [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+}
+
+function rotateVec(q: Quat, v: Vec3): Vec3 {
+  const u: Vec3 = [q[0], q[1], q[2]];
+  const t = scale(cross(u, v), 2);
+  return add(v, add(scale(t, q[3]), cross(u, t)));
+}
+
 function scale(a: Vec3, s: number): Vec3 {
   return [a[0] * s, a[1] * s, a[2] * s];
 }
@@ -313,6 +323,7 @@ export function resolvePlacement(query: PlacementQuery): Placement {
 function containPlacement(placement: Placement, query: PlacementQuery): Placement {
   const bounds = query.bounds;
   if (!bounds || placement.placement === 'anchor') return placement;
+  if (placement.placement === 'surface') return containOnSurface(placement, query, bounds);
   const halfH = query.heightPx / PX_PER_METER / 2;
   const halfW = (query.widthPx ?? 440) / PX_PER_METER / 2;
   let x = placement.position[0];
@@ -334,6 +345,50 @@ function containPlacement(placement: Placement, query: PlacementQuery): Placemen
     y = Math.min(maxY, Math.max(minY, y));
   }
   return withEyeCheck({ ...placement, position: [x, y, z] }, query.ray.origin);
+}
+
+/** Slide a surface pin inside the volume without leaving the wall it was placed on. */
+function containOnSurface(placement: Placement, query: PlacementQuery, bounds: PlacementBounds): Placement {
+  const halfH = query.heightPx / PX_PER_METER / 2;
+  const halfW = (query.widthPx ?? 440) / PX_PER_METER / 2;
+  const right = rotateVec(placement.quaternion, [1, 0, 0]);
+  const up = rotateVec(placement.quaternion, [0, 1, 0]);
+  let alongRight = 0;
+  let alongUp = 0;
+  const minX = bounds.min[0];
+  const maxX = bounds.max[0];
+  const minZ = bounds.min[2];
+  let maxZ = bounds.max[2];
+  if (bounds.railZ !== null) maxZ = Math.min(maxZ, bounds.railZ - RAIL_CLEARANCE);
+  const floor = bounds.floorY + EDGE_CLEARANCE;
+  const ceiling = bounds.ceilingY === null ? null : bounds.ceilingY - EDGE_CLEARANCE;
+  const corners: Array<[number, number]> = [
+    [halfW, halfH],
+    [halfW, -halfH],
+    [-halfW, halfH],
+    [-halfW, -halfH],
+  ];
+  for (let pass = 0; pass < 4; pass += 1) {
+    for (const [sx, sy] of corners) {
+      const corner = add(placement.position, add(scale(right, alongRight + sx), scale(up, alongUp + sy)));
+      if (corner[1] < floor && Math.abs(up[1]) > 0.2) alongUp += (floor - corner[1]) / up[1];
+      if (ceiling !== null && corner[1] > ceiling && Math.abs(up[1]) > 0.2) alongUp += (ceiling - corner[1]) / up[1];
+      const nudges: Array<[0 | 2, number]> = [
+        [0, corner[0] < minX ? minX - corner[0] : corner[0] > maxX ? maxX - corner[0] : 0],
+        [2, corner[2] < minZ ? minZ - corner[2] : corner[2] > maxZ ? maxZ - corner[2] : 0],
+      ];
+      for (const [axis, delta] of nudges) {
+        if (delta === 0) continue;
+        const useRight = Math.abs(right[axis]) >= Math.abs(up[axis]);
+        const component = useRight ? right[axis] : up[axis];
+        if (Math.abs(component) < 0.2) continue;
+        if (useRight) alongRight += delta / component;
+        else alongUp += delta / component;
+      }
+    }
+  }
+  const position = add(placement.position, add(scale(right, alongRight), scale(up, alongUp)));
+  return withEyeCheck({ ...placement, position }, query.ray.origin);
 }
 
 /**
