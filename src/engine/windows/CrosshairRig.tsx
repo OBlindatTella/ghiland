@@ -15,9 +15,9 @@ export function CrosshairRig() {
   }, [camera]);
 
   useEffect(() => {
-    const onClick = () => {
+    const onClick = (event: MouseEvent) => {
       if (document.pointerLockElement !== gl.domElement) return;
-      notifyCrosshairClick();
+      notifyCrosshairClick({ x: event.clientX, y: event.clientY });
     };
     gl.domElement.addEventListener('click', onClick);
     return () => gl.domElement.removeEventListener('click', onClick);

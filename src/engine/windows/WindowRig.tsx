@@ -147,7 +147,7 @@ export function WindowRig() {
     inputManager.setBeforeShellChange((from, to) => {
       if (from === 'WORLD' && to !== 'WORLD') autoPinCarried();
     });
-    const unhit = onCrosshairHit((id) => focusPinnedFromWorld(id));
+    const unhit = onCrosshairHit((id, point) => focusPinnedFromWorld(id, point));
     const unsub = useWindows.subscribe(() => persistWindows());
     const onHide = () => persistWindows();
     window.addEventListener('pagehide', onHide);

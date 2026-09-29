@@ -96,7 +96,7 @@ export function registerRayBlockers(boxes: readonly AABB[]): () => void {
 
 const quads: WindowQuad[] = [];
 let cameraRef: Camera | null = null;
-const listeners = new Set<(id: string) => void>();
+const listeners = new Set<(id: string, point: { x: number; y: number } | null) => void>();
 
 export function bindCrosshairCamera(camera: Camera | null): void {
   cameraRef = camera;
@@ -138,14 +138,14 @@ export function queryCrosshair(): string | null {
   return raycastCrosshair(cameraRef, quads, blockers);
 }
 
-export function notifyCrosshairClick(): string | null {
+export function notifyCrosshairClick(point?: { x: number; y: number }): string | null {
   const id = queryCrosshair();
   if (!id) return null;
-  for (const listener of listeners) listener(id);
+  for (const listener of listeners) listener(id, point ?? null);
   return id;
 }
 
-export function onCrosshairHit(listener: (id: string) => void): () => void {
+export function onCrosshairHit(listener: (id: string, point: { x: number; y: number } | null) => void): () => void {
   listeners.add(listener);
   return () => {
     listeners.delete(listener);

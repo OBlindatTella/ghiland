@@ -1,6 +1,7 @@
 import type { WindowInstance } from '@/contracts/window';
 import { getWorld } from '@/worlds/registry';
 import { inputManager } from '@/engine/input/InputManager';
+import { caretIndexInField, type CaretPoint } from '@/engine/windows/caret';
 import { carryTarget, clearCarry, readCarry, seedCarry } from '@/engine/windows/carryPose';
 import { cameraPose, queryCrosshair } from '@/engine/windows/crosshair';
 import { autoPinPlacement, resolvePlacement, type PlacementBounds, type PlacementCollider } from '@/engine/windows/placement';
@@ -178,8 +179,8 @@ export function onInteractKey(): void {
   useWindows.getState().setMode(item.id, { kind: 'detached', offset: [0, 0, -1.1], lagMs: 150 });
 }
 
-/** Aim and click a pinned window: SCREEN, focused, camera stays. */
-export function focusPinnedFromWorld(id: string): void {
+/** Aim and click a pinned window: SCREEN, focused, caret where the click landed. */
+export function focusPinnedFromWorld(id: string, point: CaretPoint | null = null): void {
   const item = useWindows.getState().windows[id];
   if (!item || item.mode.kind !== 'worldPinned') return;
   if (useInputStore.getState().shellState !== 'WORLD') return;
@@ -187,6 +188,10 @@ export function focusPinnedFromWorld(id: string): void {
   inputManager.presentScreen();
   window.setTimeout(() => {
     const field = document.querySelector<HTMLElement>(`[data-ghiland-window="${id}"] textarea, [data-ghiland-window="${id}"] input`);
-    field?.focus();
+    if (!field) return;
+    field.focus({ preventScroll: true });
+    if (!point || !(field instanceof HTMLTextAreaElement || field instanceof HTMLInputElement)) return;
+    const index = caretIndexInField(field, point);
+    if (index !== null) field.setSelectionRange(index, index);
   }, 0);
 }
