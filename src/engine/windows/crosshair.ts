@@ -55,7 +55,7 @@ function rayBoxDistance(originX: number, originY: number, originZ: number, dirX:
   return tmin;
 }
 
-/** Centre-of-screen ray against window quads. Occluders and placement boxes win. Empty list returns null. */
+/** Centre-of-screen ray against window quads. Occluders win. Empty list returns null. */
 export function raycastCrosshair(
   camera: Camera,
   quads: readonly WindowQuad[],

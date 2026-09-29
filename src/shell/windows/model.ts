@@ -23,6 +23,8 @@ function list(book: WindowBook): WindowInstance[] {
   return Object.values(book.windows).sort((a, b) => a.z - b.z);
 }
 
+const recallArmed = new Set<string>();
+
 function raise(book: WindowBook, id: string): WindowBook {
   const windows = { ...book.windows };
   const top = list(book).reduce((max, item) => Math.max(max, item.z), 0) + 1;
@@ -32,12 +34,33 @@ function raise(book: WindowBook, id: string): WindowBook {
   return { windows, focusedId: id };
 }
 
-export function openWindow(book: WindowBook, input: OpenWindowInput): { book: WindowBook; created: boolean } {
+export function openWindow(
+  book: WindowBook,
+  input: OpenWindowInput,
+): { book: WindowBook; created: boolean; effect: 'created' | 'focus' | 'pulse' | 'recall' } {
   const existing = Object.values(book.windows).find((item) => item.appId === input.appId);
   if (existing) {
+    if (existing.mode.kind === 'worldPinned') {
+      if (recallArmed.has(existing.id)) {
+        recallArmed.delete(existing.id);
+        const recalled: WindowInstance = {
+          ...existing,
+          state: 'normal',
+          mode: { kind: 'overlay', rect: existing.lastScreenRect },
+        };
+        return {
+          book: raise({ windows: { ...book.windows, [existing.id]: recalled }, focusedId: book.focusedId }, existing.id),
+          created: false,
+          effect: 'recall',
+        };
+      }
+      recallArmed.add(existing.id);
+      return { book, created: false, effect: 'pulse' };
+    }
+    recallArmed.delete(existing.id);
     const restored =
       existing.state === 'minimized' ? { ...book.windows, [existing.id]: { ...existing, state: 'normal' as const } } : book.windows;
-    return { book: raise({ windows: restored, focusedId: book.focusedId }, existing.id), created: false };
+    return { book: raise({ windows: restored, focusedId: book.focusedId }, existing.id), created: false, effect: 'focus' };
   }
   const previous = book.focusedId ? book.windows[book.focusedId]?.lastScreenRect ?? null : null;
   const rect = placeRect(input.defaultSize, input.viewport, previous);
@@ -56,10 +79,12 @@ export function openWindow(book: WindowBook, input: OpenWindowInput): { book: Wi
   return {
     book: { windows: { ...book.windows, [window.id]: window }, focusedId: window.id },
     created: true,
+    effect: 'created',
   };
 }
 
 export function closeWindow(book: WindowBook, id: string): WindowBook {
+  recallArmed.delete(id);
   if (!book.windows[id]) return book;
   const windows = { ...book.windows };
   delete windows[id];

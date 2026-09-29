@@ -3,6 +3,7 @@ import type { ScreenRect } from '@/contracts/math';
 import type { WindowInstance } from '@/contracts/window';
 import type { WindowMode } from '@/contracts/window';
 import type { PinnedRecord } from '@/shell/windows/persistence';
+import { pulseWindow } from '@/shell/windows/pulse';
 import {
   closeWindow,
   emptyWindowBook,
@@ -38,7 +39,9 @@ export const useWindows = create<WindowsStore>((set, get) => ({
       input,
     );
     set(result.book);
-    return { id: result.created ? input.id : result.book.focusedId ?? input.id, created: result.created };
+    const id = result.created ? input.id : Object.values(result.book.windows).find((item) => item.appId === input.appId)?.id ?? input.id;
+    if (result.effect === 'pulse') pulseWindow(id);
+    return { id, created: result.created };
   },
   close: (id) => set(closeWindow({ windows: get().windows, focusedId: get().focusedId }, id)),
   focus: (id) => set(focusWindow({ windows: get().windows, focusedId: get().focusedId }, id)),

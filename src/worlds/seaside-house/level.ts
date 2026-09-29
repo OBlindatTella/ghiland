@@ -75,7 +75,7 @@ export const levelBoxes: readonly LevelBox[] = [
   box('living-back-east', 1.1, 0, -3.5 - T, 7 + T, 3.2, -3.5, wall, livingWall),
   box('living-header', -1.1, 2.4, -3.5 - T, 1.1, 3.2, -3.5, wall, livingWall),
   // D-027. Underside at 2.10 m, above the 1.75 m capsule, so it frames the mouth and does not block the walk.
-  box('soffit', -1.1, 2.1, -4.4, 1.1, 2.42, -3.5, ['occluder', 'pinSurface', 'placement'], smokedOak),
+  box('soffit', -1.1, 2.1, -4.4, 1.1, 2.42, -3.5, visual, smokedOak),
 
   // D-020: expanded by the 0.3 m radius, this stays outside x −2…+2 and off the open panels.
   box('fin', -7, 0, -3.25, -2.35, 2.8, -2.8, wall, finColor),

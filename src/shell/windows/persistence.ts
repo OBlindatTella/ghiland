@@ -103,7 +103,8 @@ function fromLegacyWindows(windows: unknown): WindowsFile {
 
 /** Version 0 stored a window list. Carried windows come back as overlay rects, never as a camera pose. */
 export function migrateWindowsFile(raw: unknown, fromVersion: number): WindowsFile {
-  if (!isRecord(raw) || fromVersion > windowsPersistVersion) return emptyWindowsFile;
+  if (!isRecord(raw)) return emptyWindowsFile;
+  if (fromVersion > windowsPersistVersion) return migrateWindowsFile(raw, windowsPersistVersion);
   if (Array.isArray(raw.windows) && !Array.isArray(raw.pinned)) return fromLegacyWindows(raw.windows);
   const pinned = Array.isArray(raw.pinned) ? raw.pinned.map(pinnedFromUnknown).filter((item): item is PinnedRecord => item !== null) : [];
   const rects: Record<string, ScreenRect> = {};
@@ -155,12 +156,21 @@ interface Envelope {
   version?: number;
 }
 
+/** A newer file stays on disk. Parsing it into memory must not write a v1 copy over it. */
+let writesHeld = false;
+
+export function windowsWritesHeld(): boolean {
+  return writesHeld;
+}
+
 export function readWindowsFile(): WindowsFile {
+  writesHeld = false;
   const raw = localStorageAdapter.get(windowsStorageKey);
   if (!raw) return emptyWindowsFile;
   try {
     const parsed = JSON.parse(raw) as Envelope;
     const version = typeof parsed.version === 'number' ? parsed.version : 0;
+    if (version > windowsPersistVersion) writesHeld = true;
     return migrateWindowsFile(parsed.state ?? parsed, version);
   } catch {
     const stamp = Date.now();
@@ -172,5 +182,6 @@ export function readWindowsFile(): WindowsFile {
 }
 
 export function writeWindowsFile(file: WindowsFile): void {
+  if (writesHeld) return;
   localStorageAdapter.set(windowsStorageKey, JSON.stringify({ state: file, version: windowsPersistVersion }));
 }

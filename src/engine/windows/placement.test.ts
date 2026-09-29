@@ -69,6 +69,24 @@ describe('resolvePlacement', () => {
     expect(result.anchorId).toBeUndefined();
   });
 
+  it('uses the same result for the preview and the pin, and frees the anchor once it is open again', () => {
+    const query: PlacementQuery = {
+      ray: { origin: [5, 1.62, 2.2], direction: [0, 0, 1] },
+      colliders,
+      anchors,
+      occupied: new Set<string>(),
+      heightPx: 560,
+    };
+    const preview = resolvePlacement(query);
+    const pin = resolvePlacement(query);
+    expect(pin).toEqual(preview);
+    expect(pin.anchorId).toBe('hero-sea');
+    const held = resolvePlacement({ ...query, occupied: new Set(['hero-sea']) });
+    expect(held.anchorId).toBeUndefined();
+    const freed = resolvePlacement(query);
+    expect(freed.anchorId).toBe('hero-sea');
+  });
+
   it('floats on the player side of glass, at least 0.3 m clear', () => {
     const cases = [
       { eyeZ: 4.47 - 1.05, along: 1.05 - GLASS_CLEARANCE },

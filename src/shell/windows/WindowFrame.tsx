@@ -8,6 +8,7 @@ import { frameTint, subscribeFrameTint } from '@/shell/windows/frameTint';
 import { bindWindowElement } from '@/engine/windows/domRegistry';
 import { requestDetach, requestPin, requestRecall } from '@/engine/windows/bridge';
 import { closeAppWindow, focusAppWindow, minimizeAppWindow } from '@/shell/windows/commands';
+import { subscribePulse, windowPulsing } from '@/shell/windows/pulse';
 import { useWindows } from '@/state/windows';
 
 const EDGES: ResizeEdge[] = ['n', 's', 'e', 'w', 'ne', 'nw', 'se', 'sw'];
@@ -35,6 +36,7 @@ export function WindowFrame({
   const focused = useWindows((state) => state.focusedId === instance.id);
   const [tint, setTint] = useState(frameTint);
   const [lift, setLift] = useState(false);
+  const [pulsing, setPulsing] = useState(() => windowPulsing(instance.id));
   const rect = instance.lastScreenRect;
   const world = instance.mode.kind !== 'overlay';
   const carried = instance.mode.kind === 'detached' || instance.mode.kind === 'worldPinned';
@@ -43,6 +45,7 @@ export function WindowFrame({
   }, [instance.id]);
 
   useEffect(() => subscribeFrameTint(() => setTint(frameTint())), []);
+  useEffect(() => subscribePulse(() => setPulsing(windowPulsing(instance.id))), [instance.id]);
 
   const onDragDown = (event: ReactPointerEvent<HTMLElement>) => {
     if ((event.target as HTMLElement).closest('button')) return;
@@ -116,6 +119,7 @@ export function WindowFrame({
       data-placement={instance.mode.kind === 'worldPinned' ? instance.mode.placement : undefined}
       data-anchor={instance.mode.kind === 'worldPinned' ? instance.mode.anchorId : undefined}
       data-testid={`window-${instance.appId}`}
+      data-pulse={pulsing ? 'true' : 'false'}
       className="pointer-events-auto absolute"
       style={
         world
@@ -130,7 +134,8 @@ export function WindowFrame({
         className="flex h-full w-full flex-col overflow-hidden rounded-[10px] border"
         style={{
           background: tint,
-          borderColor: focused ? '#86bdb2' : 'rgba(255,255,255,0.1)',
+          borderColor: focused || pulsing ? '#86bdb2' : 'rgba(255,255,255,0.1)',
+          outline: pulsing ? '1px solid #86bdb2' : undefined,
           borderTopColor: focused ? '#86bdb2' : undefined,
           transform: lift ? 'scale(0.96)' : undefined,
           boxShadow: world ? 'none' : lift ? '0 18px 40px rgba(0,0,0,0.45)' : '0 8px 24px rgba(0,0,0,0.32)',

@@ -23,8 +23,10 @@ import { ghostElement, stageElement, windowElement } from '@/engine/windows/domR
 import { inputManager } from '@/engine/input/InputManager';
 import { installWindowBridge } from '@/engine/windows/bridge';
 import { physicalSize, rayAabb, resolvePlacement, type PlacementCollider } from '@/engine/windows/placement';
+import { blocksOcclusion } from '@/engine/windows/raySets';
 import { cameraStageTransform, projectWindow } from '@/engine/windows/projector';
 import { getWorld } from '@/worlds/registry';
+import { useGlStore } from '@/state/gl';
 import { useSession } from '@/state/session';
 import { useWindows } from '@/state/windows';
 
@@ -40,7 +42,7 @@ function colliders(): PlacementCollider[] {
 }
 
 function occluders(): PlacementCollider[] {
-  return colliders().filter((item) => item.layers.includes('occluder'));
+  return colliders().filter((item) => blocksOcclusion(item.layers));
 }
 
 function syncQuads(windows: WindowInstance[]): void {
@@ -135,12 +137,26 @@ export function WindowRig() {
     const unsub = useWindows.subscribe(() => persistWindows());
     const onHide = () => persistWindows();
     window.addEventListener('pagehide', onHide);
+    const ungl = useGlStore.subscribe((state, prev) => {
+      if (!state.lost || prev.lost) return;
+      const stage = stageElement();
+      if (stage) stage.style.transform = '';
+      const ghost = ghostElement();
+      if (ghost) ghost.style.transform = '';
+      for (const item of Object.values(useWindows.getState().windows)) {
+        const element = windowElement(item.id);
+        if (!element) continue;
+        element.style.transform = '';
+      }
+    });
     return () => {
       installWindowBridge(null);
       inputManager.setWindowHooks(null);
       inputManager.setBeforeShellChange(null);
       unhit();
       unsub();
+      ungl();
+      occlusion.clear();
       window.removeEventListener('pagehide', onHide);
     };
   }, []);
@@ -149,6 +165,17 @@ export function WindowRig() {
     const current = useSession.getState();
     if (current.worldPhase === 'active' && current.worldId) restorePinnedForWorld(current.worldId);
     return useSession.subscribe((state, previous) => {
+      if (state.worldId !== previous.worldId) {
+        for (const item of Object.values(useWindows.getState().windows)) {
+          if (item.mode.kind === 'worldPinned' && item.mode.worldId !== state.worldId) {
+            const element = windowElement(item.id);
+            if (element) element.style.transform = '';
+            occlusion.delete(item.id);
+            clearCarry(item.id);
+            useWindows.getState().close(item.id);
+          }
+        }
+      }
       if (state.worldPhase === 'active' && state.worldId && (previous.worldPhase !== 'active' || previous.worldId !== state.worldId)) {
         restorePinnedForWorld(state.worldId);
       }
@@ -160,6 +187,10 @@ export function WindowRig() {
     const view = size.height > 0 ? size : { width: window.innerWidth, height: window.innerHeight };
     if (stage) stage.style.transform = cameraStageTransform(camera, view.width, view.height);
     const windows = Object.values(useWindows.getState().windows);
+    const live = new Set(windows.map((item) => item.id));
+    for (const id of occlusion.keys()) {
+      if (!live.has(id)) occlusion.delete(id);
+    }
     syncQuads(windows);
     const pose = cameraPoseSafe(camera);
     let carried: WindowInstance | null = null;

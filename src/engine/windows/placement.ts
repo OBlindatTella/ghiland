@@ -1,5 +1,6 @@
 import type { AABB, Quat, Vec3 } from '@/contracts/math';
 import type { ColliderLayer } from '@/contracts/world';
+import { blocksPlacement } from '@/engine/windows/raySets';
 
 /** Atlas pinned scale. Content is never scaled down (D-016). */
 export const PX_PER_METER = 520;
@@ -159,7 +160,7 @@ export function rayAabb(origin: Vec3, direction: Vec3, box: AABB, maxDistance: n
 }
 
 function stopsPlacement(collider: PlacementCollider): boolean {
-  return collider.layers.includes('movement') || collider.layers.includes('placement') || collider.layers.includes('pinSurface');
+  return blocksPlacement(collider.layers);
 }
 
 export function firstPlacementHit(ray: PlacementRay, colliders: readonly PlacementCollider[]): PlacementHit | null {

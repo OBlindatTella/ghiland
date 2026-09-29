@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest';
-import { migrateWindowsFile, windowsPersistVersion } from '@/shell/windows/persistence';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { migrateWindowsFile, readWindowsFile, windowsPersistVersion, writeWindowsFile } from '@/shell/windows/persistence';
 
 describe('window persistence migration', () => {
   it('turns a version-0 window list into pinned records and drops carried poses', () => {
@@ -63,4 +63,47 @@ describe('window persistence migration', () => {
     expect(migrateWindowsFile({ pinned: 'nope' }, 1)).toEqual({ pinned: [], rects: {} });
     expect(migrateWindowsFile({ pinned: [], rects: {} }, windowsPersistVersion + 1)).toEqual({ pinned: [], rects: {} });
   });
+
+  it('reads a future file and does not write a v1 copy over it', () => {
+    const store = new Map<string, string>();
+    vi.stubGlobal('localStorage', {
+      getItem: (key: string) => store.get(key) ?? null,
+      setItem: (key: string, value: string) => {
+        store.set(key, value);
+      },
+      removeItem: (key: string) => {
+        store.delete(key);
+      },
+    });
+    const original = JSON.stringify({
+      version: windowsPersistVersion + 1,
+      state: {
+        pinned: [
+          {
+            id: 'a',
+            appId: 'notes',
+            title: 'Notes',
+            worldId: 'seaside-house',
+            w: 440,
+            h: 560,
+            position: [5.1, 1.45, 3.9],
+            quaternion: [0, 0, 0, 1],
+            placement: 'anchor',
+            anchorId: 'hero-sea',
+            extra: true,
+          },
+        ],
+        rects: {},
+      },
+    });
+    store.set('ghiland:windows', original);
+    const file = readWindowsFile();
+    expect(file.pinned[0]?.anchorId).toBe('hero-sea');
+    writeWindowsFile({ pinned: [], rects: {} });
+    expect(store.get('ghiland:windows')).toBe(original);
+  });
+});
+
+afterEach(() => {
+  vi.unstubAllGlobals();
 });
