@@ -4,6 +4,7 @@ import { seasideHouse } from '@/worlds/seaside-house/definition';
 import { sunDirection } from '@/worlds/seaside-house/sun';
 import {
   autoPinPlacement,
+  unionPlacementBounds,
   FLOAT_DISTANCE,
   GLASS_CLEARANCE,
   MIN_EYE_DISTANCE,
@@ -234,13 +235,36 @@ describe('placement bounds', () => {
 
 describe('auto-pin pose', () => {
   it('pulls a carried window back to the player side of the glass', () => {
-    const eye: Vec3 = [3, 1.62, 4];
+    const eye: Vec3 = [3, 1.62, 3.2];
     const beyond: Vec3 = [3, 1.62, 6];
     const result = autoPinPlacement(eye, beyond, [0, 0, 0, 1], colliders);
     expect(result.valid).toBe(true);
     expect(result.placement).toBe('float');
     expect(result.position[2]).toBeLessThan(4.47);
     expect(4.47 - result.position[2]).toBeGreaterThanOrEqual(0.25);
+    expect(result.position[2] - eye[2]).toBeGreaterThanOrEqual(MIN_EYE_DISTANCE - 1e-4);
+  });
+
+  it('is invalid when no float stays 0.7 m out, so the caller can dock it', () => {
+    const eye: Vec3 = [3, 1.62, 4.2];
+    const beyond: Vec3 = [3, 1.62, 6];
+    const result = autoPinPlacement(eye, beyond, [0, 0, 0, 1], colliders, houseBounds);
+    expect(result.valid).toBe(false);
+  });
+
+  it('lets a float aimed through the open panels land on the terrace', () => {
+    const bounds = unionPlacementBounds(seasideHouse.zones, 0, 9);
+    const result = resolvePlacement({
+      ray: { origin: [0, 1.62, 3.2], direction: [0, 0, 1] },
+      colliders,
+      anchors: [],
+      occupied: new Set(),
+      heightPx: 560,
+      bounds,
+    });
+    expect(result.valid).toBe(true);
+    expect(result.position[2]).toBeGreaterThan(4.5);
+    expect(result.position[2]).toBeLessThanOrEqual(8.85);
   });
 
   it('does not auto-pin over the sea', () => {

@@ -4,26 +4,19 @@ import { inputManager } from '@/engine/input/InputManager';
 import { caretIndexInField, type CaretPoint } from '@/engine/windows/caret';
 import { carryTarget, clearCarry, readCarry, seedCarry } from '@/engine/windows/carryPose';
 import { cameraPose, queryCrosshair } from '@/engine/windows/crosshair';
-import { autoPinPlacement, resolvePlacement, type PlacementBounds, type PlacementCollider } from '@/engine/windows/placement';
+import { autoPinPlacement, resolvePlacement, unionPlacementBounds, type PlacementBounds, type PlacementCollider } from '@/engine/windows/placement';
 import { fileFromWindows, readWindowsFile, writeWindowsFile } from '@/shell/windows/persistence';
 import { useInputStore } from '@/state/input';
 import { useSession } from '@/state/session';
 import { useWindows } from '@/state/windows';
 
-function placementBounds(eyeZ: number): PlacementBounds | undefined {
+function placementBounds(): PlacementBounds | undefined {
   const id = useSession.getState().worldId;
   if (!id) return undefined;
   const world = getWorld(id);
   if (!world || world.collision.kind !== 'boxes') return undefined;
   const rail = world.collision.colliders.find((item) => item.id === 'rail-north');
-  const walk = world.collision.walkable;
-  return {
-    min: [walk.min[0], walk.min[1], walk.min[2]],
-    max: [walk.max[0], walk.max[1], walk.max[2]],
-    floorY: world.collision.floorY,
-    ceilingY: eyeZ > 4.5 ? null : eyeZ < -3.5 ? 2.4 : 3.2,
-    railZ: rail ? rail.box.min[2] : null,
-  };
+  return unionPlacementBounds(world.zones, world.collision.floorY, rail ? rail.box.min[2] : null);
 }
 
 function worldColliders(): PlacementCollider[] {
@@ -110,7 +103,7 @@ function pinWindow(id: string): boolean {
     occupied: occupied(id),
     heightPx: item.lastScreenRect.h,
     widthPx: item.lastScreenRect.w,
-    bounds: placementBounds(pose.origin[2]),
+    bounds: placementBounds(),
   });
   if (!placement.valid) return false;
   clearCarry(id);
@@ -140,8 +133,13 @@ export function autoPinCarried(): void {
   const carried = readCarry(item.id) ?? (pose ? carryTarget(pose.origin, pose.direction, pose.quaternion) : null);
   if (!carried) return;
   const eye = pose?.origin ?? carried.position;
-  const placement = autoPinPlacement(eye, carried.position, carried.quaternion, worldColliders(), placementBounds(eye[2]), item.lastScreenRect.h);
+  const placement = autoPinPlacement(eye, carried.position, carried.quaternion, worldColliders(), placementBounds(), item.lastScreenRect.h);
   clearCarry(item.id);
+  if (!placement.valid) {
+    useWindows.getState().setMode(item.id, { kind: 'overlay', rect: item.lastScreenRect });
+    persistWindows();
+    return;
+  }
   useWindows.getState().setMode(item.id, {
     kind: 'worldPinned',
     worldId,

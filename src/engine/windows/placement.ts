@@ -405,9 +405,38 @@ function containOnSurface(placement: Placement, query: PlacementQuery, bounds: P
   return withEyeCheck({ ...placement, position }, query.ray.origin);
 }
 
+/** Union of every walkable zone. A float may cross from the interior onto the terrace (D-038). */
+export function unionPlacementBounds(
+  zones: readonly { bounds: readonly { min: Vec3; max: Vec3 }[] }[],
+  floorY: number,
+  railZ: number | null,
+): PlacementBounds {
+  let minX = Infinity;
+  let minY = Infinity;
+  let minZ = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  let maxZ = -Infinity;
+  for (const zone of zones) {
+    for (const box of zone.bounds) {
+      minX = Math.min(minX, box.min[0]);
+      minY = Math.min(minY, box.min[1]);
+      minZ = Math.min(minZ, box.min[2]);
+      maxX = Math.max(maxX, box.max[0]);
+      maxY = Math.max(maxY, box.max[1]);
+      maxZ = Math.max(maxZ, box.max[2]);
+    }
+  }
+  if (!Number.isFinite(minX)) {
+    return { min: [-7, floorY, -9], max: [7, 3.2, 9], floorY, ceilingY: 3.2, railZ };
+  }
+  return { min: [minX, minY, minZ], max: [maxX, maxY, maxZ], floorY, ceilingY: maxY, railZ };
+}
+
 /**
- * Lock-loss landing (D-017). Always valid: a carried window is never dropped.
- * If the pose is past a movement collider, pull it back to the player's side.
+ * Lock-loss landing (D-017, D-038). The nearest float along the view ray that
+ * stays at least 0.7 m out and inside the walkable union. Invalid when none exists;
+ * the caller docks the window back to the Screen instead of dropping it.
  */
 export function autoPinPlacement(
   eye: Vec3,
@@ -420,29 +449,38 @@ export function autoPinPlacement(
   const delta = sub(pose, eye);
   const span = length(delta);
   const direction = span > 1e-4 ? scale(delta, 1 / span) : ([0, 0, -1] as Vec3);
-  let position = pose;
   const hit = firstPlacementHit({ origin: eye, direction }, colliders.filter((item) => item.layers.includes('movement')));
-  if (hit && hit.distance < span) {
-    const along = Math.max(0.15, Math.min(span, hit.distance - GLASS_CLEARANCE));
-    position = add(eye, scale(direction, along));
+  const limit = hit ? Math.max(0, hit.distance - GLASS_CLEARANCE) : Math.max(span, FLOAT_DISTANCE);
+  const preferred = hit && hit.distance < span ? Math.min(span, limit) : Math.min(Math.max(span, MIN_EYE_DISTANCE), limit);
+  const query = {
+    ray: { origin: eye, direction },
+    colliders,
+    anchors: [] as PlacementAnchor[],
+    occupied: new Set<string>(),
+    heightPx,
+    bounds,
+  };
+  const placeAt = (along: number) =>
+    withEyeCheck(
+      containPlacement(
+        {
+          valid: true,
+          taken: false,
+          position: add(eye, scale(direction, Math.max(0, along))),
+          quaternion,
+          placement: 'float',
+        },
+        query,
+      ),
+      eye,
+    );
+  const fallback = placeAt(preferred);
+  if (fallback.valid && preferred >= MIN_EYE_DISTANCE - 1e-4) return fallback;
+  for (let along = Math.min(limit, FLOAT_DISTANCE); along >= MIN_EYE_DISTANCE - 1e-4; along -= 0.15) {
+    const placed = placeAt(along);
+    if (placed.valid) return placed;
   }
-  return containPlacement(
-    {
-      valid: true,
-      taken: false,
-      position,
-      quaternion,
-      placement: 'float',
-    },
-    {
-      ray: { origin: eye, direction },
-      colliders,
-      anchors: [],
-      occupied: new Set(),
-      heightPx,
-      bounds,
-    },
-  );
+  return { ...fallback, valid: false, reason: fallback.reason ?? 'outOfBounds' };
 }
 
 export function physicalSize(widthPx: number, heightPx: number): { w: number; h: number } {
