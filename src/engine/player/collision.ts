@@ -93,6 +93,15 @@ function faceContinuesPast(
  * meeting the face (Z was shortened). A strafe that never reaches the slab
  * is left alone. An inner corner shared with a coplanar neighbour is not an opening.
  */
+/** True when (x, z) sits inside a radius-expanded movement box, not merely on its skin. */
+function insidePadded(x: number, z: number, radius: number, boxes: readonly Obstacle[]): boolean {
+  for (const box of boxes) {
+    if (x <= box.minX - radius || x >= box.maxX + radius || z <= box.minZ - radius || z >= box.maxZ + radius) continue;
+    return true;
+  }
+  return false;
+}
+
 function releaseOpeningEdge(
   x: number,
   z: number,
@@ -122,13 +131,16 @@ function releaseOpeningEdge(
     if (side === 'maxX' && x < edgeX - radius) continue;
     const face = approachingSouth ? 'minZ' : 'maxZ';
     if (faceContinuesPast(box, boxes, side, face)) continue;
+    const released = side === 'minX' ? minX - SKIN : maxX + SKIN;
+    // A release that starts inside another padded box is undone by pushOut and freezes the step.
+    if (insidePadded(released, z, radius, boxes)) continue;
     const edgeZ = approachingSouth ? minZ : maxZ;
     const lx = x - edgeX;
     const lz = z - edgeZ;
     const dist = lx * lx + lz * lz;
     if (dist > bestReach) continue;
     bestReach = dist;
-    best = side === 'minX' ? minX - SKIN : maxX + SKIN;
+    best = released;
   }
   return best;
 }
@@ -189,9 +201,11 @@ export function slideMove(
   let nextZ = moveAxis(nextX, freed.z, dz, body.radius, boxes, 'z');
   if (dz !== 0 && Math.abs(nextZ - (freed.z + dz)) > 1e-6) {
     const released = releaseOpeningEdge(freed.x, freed.z, nextX, dz, body.radius, boxes);
-    if (released !== null) {
+    if (released !== null && !insidePadded(released, freed.z, body.radius, boxes)) {
       const retryZ = moveAxis(released, freed.z, dz, body.radius, boxes, 'z');
-      if (Math.abs(retryZ - freed.z) > Math.abs(nextZ - freed.z) + 1e-6) {
+      const landed = pushOut(released, retryZ, body.radius, boxes);
+      const pushUndoes = Math.abs(landed.x - released) > 1e-4 || Math.abs(landed.z - retryZ) > 1e-4;
+      if (!pushUndoes && Math.abs(retryZ - freed.z) > Math.abs(nextZ - freed.z) + 1e-6) {
         nextX = released;
         nextZ = retryZ;
       }

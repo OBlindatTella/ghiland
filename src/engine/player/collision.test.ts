@@ -285,6 +285,35 @@ describe('seaside greybox collision', () => {
     }
   });
 
+  function trace(x: number, z: number, headingDeg: number, seconds: number) {
+    const heading = (headingDeg * Math.PI) / 180;
+    const step = 1.35 / 60;
+    const dx = Math.sin(heading) * step;
+    const dz = Math.cos(heading) * step;
+    let frozen = 0;
+    let maxJump = 0;
+    for (let i = 0; i < seconds * 60; i += 1) {
+      const next = slideMove(x, z, dx, dz, body, seasideColliders);
+      const jump = Math.hypot(next.x - x, next.z - z);
+      maxJump = Math.max(maxJump, jump);
+      if (jump < 1e-4) frozen += 1;
+      x = next.x;
+      z = next.z;
+    }
+    return { x, z, frozen, maxJump, step: Math.hypot(dx, dz) };
+  }
+
+  it('does not freeze at the dining-table and west-wall junction', () => {
+    const north = trace(-6.68, 4.0, 160, 2);
+    const south = trace(-6.7, 0.9, 15, 2);
+    expect(north.frozen).toBeLessThan(10);
+    expect(south.frozen).toBeLessThan(10);
+    expect(north.x).toBeGreaterThan(-6.6);
+    expect(south.x).toBeGreaterThan(-6.6);
+    expect(north.maxJump).toBeLessThanOrEqual(north.step + 1e-4);
+    expect(south.maxJump).toBeLessThanOrEqual(south.step + 1e-4);
+  });
+
   it('blocks the closed glass and the balustrade', () => {
     const intoGlass = slideMove(3, 3, 0, 4, body, seasideColliders);
     expect(intoGlass.z).toBeLessThan(4.5);
