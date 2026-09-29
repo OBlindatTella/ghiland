@@ -230,10 +230,7 @@ describe('IME composition', () => {
     const escape = { code: 'Escape', repeat: false, isComposing: false, keyCode: 27, preventDefault() {}, target: dom.documentStub.activeElement };
 
     dom.fireDoc('compositionstart', {});
-    dom.fireWindow('keydown', escape);
-    expect(blur).not.toHaveBeenCalled();
-    expect(useInputStore.getState().shellState).toBe('SCREEN');
-
+    // Safari delivers the ending Escape after compositionend. No keydown has been seen yet.
     dom.fireDoc('compositionend', {});
     await Promise.resolve();
     dom.fireWindow('keydown', escape);
@@ -243,6 +240,43 @@ describe('IME composition', () => {
     dom.fireWindow('keydown', escape);
     expect(blur).toHaveBeenCalledTimes(1);
     expect(useInputStore.getState().shellState).toBe('SCREEN');
+    manager.detach();
+  });
+
+  it('does not swallow the first Esc after a composing Esc that already arrived', async () => {
+    const dom = installDom();
+    const manager = new InputManager();
+    const blur = vi.fn();
+    useInputStore.setState({ shellState: 'SCREEN', owner: 'ui', showClickToWalk: false });
+    dom.documentStub.activeElement = { tagName: 'TEXTAREA', blur };
+    manager.attach(dom.canvas);
+    const escape = { code: 'Escape', repeat: false, isComposing: false, keyCode: 27, preventDefault() {}, target: dom.documentStub.activeElement };
+
+    dom.fireDoc('compositionstart', {});
+    dom.fireWindow('keydown', { ...escape, isComposing: true, keyCode: 229 });
+    dom.fireDoc('compositionend', {});
+    await Promise.resolve();
+    dom.fireWindow('keydown', escape);
+    expect(blur).toHaveBeenCalledTimes(1);
+    expect(useInputStore.getState().shellState).toBe('SCREEN');
+    manager.detach();
+  });
+
+  it('does not swallow Esc after an IME commit with Enter', async () => {
+    const dom = installDom();
+    const manager = new InputManager();
+    const blur = vi.fn();
+    useInputStore.setState({ shellState: 'SCREEN', owner: 'ui', showClickToWalk: false });
+    dom.documentStub.activeElement = { tagName: 'TEXTAREA', blur };
+    manager.attach(dom.canvas);
+    const escape = { code: 'Escape', repeat: false, isComposing: false, keyCode: 27, preventDefault() {}, target: dom.documentStub.activeElement };
+
+    dom.fireDoc('compositionstart', {});
+    dom.fireWindow('keydown', { code: 'Enter', repeat: false, isComposing: true, keyCode: 229, preventDefault() {}, target: dom.documentStub.activeElement });
+    dom.fireDoc('compositionend', {});
+    await Promise.resolve();
+    dom.fireWindow('keydown', escape);
+    expect(blur).toHaveBeenCalledTimes(1);
     manager.detach();
   });
 });

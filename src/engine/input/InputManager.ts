@@ -40,6 +40,12 @@ export class InputManager {
   /** The Escape that ends a composition must not also blur or step the shell. */
   private compositionEscape = false;
   private compositionTimer = 0;
+  /**
+   * Key that arrived while a composition was open.
+   * Chrome delivers the composing Escape before compositionend; arming after that swallows the next Esc.
+   * Null means the ending key has not been seen yet (Safari delivers it after compositionend).
+   */
+  private compositionKey: string | null = null;
 
   attach(canvas: HTMLElement): () => void {
     this.detach();
@@ -70,6 +76,7 @@ export class InputManager {
     document.removeEventListener('compositionend', this.onCompositionEnd);
     this.composing = false;
     this.compositionEscape = false;
+    this.compositionKey = null;
     window.clearTimeout(this.compositionTimer);
     this.canvas.removeEventListener('pointerdown', this.onPointerDown);
     this.canvas.removeEventListener('click', this.onClick);
@@ -236,6 +243,7 @@ export class InputManager {
   };
 
   private onKeyDown = (event: KeyboardEvent): void => {
+    if (this.composing && event.code) this.compositionKey = event.code;
     if (!this.gameplayOpen()) return;
     const editable = isEditableElement(event.target) || isEditableElement(document.activeElement);
     const composing =
@@ -296,13 +304,22 @@ export class InputManager {
   private onCompositionStart = (): void => {
     this.composing = true;
     this.compositionEscape = false;
+    this.compositionKey = null;
+    window.clearTimeout(this.compositionTimer);
   };
 
   private onCompositionEnd = (): void => {
     this.composing = false;
-    this.compositionEscape = true;
+    const endingKey = this.compositionKey;
+    this.compositionKey = null;
     window.clearTimeout(this.compositionTimer);
-    // Survive until the keydown that follows compositionend. A microtask runs before that key on Safari.
+    // Arm only for the Safari order, where the Escape keydown follows compositionend.
+    // A composing Escape already seen (Chrome), or a commit via Enter, must not swallow the next Esc.
+    if (endingKey !== null) {
+      this.compositionEscape = false;
+      return;
+    }
+    this.compositionEscape = true;
     this.compositionTimer = window.setTimeout(() => {
       this.compositionEscape = false;
     }, 1000);
