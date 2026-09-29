@@ -19,6 +19,12 @@ function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
 }
 
+export function fitRect(rect: ScreenRect, bounds: Bounds): ScreenRect {
+  const maxW = Math.max(120, bounds.maxX - bounds.minX);
+  const maxH = Math.max(80, bounds.maxY - bounds.minY);
+  return dragRect({ ...rect, w: Math.min(rect.w, maxW), h: Math.min(rect.h, maxH) }, 0, 0, bounds);
+}
+
 export function dragRect(rect: ScreenRect, dx: number, dy: number, bounds: Bounds): ScreenRect {
   return {
     ...rect,

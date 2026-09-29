@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { dragRect, placeRect, resizeRect } from '@/shell/windows/geometry';
+import { dragRect, fitRect, placeRect, resizeRect } from '@/shell/windows/geometry';
 
 const bounds = { minX: 24, minY: 24, maxX: 1280, maxY: 700 };
 
@@ -34,5 +34,11 @@ describe('window geometry', () => {
     const next = placeRect({ w: 440, h: 560 }, { w: 1280, h: 800 }, first);
     expect(next.x).toBe(first.x + 32);
     expect(next.y).toBe(first.y + 32);
+  });
+
+  it('pulls a window back inside when the viewport shrinks', () => {
+    const fitted = fitRect({ x: 1400, y: 40, w: 440, h: 560 }, { minX: 24, minY: 24, maxX: 1280, maxY: 700 });
+    expect(fitted.x + fitted.w).toBeLessThanOrEqual(1280);
+    expect(fitted.y).toBeGreaterThanOrEqual(24);
   });
 });

@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect } from 'react';
+import { fitRect } from '@/shell/windows/geometry';
 import { getApp } from '@/apps/registry';
 import { bindGhost, bindStage } from '@/engine/windows/domRegistry';
 import { AppHost } from '@/shell/windows/AppHost';
@@ -18,6 +19,21 @@ export function WindowLayer() {
   }, []);
   const ghostRef = useCallback((node: HTMLDivElement | null) => {
     bindGhost(node);
+  }, []);
+
+  useEffect(() => {
+    const clamp = () => {
+      const limit = { minX: 24, minY: 24, maxX: window.innerWidth - 24, maxY: window.innerHeight - 88 };
+      for (const item of Object.values(useWindows.getState().windows)) {
+        if (item.mode.kind !== 'overlay') continue;
+        const next = fitRect(item.mode.rect, limit);
+        if (next.x !== item.mode.rect.x || next.y !== item.mode.rect.y || next.w !== item.mode.rect.w || next.h !== item.mode.rect.h) {
+          useWindows.getState().setRect(item.id, next);
+        }
+      }
+    };
+    window.addEventListener('resize', clamp);
+    return () => window.removeEventListener('resize', clamp);
   }, []);
 
   useEffect(() => {
