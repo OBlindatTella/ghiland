@@ -12,6 +12,8 @@ import { ContextGuard } from '@/engine/quality/ContextGuard';
 import { QualityDirector } from '@/engine/quality/QualityDirector';
 import { SceneManager } from '@/engine/scene/SceneManager';
 import { CrosshairRig } from '@/engine/windows/CrosshairRig';
+import { WindowRig } from '@/engine/windows/WindowRig';
+import { ExposureDirector } from '@/engine/environment/ExposureDirector';
 import { useGlStore } from '@/state/gl';
 import { useSession } from '@/state/session';
 
@@ -74,6 +76,8 @@ export function CanvasRoot() {
       >
         <CanvasLifecycle />
         <CrosshairRig />
+        <WindowRig />
+        <ExposureDirector />
         <SceneManager />
         <AudioRig />
         <QualityDirector />

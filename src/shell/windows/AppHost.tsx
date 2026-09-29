@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState, type ComponentType } from 'react';
 import type { AppDefinition, AppHostApi, AppProps, NamespacedStorage } from '@/contracts/app';
+import { inputManager } from '@/engine/input/InputManager';
 import { closeAppWindow, focusAppWindow } from '@/shell/windows/commands';
 import { useWindows } from '@/state/windows';
 
@@ -24,7 +25,10 @@ function ExternalCard({ url, title }: { url: string; title: string }) {
         type="button"
         data-testid="external-open"
         className="rounded-[6px] border border-white/10 px-3 py-2 text-[13px] leading-5"
-        onClick={() => window.open(url, '_blank', 'noopener,noreferrer')}
+        onClick={() => {
+          inputManager.noteExternalOpen();
+          window.open(url, '_blank', 'noopener,noreferrer');
+        }}
       >
         Open in a new tab
       </button>

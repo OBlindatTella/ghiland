@@ -89,3 +89,12 @@ Aura's intent was a straight path from the reveal point into open air. After D-0
 
 ## D-026 Docs source of truth
 The box copies in /workspace/ghiland/docs are canonical for specs, owned by Ghiland Master. Each builder run gets the updated box files and overwrites the repo docs/ copies with them. The builder does not edit spec docs itself; it only edits KNOWN_ISSUES.md, ROADMAP.md, AUDIO_CREDITS.md and README content, and it proposes spec changes in its report.
+
+## D-027 Seaside composition update accepted (Aura, after D-024/D-025)
+- Sun: azimuth 22° from +Z toward −X, elevation 12°. The unit vector is about (−0.367, 0.208, 0.907).
+- Curtains: gathered at the opening edges, never across it. They are 0.8 m wide on a ceiling track at z 4.3, the left one at x +1.8…+2.6 and the right one at x −2.6…−1.8, with a 0.35 m maximum billow.
+- Corridor-mouth soffit: smoked oak across x −1.1…+1.1 and z −4.4…−3.5, with its underside at 2.10 m.
+- Corridor lighting: about a third of the room's brightness, with an exposure shift from about 1.2 to 0.9.
+- Step-8 screen: a fiddle-leaf fig planter at about (−2.9, 0, −2.6).
+
+The details are in AURA_WORLDS.md, which is canonical. The sun, soffit and curtain positions go into the greybox with the step-7 run, and materials and cloth come with step 8.

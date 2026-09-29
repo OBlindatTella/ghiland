@@ -32,6 +32,8 @@ export class InputManager {
   private blurTimer = 0;
   private press: { x: number; y: number } | null = null;
   private beforeShell: ((from: ShellState, to: ShellState) => void) | null = null;
+  /** Ignore one blur caused by our own window.open, so the Web tile stays on SCREEN. */
+  private externalOpenUntil = 0;
 
   attach(canvas: HTMLElement): () => void {
     this.detach();
@@ -101,6 +103,36 @@ export class InputManager {
   /** D-017. Runs before the store write so a carried window can pin on the way out of WORLD. */
   setBeforeShellChange(hook: ((from: ShellState, to: ShellState) => void) | null): void {
     this.beforeShell = hook;
+  }
+
+  private windowHooks: { pin?: () => void; interact?: () => void; recall?: () => void } | null = null;
+
+  /** Installed by the window rig. Absent until a world canvas is mounted. */
+  setWindowHooks(hooks: { pin?: () => void; interact?: () => void; recall?: () => void } | null): void {
+    this.windowHooks = hooks;
+  }
+
+  /** Leave WORLD for SCREEN without treating it as Q's recall. */
+  presentScreen(): void {
+    if (!this.gameplayOpen()) return;
+    if (this.readModel().state !== 'WORLD') return;
+    this.apply(reduceShell(this.readModel(), { type: 'toggleScreen' }));
+  }
+
+  noteExternalOpen(): void {
+    this.externalOpenUntil = Date.now() + 1000;
+  }
+
+  /** Detach closes the Screen and asks for pointer lock. */
+  presentWorld(): void {
+    if (!this.gameplayOpen()) return;
+    const state = this.readModel().state;
+    if (state === 'WORLD') return;
+    if (state === 'SCREEN') {
+      this.apply(reduceShell(this.readModel(), { type: 'toggleScreen' }));
+      return;
+    }
+    this.apply(reduceShell(this.readModel(), { type: 'clickEmptyWorld' }));
   }
 
   private readModel(): ShellModel {
@@ -213,7 +245,12 @@ export class InputManager {
       return;
     }
     if (decision.action === 'toggleScreen') {
+      this.windowHooks?.recall?.();
       this.apply(reduceShell(this.readModel(), { type: 'toggleScreen' }));
+    } else if (decision.action === 'pin') {
+      this.windowHooks?.pin?.();
+    } else if (decision.action === 'interact') {
+      this.windowHooks?.interact?.();
     } else if (decision.action === 'escape') {
       const next = onEscapeKey(
         this.escapeGate,
@@ -242,6 +279,10 @@ export class InputManager {
     // Focus moving into an iframe blurs the parent window while document.hasFocus() stays true.
     this.blurTimer = window.setTimeout(() => {
       if (!this.canvas) return;
+      if (Date.now() < this.externalOpenUntil) {
+        this.externalOpenUntil = 0;
+        return;
+      }
       const active = document.activeElement as { tagName?: string } | null;
       if (document.hasFocus() && active?.tagName === 'IFRAME') return;
       this.keys.clear();
@@ -331,9 +372,19 @@ export class InputManager {
     this.cancelPendingLock();
     this.unlockIntent = null;
     this.relockAfterToggle = false;
-    if (document.pointerLockElement) document.exitPointerLock();
+    this.releasePointerLock();
     useInputStore.getState().setPointerLocked(false);
     this.apply(reduceShell(this.readModel(), { type: 'blur' }));
+  }
+
+  private releasePointerLock(): void {
+    const exit = () => {
+      if (typeof document === 'undefined' || !document.pointerLockElement) return;
+      document.exitPointerLock();
+    };
+    exit();
+    if (typeof queueMicrotask === 'function') queueMicrotask(exit);
+    window.setTimeout(exit, 0);
   }
 
   releaseSystem(): void {

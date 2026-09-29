@@ -1,15 +1,15 @@
 # Known issues
 
-Alpha 0.1 steps 0–6, plus the PR #2 review fixes through S2. Items below are expected gaps or deliberate deviations, not regressions to re-file until a later step owns them.
+Alpha 0.1 steps 0–7, plus the PR #2 review fixes through S2. Items below are expected gaps or deliberate deviations, not regressions to re-file until a later step owns them.
 
 ## Not built yet
 
-- No art, ocean shader, or furniture.
-- Carry, pin, and per-world window persistence are step 7. Overlay windows hide in WORLD and stay mounted. The pin button is visible and disabled. A drag that would leave the safe area is clamped; it does not detach. Snap, magnet, and double-click maximize are not built. D-021 (window centre at least 0.7 m from the eye) waits for camera-space placement.
+- No art, ocean shader, or furniture. Curtains are flat placeholder panels. The corridor-mouth soffit is a smoked-oak box. Real materials and cloth are step 8.
+- Snap, magnet, and double-click maximize are not built. Minimizing a pinned window does not collapse it to an 8 cm pin tag, and the tray does not yet offer Recall / Show. There is no far card past 6 m and no reticle dot. The carry follow is the damped spring; it is not a separate 360 ms tween.
 - NY Balcony and Golden Hour Farm are preview cards. A click shows "Alpha 0.2" and does not load a world.
 - The Seaside card click unlocks the audio context, starts the beds, and starts loading. It does not lock the pointer. The first lock is "Click to walk".
 - Idle breathing, head bob, footsteps, and drag-to-look are not in this build. There is no jump and no sprint.
-- Gusts, exposure, and the sunset grade are not driven yet. Zone detection feeds portal occlusion only.
+- Gusts and the sunset grade are not driven yet. Exposure now shifts from about 1.2 in the corridor toward 0.9 facing the glass, damped over 1.5 s. Zone detection still feeds portal occlusion.
 
 ## Deviations
 
@@ -42,7 +42,7 @@ These are the review items that are still different from Atlas. The others in th
 - S1-16. After a slide is blocked, velocity stays at the wish speed. Footsteps are not in this build, so a wall does not play a step. Reconcile velocity when audio reads displacement.
 - S1-17. Radius expansion is a square, the timestep is variable and clamped at 50 ms, and the sweep is X then Z. A step cannot tunnel the glass at that clamp. Rounded corners wait for stools and chairs.
 - S1-20. A keyup lost without a window blur (release while a command key is held, some OS shortcuts) can leave that key down. Blur and a hidden tab still clear the set. Not reproduced in this pass.
-- D-017 auto-pin. `setBeforeShellChange` runs before the shell store updates. Nothing is installed yet, because carried windows do not exist. Step 7 should pin there when leaving WORLD.
+- D-017 auto-pin runs in `setBeforeShellChange`, including context loss. Q returns a carried window to the Screen instead. An auto-pin is never invalid: if the pose is closer than 0.7 m, it still lands (D-017 versus D-021, test plan question 8).
 - Test hooks. `window.__ghiland` is on in development, and in production only when the build was started with `NEXT_PUBLIC_GHILAND_TEST_HOOKS=1`. A normal production build has no hook. `getCanvasMounts` counts effect runs, so React Strict Mode in dev can read 2 on the first mount. `setPlayer` and `runCameraPath` are applied on the next frame and zero velocity. `getComposer` reports multisampling, pass names, and whether AgX is the live composer effect. `getAudio` lists each source as `media` or `buffer` and a decoded-byte total. `getGpuMemory` is tracked render-target bytes plus `renderer.info`. `setQuality` writes the settings tier.
 - D-021. A window centre must stay at least 0.7 m from the eye, and a placement that cannot is invalid. Overlay windows are screen-space, so this applies when detached and pinned modes exist.
 
@@ -70,8 +70,8 @@ These were not cheap enough to take in this pass, or a ruling already closed the
 - S2-34 / test-plan drift. The box test plan's RUL-21 and the open-panel sentences still say x −4…0 and an anchor near −5.1. D-025 and plan item 21 win: open panels are x −2…+2, and `hero-sea` stays near (+5.1, 1.45, 3.9) at yaw −165°. This file does not edit the spec.
 - S2-35. Settings fields are `master`, `ambient`, and `interface`. There is no drei `PerformanceMonitor`. There is no `gl.compile` of the start tier before reveal.
 - S2-18 residual. `cores <= 4` still forces LOW, including a 4-thread CPU with a discrete GPU. Iris Xe now starts LOW. A persisted AUTO ceiling still takes two drops and the 30 s gap, so a weak GPU can sit above LOW for longer than the test plan's 30 s sentence.
-- D-021. A window centre must stay at least 0.7 m from the eye. Placement that cannot is invalid. Still waiting on detached and pinned windows.
+- D-021. A deliberate pin closer than 0.7 m shows the invalid ghost and P does nothing. Atlas's older 0.4 m refusal is not a second threshold. Pixel's "scale the window down to fit hero-sea" is not applied; plan item 23 and D-016 keep the full CSS size at 520 px/m.
 - Composer disposal does not call `EffectComposer.dispose()`, because that also disposes the shared fullscreen geometry. Passes and render targets are released on rebuild.
 - An Esc swallow that never meets its key expires after 2 s, so a 500 ms hitch still counts as one press.
 - M toggles mute from the Screen as well as the world, so a slider click does not swallow it.
-- Losing the WebGL context shows the Restoring veil and returns the shell to RELEASED. The next frame can throw `Cannot read properties of null (reading 'alpha')` once, from the composer reading a context that is already gone. In automated Chrome, `document.exitPointerLock()` during that loss did not clear `pointerLockElement`; the app still clears its own lock flag and calls `exitPointerLock`.
+- Losing the WebGL context shows the Restoring veil and returns the shell to RELEASED. The composer reads `getContextAttributes().alpha`; a lost context returns null, so the app substitutes `{ alpha: false }` and stops the animation loop. Pointer lock is released on the loss and again on the next turn. Automated Chrome has kept `document.pointerLockElement` set even after `exitPointerLock()`; the app still clears its own lock flag.

@@ -1,11 +1,15 @@
 import { create } from 'zustand';
 import type { ScreenRect } from '@/contracts/math';
 import type { WindowInstance } from '@/contracts/window';
+import type { WindowMode } from '@/contracts/window';
+import type { PinnedRecord } from '@/shell/windows/persistence';
 import {
   closeWindow,
   emptyWindowBook,
   focusWindow,
   openWindow,
+  restorePinned,
+  setWindowMode,
   setWindowRect,
   setWindowState,
   setWindowTitle,
@@ -22,6 +26,8 @@ interface WindowsStore {
   restore: (id: string) => void;
   setRect: (id: string, rect: ScreenRect) => void;
   setTitle: (id: string, title: string) => void;
+  setMode: (id: string, mode: WindowMode) => void;
+  restoreWorld: (records: readonly PinnedRecord[]) => void;
 }
 
 export const useWindows = create<WindowsStore>((set, get) => ({
@@ -40,4 +46,6 @@ export const useWindows = create<WindowsStore>((set, get) => ({
   restore: (id) => set(setWindowState({ windows: get().windows, focusedId: get().focusedId }, id, 'normal')),
   setRect: (id, rect) => set(setWindowRect({ windows: get().windows, focusedId: get().focusedId }, id, rect)),
   setTitle: (id, title) => set(setWindowTitle({ windows: get().windows, focusedId: get().focusedId }, id, title)),
+  setMode: (id, mode) => set(setWindowMode({ windows: get().windows, focusedId: get().focusedId }, id, mode)),
+  restoreWorld: (records) => set(restorePinned({ windows: get().windows, focusedId: get().focusedId }, records)),
 }));

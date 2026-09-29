@@ -3,12 +3,11 @@
 import { useEffect } from 'react';
 import type { WorldSceneProps } from '@/contracts/world';
 import { levelBoxes, SEA_Y } from './level';
+import { sunDirection } from './sun';
 
 function sunPosition(elevationDeg: number, azimuthDeg: number, distance: number): [number, number, number] {
-  const elevation = (elevationDeg * Math.PI) / 180;
-  const azimuth = (azimuthDeg * Math.PI) / 180;
-  const horizontal = Math.cos(elevation) * distance;
-  return [Math.sin(azimuth) * horizontal, Math.sin(elevation) * distance, Math.cos(azimuth) * horizontal];
+  const direction = sunDirection(elevationDeg, azimuthDeg);
+  return [direction[0] * distance, direction[1] * distance, direction[2] * distance];
 }
 
 function AabbMesh({
@@ -60,7 +59,8 @@ export function SeasideHouseScene({ onReady, quality }: WorldSceneProps) {
     <>
       <color attach="background" args={['#E7C7A4']} />
       <fogExp2 attach="fog" args={['#E7C7A4', 0.011]} />
-      <hemisphereLight args={['#F4E0C4', '#7A6552', 0.55]} />
+      <hemisphereLight args={['#F4E0C4', '#7A6552', 0.32]} />
+      <pointLight position={[0, 2.2, 0.4]} intensity={6} distance={8} decay={2} color="#FFE0C0" />
       <directionalLight
         position={sun}
         intensity={2.6}

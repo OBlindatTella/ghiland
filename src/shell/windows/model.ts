@@ -1,6 +1,7 @@
 import type { ScreenRect } from '@/contracts/math';
-import type { WindowInstance, WindowState } from '@/contracts/window';
+import type { WindowInstance, WindowMode, WindowState } from '@/contracts/window';
 import { placeRect, type Size } from '@/shell/windows/geometry';
+import type { PinnedRecord } from '@/shell/windows/persistence';
 
 export interface WindowBook {
   windows: Record<string, WindowInstance>;
@@ -94,6 +95,39 @@ export function setWindowRect(book: WindowBook, id: string, rect: ScreenRect): W
       [id]: { ...current, lastScreenRect: rect, mode: { kind: 'overlay', rect } },
     },
   };
+}
+
+export function setWindowMode(book: WindowBook, id: string, mode: WindowMode): WindowBook {
+  const current = book.windows[id];
+  if (!current) return book;
+  return { ...book, windows: { ...book.windows, [id]: { ...current, mode, state: 'normal' } } };
+}
+
+export function restorePinned(book: WindowBook, records: readonly PinnedRecord[]): WindowBook {
+  const windows = { ...book.windows };
+  for (const record of records) {
+    if (Object.values(windows).some((item) => item.appId === record.appId)) continue;
+    windows[record.id] = {
+      id: record.id,
+      appId: record.appId,
+      title: record.title,
+      mode: {
+        kind: 'worldPinned',
+        worldId: record.worldId,
+        position: record.position,
+        quaternion: record.quaternion,
+        pxPerMeter: 520,
+        placement: record.placement,
+        anchorId: record.anchorId,
+      },
+      lastScreenRect: { x: 48, y: 48, w: record.w, h: record.h },
+      state: 'normal',
+      z: 1,
+      owner: 'local',
+      createdAt: 0,
+    };
+  }
+  return { windows, focusedId: book.focusedId };
 }
 
 export function setWindowTitle(book: WindowBook, id: string, title: string): WindowBook {

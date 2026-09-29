@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { AppProps } from '@/contracts/app';
 import { renderLightMarkdown } from './markdown';
-import { loadNotes, saveNotes, type Note } from './storage';
+import { loadNotes, rememberNotes, saveNotes, type Note } from './storage';
 
 function freshNote(): Note {
   return {
@@ -38,6 +38,7 @@ export default function Notes({ host }: AppProps) {
 
   useEffect(() => {
     notesRef.current = notes;
+    if (ready.current) rememberNotes(notes);
     if (!ready.current) return;
     const handle = window.setTimeout(() => {
       void saveNotes(notes).then((result) => setStatus(result === 'ok' ? 'Saved' : 'Too large to save'));

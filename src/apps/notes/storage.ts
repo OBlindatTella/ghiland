@@ -36,6 +36,20 @@ function memory(): Storage | null {
   return typeof localStorage === 'undefined' ? null : localStorage;
 }
 
+let memoryCache: Note[] | null = null;
+
+/** Same-page remounts (detach, pin) read this before IndexedDB finishes. */
+export function rememberNotes(notes: readonly Note[]): void {
+  memoryCache = notes.map((note) => ({ ...note }));
+  const raw = packNotes(memoryCache);
+  if (!guardNotes(raw)) return;
+  try {
+    memory()?.setItem(NOTES_KEY, raw);
+  } catch {
+    /* Quota is reported by the async save. */
+  }
+}
+
 async function openDb(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
     const request = indexedDB.open('ghiland', 1);
@@ -74,14 +88,22 @@ async function idbPut(raw: string): Promise<void> {
   }
 }
 
+function newest(notes: readonly Note[]): number {
+  return notes.reduce((max, note) => Math.max(max, note.updatedAt), 0);
+}
+
 export async function loadNotes(): Promise<Note[]> {
+  if (memoryCache) return memoryCache.map((note) => ({ ...note }));
+  let fromIdb: Note[] = [];
   try {
     const raw = await idbGet();
-    if (raw) return unpackNotes(raw);
+    if (raw) fromIdb = unpackNotes(raw);
   } catch {
     /* IndexedDB unavailable. Fall through to localStorage. */
   }
-  return unpackNotes(memory()?.getItem(NOTES_KEY) ?? null);
+  const fromLocal = unpackNotes(memory()?.getItem(NOTES_KEY) ?? null);
+  if (newest(fromLocal) > newest(fromIdb)) return fromLocal;
+  return fromIdb.length > 0 ? fromIdb : fromLocal;
 }
 
 export async function saveNotes(notes: readonly Note[]): Promise<'ok' | 'too-large'> {

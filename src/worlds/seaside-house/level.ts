@@ -57,6 +57,8 @@ const finColor = '#D4C6B4';
 const terraceFloor = '#A89070';
 const glassColor = '#C5DDE0';
 const railColor = '#D7E6E8';
+const smokedOak = '#4A3B2E';
+const linen = '#E4D2B8';
 
 export const levelBoxes: readonly LevelBox[] = [
   box('corridor-floor', -1.1, -0.06, -9, 1.1, 0.002, -3.5, surface, corridorFloor),
@@ -72,6 +74,8 @@ export const levelBoxes: readonly LevelBox[] = [
   box('living-back-west', -7 - T, 0, -3.5 - T, -1.1, 3.2, -3.5, wall, livingWall),
   box('living-back-east', 1.1, 0, -3.5 - T, 7 + T, 3.2, -3.5, wall, livingWall),
   box('living-header', -1.1, 2.4, -3.5 - T, 1.1, 3.2, -3.5, wall, livingWall),
+  // D-027. Underside at 2.10 m, above the 1.75 m capsule, so it frames the mouth and does not block the walk.
+  box('soffit', -1.1, 2.1, -4.4, 1.1, 2.42, -3.5, ['occluder', 'pinSurface', 'placement'], smokedOak),
 
   // D-020: expanded by the 0.3 m radius, this stays outside x −2…+2 and off the open panels.
   box('fin', -7, 0, -3.25, -2.35, 2.8, -2.8, wall, finColor),
@@ -88,6 +92,9 @@ export const levelBoxes: readonly LevelBox[] = [
   box('rail-west', -7, 0, 4.5, -6.94, 1.05, 9, glass, railColor, 0.32),
   box('rail-east', 7, 0, 4.5, 7.06, 1.05, 9, glass, railColor, 0.32),
   box('rail-cap-north', -7, 1.02, 8.98, 7, 1.08, 9.08, visual, '#F2EFE8'),
+  // Placeholder curtains. Visual only: they never occlude and never block movement (D-027).
+  box('curtain-left', 1.8, 0.05, 4.24, 2.6, 3.15, 4.36, visual, linen, 0.42),
+  box('curtain-right', -2.6, 0.05, 4.24, -1.8, 3.15, 4.36, visual, linen, 0.42),
 ];
 
 export const seasideColliders: readonly Collider[] = levelBoxes

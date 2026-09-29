@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react';
 import { apps } from '@/apps/registry';
+import { inputManager } from '@/engine/input/InputManager';
 import { openAppWindow, restoreAppWindow } from '@/shell/windows/commands';
 import { useInputStore } from '@/state/input';
 import { useScreenStore } from '@/state/screen';
@@ -101,6 +102,7 @@ export function Shelf() {
           open={openIds.has(app.id)}
           onOpen={() => {
             if (app.integration.kind === 'external') {
+              inputManager.noteExternalOpen();
               window.open(app.integration.url, '_blank', 'noopener,noreferrer');
             }
             openAppWindow(app);
