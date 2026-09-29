@@ -380,6 +380,15 @@ describe('seaside greybox collision', () => {
     expect(south.maxJump).toBeLessThanOrEqual(south.step + 1e-4);
   });
 
+  it('reaches the glass from V2 on the 46° to 60.5° heading band', () => {
+    // MOV-18: 40° and 43° run into the lounge cluster. 46°–60.5° clear it.
+    for (const heading of [46, 50, 60.5]) {
+      const walked = trace(0, -3, heading, 8);
+      expect(walked.z, `${heading}`).toBeGreaterThan(2);
+      expect(walked.maxJump).toBeLessThanOrEqual(walked.step + 1e-4);
+    }
+  });
+
   it('blocks the closed glass and the balustrade', () => {
     const intoGlass = slideMove(3, 3, 0, 4, body, seasideColliders);
     expect(intoGlass.z).toBeLessThan(4.5);
