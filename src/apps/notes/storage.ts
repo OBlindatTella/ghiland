@@ -7,6 +7,8 @@ export interface Note {
 
 export const NOTES_KEY = 'ghiland:app:notes';
 export const NOTES_INDEX_KEY = 'ghiland:app:notes:index';
+/** Synchronous copy of the latest notes. IndexedDB may abort a transaction that starts as the page unloads. */
+export const NOTES_FLUSH_KEY = 'ghiland:app:notes:flush';
 export const NOTES_RECORD_PREFIX = 'ghiland:app:notes:note:';
 export const NOTES_QUARANTINE_PREFIX = 'ghiland:app:notes:quarantine:';
 /** Per note, not the whole store. Past this, only the extra characters are dropped. */
@@ -209,6 +211,47 @@ export async function claimNotesHere(): Promise<Role> {
 
 export function rememberNotes(notes: readonly Note[]): void {
   memoryCache = notes.map((note) => ({ ...note }));
+  writeMirror(memoryCache);
+}
+
+function writeMirror(notes: readonly Note[]): void {
+  try {
+    localStorage.setItem(NOTES_FLUSH_KEY, JSON.stringify({ version: NOTES_RECORD_VERSION, notes }));
+  } catch {
+    /* Quota or blocked storage. A committed IndexedDB transaction still has the notes. */
+  }
+}
+
+function readMirror(): Note[] | null {
+  try {
+    const raw = localStorage.getItem(NOTES_FLUSH_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as { notes?: unknown };
+    if (!Array.isArray(parsed.notes)) return null;
+    const notes: Note[] = [];
+    for (const item of parsed.notes) {
+      if (!item || typeof item !== 'object') return null;
+      const note = item as Note;
+      if (typeof note.id !== 'string' || typeof note.title !== 'string' || typeof note.body !== 'string') return null;
+      notes.push({
+        id: note.id,
+        title: note.title,
+        body: note.body,
+        updatedAt: typeof note.updatedAt === 'number' ? note.updatedAt : 0,
+      });
+    }
+    return notes;
+  } catch {
+    return null;
+  }
+}
+
+function fresher(stored: readonly Note[], mirror: readonly Note[] | null): Note[] {
+  if (!mirror) return stored.map((note) => ({ ...note }));
+  const storedStamp = stored.reduce((max, note) => Math.max(max, note.updatedAt), 0);
+  const mirrorStamp = mirror.reduce((max, note) => Math.max(max, note.updatedAt), 0);
+  const chosen = mirrorStamp >= storedStamp ? mirror : stored;
+  return chosen.map((note) => ({ ...note }));
 }
 
 /** Open once and leave the connection up so a pagehide flush can start a transaction immediately. */
@@ -252,6 +295,7 @@ function flushOpenConnection(notes: readonly Note[]): Promise<SaveNotesResult> |
     store.put({ version: NOTES_RECORD_VERSION, ids: nextIds }, NOTES_INDEX_KEY);
     knownIds = nextIds;
     memoryCache = limited.map((note) => ({ ...note }));
+    writeMirror(memoryCache);
     return new Promise((resolve) => {
       tx.oncomplete = () => resolve('ok');
       tx.onerror = () => resolve('unavailable');
@@ -424,7 +468,7 @@ export type LoadNotesResult = { status: 'ok'; notes: Note[] } | { status: 'block
 export async function loadNotes(): Promise<LoadNotesResult> {
   if (memoryCache) return { status: 'ok', notes: memoryCache.map((note) => ({ ...note })) };
   try {
-    return await withDb(async (db) => {
+    const loaded = await withDb(async (db): Promise<LoadNotesResult> => {
       const migrated = await migrateLegacy(db);
       if (migrated === 'unavailable') return { status: 'unavailable' };
       const indexRaw = await idbGet(db, NOTES_INDEX_KEY);
@@ -451,10 +495,17 @@ export async function loadNotes(): Promise<LoadNotesResult> {
       knownIds = notes.map((note) => note.id);
       return { status: 'ok', notes };
     });
+    return withFresherMirror(loaded);
   } catch (error) {
     if (isSiteDataBlocked(error)) return { status: 'blocked' };
     return { status: 'unavailable' };
   }
+}
+
+function withFresherMirror(result: LoadNotesResult): LoadNotesResult {
+  if (result.status !== 'ok') return result;
+  const notes = fresher(result.notes, readMirror());
+  return { status: 'ok', notes };
 }
 
 export type SaveNotesResult = 'ok' | 'blocked' | 'quota' | 'readonly' | 'unavailable';
