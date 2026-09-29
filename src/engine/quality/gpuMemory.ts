@@ -162,10 +162,15 @@ export function frameGpuBytes(input: FrameGpuInput): number {
 
 const HIGH_GPU_BUDGET = 384 * 1024 * 1024;
 
-/** HIGH stays at or under 384 MB. ULTRA keeps 4× unless that tier is also asked to fit the same budget. */
+/**
+ * HIGH stays at or under 384 MB.
+ * Above DPR 1.25 the 2× composer still exceeds 384 MB live, so HIGH uses SMAA there.
+ */
 export function samplesWithinBudget(tier: 'HIGH' | 'ULTRA', input: Omit<FrameGpuInput, 'samples'>): 0 | 2 | 4 {
   const budget = tier === 'HIGH' ? HIGH_GPU_BUDGET : Number.POSITIVE_INFINITY;
   const cost = (samples: 0 | 2 | 4) => frameGpuBytes({ ...input, samples });
+  const aboveOneAndQuarter = input.width * input.height > 1920 * 1080 * 1.25 * 1.25;
+  if (tier === 'HIGH' && aboveOneAndQuarter) return 0;
   if (cost(4) <= budget) return 4;
   if (cost(2) <= budget) return 2;
   return 0;
