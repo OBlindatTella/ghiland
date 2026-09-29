@@ -138,6 +138,32 @@ describe('window book', () => {
     expect(Object.keys(again.book.windows)).toEqual(['a']);
   });
 
+  it('forgets a recall arm after 10 seconds and after the window is picked up', () => {
+    const opened = openWindow(emptyWindowBook, {
+      id: 'a',
+      appId: 'notes',
+      title: 'Notes',
+      defaultSize: size,
+      viewport,
+      now: 1,
+    });
+    const pinned = setWindowMode(opened.book, 'a', {
+      kind: 'worldPinned',
+      worldId: 'seaside-house',
+      position: [1, 1, 1],
+      quaternion: [0, 0, 0, 1],
+      pxPerMeter: 520,
+      placement: 'float',
+    });
+    const pulse = openWindow(pinned, { id: 'x', appId: 'notes', title: 'Notes', defaultSize: size, viewport, now: 1_000 });
+    expect(pulse.effect).toBe('pulse');
+    const late = openWindow(pulse.book, { id: 'x', appId: 'notes', title: 'Notes', defaultSize: size, viewport, now: 12_000 });
+    expect(late.effect).toBe('pulse');
+    const picked = setWindowMode(late.book, 'a', { kind: 'detached', offset: [0, 0, -1.1], lagMs: 150 });
+    const again = openWindow(picked, { id: 'x', appId: 'notes', title: 'Notes', defaultSize: size, viewport, now: 12_100 });
+    expect(again.effect).toBe('focus');
+  });
+
   it('keeps a closed app rect and restores a pinned window on its saved rect', () => {
     const opened = openWindow(emptyWindowBook, {
       id: 'a',

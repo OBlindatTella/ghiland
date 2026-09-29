@@ -24,7 +24,17 @@ function list(book: WindowBook): WindowInstance[] {
   return Object.values(book.windows).sort((a, b) => a.z - b.z);
 }
 
-const recallArmed = new Set<string>();
+const RECALL_MS = 10_000;
+const recallArmed = new Map<string, number>();
+
+function recallReady(id: string, now: number): boolean {
+  const until = recallArmed.get(id);
+  if (until === undefined || now > until) {
+    recallArmed.delete(id);
+    return false;
+  }
+  return true;
+}
 
 function raise(book: WindowBook, id: string): WindowBook {
   const windows = { ...book.windows };
@@ -42,7 +52,7 @@ export function openWindow(
   const existing = Object.values(book.windows).find((item) => item.appId === input.appId);
   if (existing) {
     if (existing.mode.kind === 'worldPinned') {
-      if (recallArmed.has(existing.id)) {
+      if (recallReady(existing.id, input.now)) {
         recallArmed.delete(existing.id);
         const recalled: WindowInstance = {
           ...existing,
@@ -55,7 +65,7 @@ export function openWindow(
           effect: 'recall',
         };
       }
-      recallArmed.add(existing.id);
+      recallArmed.set(existing.id, input.now + RECALL_MS);
       return { book, created: false, effect: 'pulse' };
     }
     recallArmed.delete(existing.id);
@@ -127,6 +137,7 @@ export function setWindowRect(book: WindowBook, id: string, rect: ScreenRect): W
 }
 
 export function setWindowMode(book: WindowBook, id: string, mode: WindowMode): WindowBook {
+  recallArmed.delete(id);
   const current = book.windows[id];
   if (!current) return book;
   return { ...book, windows: { ...book.windows, [id]: { ...current, mode, state: 'normal' } } };
