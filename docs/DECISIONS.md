@@ -98,3 +98,32 @@ The box copies in /workspace/ghiland/docs are canonical for specs, owned by Ghil
 - Step-8 screen: a fiddle-leaf fig planter at about (−2.9, 0, −2.6).
 
 The details are in AURA_WORLDS.md, which is canonical. The sun, soffit and curtain positions go into the greybox with the step-7 run, and materials and cloth come with step 8.
+
+## D-028 Severity rulings for the PR #3 review
+S3-02 (context loss throws in addPass and the canvas can't be restored) and S3-04 (two tabs overwriting each other's Notes) are BLOCKERs for Alpha 0.1 sign-off. Alpha 0.1 can't be called complete until both are fixed and pass at runtime. S3-01 (the opening-edge rail) is a golden-path BLOCKER and must be fixed before step 7 merges.
+
+## D-029 Notes storage policy (S3-03/S3-04/S3-05/S3-06)
+- Notes are stored per-note in IndexedDB (one record per note, carrying a version field and updatedAt), never as the whole array.
+- Each note may hold up to 2,000,000 characters. A calm inline warning appears at 80% of that; past the limit, only the extra text is refused, never the whole save.
+- Single writer across tabs: a Web Lock or BroadcastChannel leader election. Other tabs show a calm "Ghiland is open in another tab" state with a "Use here" button that takes over the lock, and they are read-only until then.
+- Writes are flushed on pagehide and visibilitychange=hidden, and before the veil's Reload.
+- A corrupt record or a failed read is quarantined to a backup key and is never overwritten.
+
+## D-030 Shell and key rulings (S3-12, S3-17, S3-19)
+- S3-12: A blur caused by our own window.open (within 500 ms) keeps the shell in SCREEN, and the card stays visible on return.
+- S3-17: M mutes in SCREEN too, unless a text field has focus. This is an accepted deviation from DES-23.
+- S3-19:
+  - Add per-app last position (SCR-08), role=region on windows (A11Y-08), and a close fade of 120 ms or less (no overshoot).
+  - Snap (WIN-03), F6 region cycling and a Worlds tile are deferred to Alpha 0.2.
+
+## D-031 AUTO oscillation bound (S3-16)
+After the first 60 s, AUTO makes at most 2 tier changes per rolling 5 minutes, unless a demotion is needed because fps stays below 50% of target for 3 s. A ceiling resets only after 7 days, on a manual change, or on a GPU string change.
+
+## D-032 Three ray-blocker sets (Sentinel step-7 risk 2/3)
+- Placement ray: movement plus placement colliders.
+- Occlusion fade ray: the occluder layer only. Glass, curtains and plants are never occluders.
+- Crosshair/pick-up ray: walls/occluders plus window quads, capped at 25 m.
+- The D-027 soffit and curtains are neither occluders nor movement colliders, and curtains aren't pin surfaces.
+- Anchor occupancy is derived from open windows.
+- The D-021 preview and the pin use the same placement result.
+- migrateWindows goes through the guarded persist writer and never silently drops pinned windows.
