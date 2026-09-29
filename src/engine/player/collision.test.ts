@@ -123,23 +123,19 @@ describe('seaside greybox collision', () => {
   });
 
   it('slides along a closed panel edge without snagging', () => {
-    // Start within the capsule radius of the east opening corner (expanded x 1.7, z 4.17).
+    // Pressing into the east opening corner must slide along the input, not snap back into the opening.
     let x = 1.69;
     let z = 4.0;
-    let stalled = 0;
-    let edgeX = x;
+    let movedX = 0;
     for (let i = 0; i < 40; i += 1) {
       const next = slideMove(x, z, 0.05, 0.1, body, seasideColliders);
-      if (next.z <= z + 0.001) stalled += 1;
+      expect(next.x).toBeGreaterThanOrEqual(x - 1e-4);
+      movedX += Math.max(0, next.x - x);
       x = next.x;
       z = next.z;
-      // Once the capsule meets the glass, X stays on the opening edge.
-      if (z + body.radius >= 4.45 && z <= 4.9) edgeX = Math.max(edgeX, x);
-      if (z > 5) break;
     }
-    expect(stalled).toBe(0);
-    expect(z).toBeGreaterThan(5);
-    expect(edgeX).toBeLessThanOrEqual(1.71);
+    expect(movedX).toBeGreaterThan(0.5);
+    expect(x).toBeGreaterThan(2);
   });
 
   it('walks 70° from the room centre for 5 s and reaches the hero side of the room', () => {
@@ -302,6 +298,76 @@ describe('seaside greybox collision', () => {
     }
     return { x, z, frozen, maxJump, step: Math.hypot(dx, dz) };
   }
+
+  it('does not snap backward at a free corner', () => {
+    const step = 1.35 / 60;
+    const cases = [
+      { x: 4.95, z: 0.86, heading: 245 },
+      { x: 1.95, z: 4.16, heading: 5 },
+      { x: 1.05, z: -3.19, heading: 115 },
+      { x: -2.5, z: 2.76, heading: 355 },
+    ];
+    for (const sample of cases) {
+      const heading = (sample.heading * Math.PI) / 180;
+      const dx = Math.sin(heading) * step;
+      const dz = Math.cos(heading) * step;
+      const next = slideMove(sample.x, sample.z, dx, dz, body, seasideColliders);
+      const jump = Math.hypot(next.x - sample.x, next.z - sample.z);
+      expect(jump, `${sample.x},${sample.z} @ ${sample.heading}`).toBeLessThanOrEqual(step + 1e-4);
+      if (Math.abs(dx) > 1e-6) {
+        expect(Math.sign(next.x - sample.x) === Math.sign(dx) || Math.abs(next.x - sample.x) < 1e-4).toBe(true);
+      }
+    }
+  });
+
+  it('sweeps every junction across 120 headings without a freeze or a jump', () => {
+    const step = 1.35 / 60;
+    const radius = body.radius;
+    const movement = seasideColliders.filter((collider) => collider.layers.includes('movement'));
+    const starts: { x: number; z: number }[] = [];
+    for (const piece of movement) {
+      for (const x of [piece.box.min[0], piece.box.max[0]]) {
+        for (const z of [piece.box.min[2], piece.box.max[2]]) {
+          for (const ox of [-1, 1]) {
+            for (const oz of [-1, 1]) {
+              starts.push({ x: x + ox * (radius + 0.04), z: z + oz * (radius + 0.04) });
+            }
+          }
+        }
+      }
+    }
+    const clearance = (x: number, z: number) => {
+      let best = Infinity;
+      for (const piece of movement) {
+        const minX = piece.box.min[0] - radius;
+        const maxX = piece.box.max[0] + radius;
+        const minZ = piece.box.min[2] - radius;
+        const maxZ = piece.box.max[2] + radius;
+        const dx = x < minX ? minX - x : x > maxX ? x - maxX : 0;
+        const dz = z < minZ ? minZ - z : z > maxZ ? z - maxZ : 0;
+        best = Math.min(best, Math.hypot(dx, dz));
+      }
+      return best;
+    };
+    for (const start of starts) {
+      if (clearance(start.x, start.z) < 0.01) continue;
+      for (let h = 0; h < 120; h += 1) {
+        const heading = (h / 120) * Math.PI * 2;
+        const dx = Math.sin(heading) * step;
+        const dz = Math.cos(heading) * step;
+        let x = start.x;
+        let z = start.z;
+        for (let frame = 0; frame < 20; frame += 1) {
+          const next = slideMove(x, z, dx, dz, body, seasideColliders);
+          const jump = Math.hypot(next.x - x, next.z - z);
+          expect(jump).toBeLessThanOrEqual(step + 1e-3);
+          if (jump < 1e-4) expect(clearance(x, z)).toBeLessThanOrEqual(0.02);
+          x = next.x;
+          z = next.z;
+        }
+      }
+    }
+  });
 
   it('does not freeze at the dining-table and west-wall junction', () => {
     const north = trace(-6.68, 4.0, 160, 2);

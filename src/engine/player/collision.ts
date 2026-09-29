@@ -106,11 +106,12 @@ function releaseOpeningEdge(
   x: number,
   z: number,
   nextX: number,
+  dx: number,
   dz: number,
   radius: number,
   boxes: readonly Obstacle[],
 ): number | null {
-  if (dz === 0) return null;
+  if (dz === 0 || dx === 0) return null;
   const reach = radius * radius;
   let best: number | null = null;
   let bestReach = reach;
@@ -131,7 +132,11 @@ function releaseOpeningEdge(
     if (side === 'maxX' && x < edgeX - radius) continue;
     const face = approachingSouth ? 'minZ' : 'maxZ';
     if (faceContinuesPast(box, boxes, side, face)) continue;
-    const released = side === 'minX' ? minX - SKIN : maxX + SKIN;
+    let released = side === 'minX' ? minX - SKIN : maxX + SKIN;
+    const shift = released - x;
+    // Only toward the input, and never farther than this frame's lateral step.
+    if (shift * dx <= 0) continue;
+    if (Math.abs(shift) > Math.abs(dx)) released = x + dx;
     // A release that starts inside another padded box is undone by pushOut and freezes the step.
     if (insidePadded(released, z, radius, boxes)) continue;
     const edgeZ = approachingSouth ? minZ : maxZ;
@@ -200,7 +205,7 @@ export function slideMove(
   let nextX = moveAxis(freed.x, freed.z, dx, body.radius, boxes, 'x');
   let nextZ = moveAxis(nextX, freed.z, dz, body.radius, boxes, 'z');
   if (dz !== 0 && Math.abs(nextZ - (freed.z + dz)) > 1e-6) {
-    const released = releaseOpeningEdge(freed.x, freed.z, nextX, dz, body.radius, boxes);
+    const released = releaseOpeningEdge(freed.x, freed.z, nextX, dx, dz, body.radius, boxes);
     if (released !== null && !insidePadded(released, freed.z, body.radius, boxes)) {
       const retryZ = moveAxis(released, freed.z, dz, body.radius, boxes, 'z');
       const landed = pushOut(released, retryZ, body.radius, boxes);
