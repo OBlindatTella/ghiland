@@ -88,3 +88,4 @@ These are in Aura and were left out so the pass stays inside the draw, triangle,
 - The floor is honed travertine, including the corridor. Aura's table also lists pale oak planks; the pass follows the art-pass brief (travertine floor and jambs, smoked oak soffit and furniture). The terrace deck is teak.
 - Furniture colliders are movement only (desks and tables also pin surfaces). None are occluders, so a pinned note stays visible through the glass. The fig planter blocks movement and does not occlude.
 - `renderer.info` draw and triangle totals include the shadow pass on MED and above. The budget check compares that total with Atlas (HIGH 150 draws, 750k triangles, 384 MB). SwiftShader cannot stand in for a 60 fps RTX 3060 measurement.
+- three r186 removes `PCFSoftShadowMap` and falls back to `PCFShadowMap`. HIGH and ULTRA still request the soft tier; the map is PCF until three grows a replacement.
