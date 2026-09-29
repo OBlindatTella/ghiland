@@ -150,3 +150,32 @@ After the first 60 s, AUTO makes at most 2 tier changes per rolling 5 minutes, u
 - S4-12: the windows file merges per-world, per-app state (it never rebuilds only from live windows), backs up a malformed pinned record to a quarantine key rather than dropping it, and removes a corrupt blob only after its backup write returns true.
 - S4-17: the synchronous localStorage mirror holds only notes that are dirty since the last IDB commit, and is cleared after the commit. It is written at most once per keystroke, and always synchronously on pagehide or when the page becomes hidden. If a mirror write fails, the old mirror is removed rather than left stale. The mirror must never make the settings or windows writes fail. Key-to-glyph time stays at or under 50 ms with a 2M-character note.
 - S4-14: add a BroadcastChannel leader-election fallback for when `navigator.locks` is missing. With neither available, the tab stays writer but shows a calm notice.
+
+## D-036 Merge gates for the PR #5 review (REVIEW_PR5_STEP_8.md)
+- S5-01 (a dead stop at the dining-table / west-wall junction) is a BLOCKER and is fixed together with S5-02 (the corner release teleporting the player against the input). The release may only move the player in the input direction, and never into any padded box. MOV-18 sweeps include every wall–furniture junction.
+- S5-03 is a BLOCKER. S5-04 is a BLOCKER (question 11 answered in D-037). S5-06 (keyboard input into a window seen from behind) is MAJOR and gates the merge under D-033.
+- S5-05 and S5-10 are MAJOR and are fixed before the merge. Every MINOR (S5-07 to S5-15, S5-21) and POLISH item (S5-16 to S5-20) is fixed in the same follow-up.
+
+## D-037 Notes editing and durability (S5-03, S5-04; replaces the 8,000-char window and the 200k mirror cap)
+- The Notes editor is always one native, **uncontrolled** `<textarea>` holding the whole note, up to the 2,000,000-character limit. No sliced or windowed editing. Native Enter, undo/redo, IME, select-all, copy, find and screen-reader behaviour are required.
+  - The limit is enforced in `beforeinput` by trimming the inserted text (D-033).
+  - React state is not updated on every keystroke; the dirty flag is.
+- Key-to-glyph targets on the reference hardware: at most 50 ms up to 1,000,000 characters (gating) and at most 100 ms at 2,000,000 (non-gating). SwiftShader timings are informational only.
+- Durability:
+  - (a) The debounce has a max wait. Continuous typing commits to IndexedDB at least every 1 s.
+  - (b) The synchronous mirror uses one localStorage key per dirty note. Any dirty note up to 1,000,000 characters is mirrored, and a big note never stops small notes being mirrored. Notes over 1M rely on (a) and (c), so the loss window is at most about 1 s; declare this in KNOWN_ISSUES.
+  - (c) On pagehide or when the page becomes hidden, the IndexedDB put starts synchronously on the already-open connection (no async read first), and the mirror is written synchronously.
+  - (d) When a tab yields the lock ("Use here"), it commits its dirty notes to IndexedDB, waiting up to 2 s, before releasing. The taking tab reads only after it holds the lock.
+  - (e) A failed mirror write removes that note's mirror key and never blocks the settings or windows saves.
+- Answer to question 11: the mirror covers notes up to 1M characters. Beyond that the bounded window of about 1 s is accepted for 0.1.
+
+## D-038 Carry and placement edge cases (questions 12 and 8, zone clamp)
+- Question 12: a detach whose pointer lock is never granted stays carried in RELEASED with "Click to walk", and the next click resumes carrying (the builder's behaviour is accepted). If the tab hides, blurs or loses the context while in that state, the D-017 auto-pin applies.
+- Question 8: an auto-pin can never fail. It uses the nearest valid float along the view ray (at least 0.7 m, inside the walkable volume). If no valid float exists, the window docks back to the Screen as an overlay window at its last screen rect. The window is never lost, and never placed under 0.7 m from the eye.
+- Zone clamp: in D-035 the "walkable volume" means the union of all walkable zones of the world (interior plus terrace), not the current zone only. A float aimed out through the open panels may land on the terrace side (RUL-13d). The limits are the balustrade (0.15 m on the house side) and the outer world bounds.
+- S5-05: pins sit 1 cm off the surface they hit, including interior walls, with the window's own yaw taken into account. Clearance pushes happen only along the surface plane, never away from the wall.
+- S5-13: in table pose the bottom edge is at least 2 cm above the table surface, and the window may not overhang the table by more than 10% of its width, otherwise the result is invalid.
+
+## D-039 GPU memory on HIGH (S5-10)
+- HIGH caps the device pixel ratio at 1.5 and ULTRA at 2. The estimator must count the MSAA resolve target, the default framebuffer, mipmaps, the real PMREM size and any texture set not yet released. HIGH at DPR 1.5 must stay at or under 384 MB by the corrected estimate; otherwise HIGH drops MSAA to 2× or uses SMAA at DPR above 1.25.
+- PMREM is rebuilt after a context restore (S5-09) and is not rebuilt on every AUTO tier change. Shaders for every tier are compiled up front during loading (`renderer.compile` / `compileAsync`) to avoid hitches when AUTO switches tier.
