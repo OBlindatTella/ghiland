@@ -239,7 +239,21 @@ export function WindowFrame({
           {children}
         </div>
       </div>
-      {world ? <div data-frame-back="" data-testid="window-back" aria-hidden style={frameBackStyle} /> : null}
+      {world ? (
+        <div
+          data-frame-back=""
+          data-testid="window-back"
+          aria-hidden
+          style={{ ...frameBackStyle, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8, color: '#2c261f' }}
+        >
+          <span data-frame-glyph="" style={{ fontSize: 28, lineHeight: '32px', fontWeight: 600 }}>
+            {app.icon}
+          </span>
+          <span data-frame-title="" style={{ maxWidth: '80%', overflow: 'hidden', textOverflow: 'ellipsis', fontSize: 13, lineHeight: '18px' }}>
+            {instance.title}
+          </span>
+        </div>
+      ) : null}
       {app.window.resizable && !world
         ? EDGES.map((edge) => (
             <div

@@ -25,6 +25,7 @@ import { installWindowBridge } from '@/engine/windows/bridge';
 import { physicalSize, rayAabb, resolvePlacement, type PlacementCollider } from '@/engine/windows/placement';
 import { blocksOcclusion } from '@/engine/windows/raySets';
 import { cameraStageTransform, projectWindow } from '@/engine/windows/projector';
+import { frontFacesView, windowFrontNormal } from '@/shell/windows/frameBack';
 import { getWorld } from '@/worlds/registry';
 import { useGlStore } from '@/state/gl';
 import { useSession } from '@/state/session';
@@ -229,6 +230,16 @@ export function WindowRig() {
       }
       element.style.visibility = 'visible';
       element.style.transform = projected.object;
+      if (pose) {
+        const view: [number, number, number] = [
+          worldPosition[0] - pose.origin[0],
+          worldPosition[1] - pose.origin[1],
+          worldPosition[2] - pose.origin[2],
+        ];
+        const front = frontFacesView(windowFrontNormal(worldQuaternion), view);
+        element.style.pointerEvents = front ? 'auto' : 'none';
+        element.toggleAttribute('data-facing-back', !front);
+      }
       if (item.mode.kind !== 'worldPinned') {
         element.style.opacity = '1';
         continue;

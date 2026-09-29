@@ -1,5 +1,5 @@
 import {
-  DoubleSide,
+  FrontSide,
   Mesh,
   MeshBasicMaterial,
   PlaneGeometry,
@@ -20,7 +20,7 @@ export interface WindowQuad {
 
 const raycaster = new Raycaster();
 const ndc = new Vector2(0, 0);
-const mesh = new Mesh(new PlaneGeometry(1, 1), new MeshBasicMaterial({ side: DoubleSide }));
+const mesh = new Mesh(new PlaneGeometry(1, 1), new MeshBasicMaterial({ side: FrontSide }));
 
 /** E pick-up and the crosshair both stop at 25 m. */
 export const CROSSHAIR_RANGE = 25;
