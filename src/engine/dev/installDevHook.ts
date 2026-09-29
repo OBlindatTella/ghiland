@@ -6,6 +6,7 @@ import { playerRef, type PlayerSnapshot } from '@/engine/player/playerRef';
 import type { QualitySetting } from '@/contracts/quality';
 import { useInputStore } from '@/state/input';
 import { useSession } from '@/state/session';
+import { perfSample } from '@/state/perf';
 import { useSettings } from '@/state/settings';
 
 /** Development, or a production build started with NEXT_PUBLIC_GHILAND_TEST_HOOKS=1. Off by default. */
@@ -29,6 +30,14 @@ declare global {
       setPlayer: (snapshot: PlayerSnapshot) => void;
       runCameraPath: (stops: CameraStop[]) => () => void;
       setQuality: (quality: QualitySetting) => void;
+      getPerf: () => {
+        calls: number;
+        triangles: number;
+        textures: number;
+        gpuMb: number;
+        fps: number;
+        frameMs: number;
+      };
     };
   }
 }
@@ -68,5 +77,13 @@ export function installDevHook(
     getComposer: () => readLiveComposer(getRendererInfo?.().toneMapping ?? 0),
     runCameraPath: (stops) => runCameraPath(stops),
     setQuality: (quality) => useSettings.getState().setQuality(quality),
+    getPerf: () => ({
+      calls: perfSample.calls,
+      triangles: perfSample.triangles,
+      textures: perfSample.textures,
+      gpuMb: perfSample.gpuMb,
+      fps: perfSample.fps,
+      frameMs: perfSample.frameMs,
+    }),
   };
 }

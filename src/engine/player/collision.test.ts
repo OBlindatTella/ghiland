@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Collider } from '@/contracts/world';
 import { slideMove, type Body } from '@/engine/player/collision';
+import { furnitureColliders } from '@/worlds/seaside-house/furniture';
 import { seasideColliders, SPAWN } from '@/worlds/seaside-house/level';
 
 const body: Body = { radius: 0.3, feetY: 0, height: 1.75 };
@@ -226,6 +227,36 @@ describe('seaside greybox collision', () => {
     expect(expandedMax <= -2 || expandedMin >= 2).toBe(true);
     const reveal = slideMove(0, -3, 0, 0, body, seasideColliders);
     expect(reveal).toEqual({ x: 0, z: -3 });
+  });
+
+  it('keeps every furniture collider outside the centre band', () => {
+    for (const piece of furnitureColliders) {
+      const minX = piece.box.min[0] - body.radius;
+      const maxX = piece.box.max[0] + body.radius;
+      expect(minX < 2 && maxX > -2, piece.id).toBe(false);
+      expect(piece.layers.includes('occluder')).toBe(false);
+    }
+    const fig = furnitureColliders.find((piece) => piece.id === 'fig-planter');
+    expect(fig).toBeTruthy();
+    if (!fig) return;
+    expect((fig.box.min[0] + fig.box.max[0]) / 2).toBeCloseTo(-2.9, 5);
+    expect((fig.box.min[2] + fig.box.max[2]) / 2).toBeCloseTo(-2.6, 5);
+    expect(fig.box.max[0] + body.radius).toBeLessThanOrEqual(-2);
+  });
+
+  it('stops a diagonal step on each furniture collider', () => {
+    for (const piece of furnitureColliders) {
+      const cx = (piece.box.min[0] + piece.box.max[0]) / 2;
+      const z0 = piece.box.min[2] - body.radius - 0.08;
+      const next = slideMove(cx, z0, 0.12, 0.35, body, [piece]);
+      expect(next.z).toBeLessThan(piece.box.min[2]);
+      const inside =
+        next.x > piece.box.min[0] &&
+        next.x < piece.box.max[0] &&
+        next.z > piece.box.min[2] &&
+        next.z < piece.box.max[2];
+      expect(inside).toBe(false);
+    }
   });
 
   it('blocks the closed glass and the balustrade', () => {

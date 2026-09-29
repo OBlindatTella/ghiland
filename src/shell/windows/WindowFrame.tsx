@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState, type PointerEvent as ReactPointerEven
 import type { AppDefinition } from '@/contracts/app';
 import type { WindowInstance } from '@/contracts/window';
 import { dragRect, resizeRect, type ResizeEdge } from '@/shell/windows/geometry';
+import { frameBackStyle, frameFaceStyle } from '@/shell/windows/frameBack';
 import { frameTint, subscribeFrameTint } from '@/shell/windows/frameTint';
 import { bindWindowElement } from '@/engine/windows/domRegistry';
 import { requestDetach, requestPin, requestRecall } from '@/engine/windows/bridge';
@@ -175,7 +176,7 @@ export function WindowFrame({
       className="pointer-events-auto absolute"
       style={
         world
-          ? { left: 0, top: 0, width: rect.w, height: rect.h, transformOrigin: '0 0' }
+          ? { left: 0, top: 0, width: rect.w, height: rect.h, transformOrigin: '0 0', transformStyle: 'preserve-3d' as const }
           : { left: rect.x, top: rect.y, width: rect.w, height: rect.h, zIndex: 20 + instance.z, opacity: closing ? 0 : 1, transition: 'opacity 120ms linear' }
       }
       onPointerDown={() => focusAppWindow(instance.id)}
@@ -189,8 +190,9 @@ export function WindowFrame({
           borderColor: focused || pulsing ? '#86bdb2' : 'rgba(255,255,255,0.1)',
           outline: pulsing ? '1px solid #86bdb2' : undefined,
           borderTopColor: focused ? '#86bdb2' : undefined,
-          transform: lift ? 'scale(0.96)' : undefined,
+          transform: lift ? 'scale(0.96)' : 'translateZ(0.4px)',
           boxShadow: world ? 'none' : lift ? '0 18px 40px rgba(0,0,0,0.45)' : '0 8px 24px rgba(0,0,0,0.32)',
+          ...frameFaceStyle,
         }}
       >
           <header
@@ -237,6 +239,7 @@ export function WindowFrame({
           {children}
         </div>
       </div>
+      {world ? <div data-frame-back="" data-testid="window-back" aria-hidden style={frameBackStyle} /> : null}
       {app.window.resizable && !world
         ? EDGES.map((edge) => (
             <div

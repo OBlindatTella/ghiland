@@ -34,7 +34,7 @@ export interface WorldSceneProps {
 
 export interface WorldModule {
   Scene: ComponentType<WorldSceneProps>;
-  preload?: () => Promise<void>;
+  preload?: (report?: (fraction: number) => void) => Promise<void>;
   dispose?: () => void;
 }
 
