@@ -174,7 +174,6 @@ let leaderNotice = false;
 const roleListeners = new Set<RoleListener>();
 const heldIds = new Set<string>();
 let memoryCache: Note[] | null = null;
-let knownIds: string[] = [];
 let keptDb: IDBDatabase | null = null;
 
 export function notesRole(): Role {
@@ -201,7 +200,6 @@ export function subscribeNotesRole(listener: RoleListener): () => void {
 
 function dropWriterMemory(): void {
   memoryCache = null;
-  knownIds = [];
   dirtyNotes.clear();
   if (mirrorFrame && typeof cancelAnimationFrame === 'function') cancelAnimationFrame(mirrorFrame);
   mirrorFrame = 0;
@@ -494,7 +492,6 @@ function flushOpenConnection(notes: readonly Note[]): Promise<SaveNotesResult> |
       }
       store.put({ version: NOTES_RECORD_VERSION, ids: nextIds }, NOTES_INDEX_KEY);
     };
-    knownIds = nextIds;
     memoryCache = limited.map((note) => ({ ...note }));
     return new Promise((resolve) => {
       tx.oncomplete = () => {
@@ -725,7 +722,6 @@ async function rebuildFromRecords(db: IDBDatabase, indexRaw: unknown, write: boo
   const read = await readNoteRecords(db, ids, write);
   if (read.status !== 'ok') return read;
   if (write) await writeRecords(db, read.notes, []);
-  knownIds = read.notes.map((note) => note.id);
   return okLoad(read.notes, read.quarantined + 1, true);
 }
 
@@ -743,7 +739,6 @@ export async function loadNotes(): Promise<LoadNotesResult> {
       if (index.kind === 'corrupt') return rebuildFromRecords(db, indexRaw, write);
       const ids = index.kind === 'ids' ? index.ids : [];
       const read = await readNoteRecords(db, ids, write);
-      if (read.status === 'ok') knownIds = read.notes.map((note) => note.id);
       return read;
     });
     return withFresherMirror(loaded);
@@ -781,7 +776,6 @@ export async function saveNotes(notes: readonly Note[]): Promise<SaveNotesResult
       const previous = index.kind === 'ids' ? index.ids : [];
       await writeRecords(db, limited, previous);
     });
-    knownIds = limited.map((note) => note.id);
     markCommitted(limited);
     return 'ok';
   } catch (error) {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { preferredNoteId, readNotesUi, writeNotesUi } from '@/apps/notes/uiMemory';
+import { preferredNoteId, readNotesUi, writeNotesUi } from './uiMemory';
 
 describe('notes ui memory', () => {
   it('keeps the selected note across a remount of the same window', () => {

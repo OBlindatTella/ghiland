@@ -92,7 +92,7 @@ export default function Notes({ windowId, host }: AppProps) {
     return () => {
       live = false;
     };
-  }, []);
+  }, [windowId]);
 
   useEffect(() => {
     notesRef.current = notes;
@@ -143,7 +143,7 @@ export default function Notes({ windowId, host }: AppProps) {
       restoreRef.current = null;
     }
     if (document.activeElement !== field) field.focus({ preventScroll: true });
-  }, [notes, current?.id]);
+  }, [notes, current]);
 
   useEffect(() => {
     if (current) host.setTitle(current.title || 'Notes');
@@ -205,7 +205,7 @@ export default function Notes({ windowId, host }: AppProps) {
       ) : null}
       {leaderNotice ? (
         <p data-testid="notes-leader-notice" className="border-b border-white/10 px-4 py-3 text-[13px] leading-5 text-[#f2f0eb]/80">
-          This browser can't keep Notes to one tab.
+          This browser cannot keep Notes to one tab.
         </p>
       ) : null}
       {notice ? (
