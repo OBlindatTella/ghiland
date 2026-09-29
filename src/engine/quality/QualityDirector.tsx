@@ -87,7 +87,11 @@ export function QualityDirector() {
       if (prev.lost && !state.lost) apply();
     });
     const unsubSettings = useSettings.subscribe((state, prev) => {
-      if (state.quality !== prev.quality) apply();
+      if (state.quality === prev.quality) return;
+      // A manual tier, or choosing AUTO again, clears the session ceiling (D-034).
+      const tier = state.quality === 'AUTO' ? usePerfStore.getState().autoTier : state.quality;
+      clock.current = initialAutoClock(tier, 'ULTRA');
+      apply();
     });
     const unsubPerf = usePerfStore.subscribe((state, prev) => {
       if (state.autoTier !== prev.autoTier) apply();

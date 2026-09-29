@@ -48,9 +48,7 @@ export const useSettings = create<SettingsStore>()(
       setSensitivity: (mouseSensitivity) => set((state) => sanitizeSettings({ ...state, mouseSensitivity })),
       setFov: (fovDeg) => set((state) => sanitizeSettings({ ...state, fovDeg })),
       setQuality: (quality) =>
-        set((state) =>
-          sanitizeSettings({ ...state, quality, autoCeiling: quality === 'AUTO' ? state.autoCeiling : null }),
-        ),
+        set((state) => sanitizeSettings({ ...state, quality, autoCeiling: null })),
       setInvertY: (invertY) => set({ invertY }),
       setReduceMotion: (reduceMotion) => set({ reduceMotion }),
       setMuteWhenHidden: (muteWhenHidden) => set({ muteWhenHidden }),

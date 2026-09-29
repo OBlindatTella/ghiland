@@ -77,6 +77,19 @@ describe('quality tier hysteresis', () => {
     expect(emergency.tier).toBe('LOW');
   });
 
+  it('does not treat 40 fps plus a short dip under half target as an emergency (D-034)', () => {
+    let clock = { ...initialAutoClock('HIGH'), elapsed: 120, sinceChange: 40, changes: [70, 100] };
+    clock = advance(clock, 40, 6);
+    expect(clock.tier).toBe('HIGH');
+    clock = advance(clock, 29, 2.5);
+    expect(clock.tier).toBe('HIGH');
+    expect(clock.changed).toBe(false);
+    clock = advance(clock, 29, 0.6);
+    expect(clock.tier).toBe('MED');
+    expect(clock.ceiling).toBe('MED');
+    expect(clock.changes).toEqual([70, 100]);
+  });
+
   it('remembers a tier only after it has held for 60 seconds', () => {
     let clock = initialAutoClock('HIGH');
     let remembered: string | null = null;

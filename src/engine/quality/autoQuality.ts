@@ -20,6 +20,8 @@ export interface AutoClock {
   sinceChange: number;
   held: number;
   lowFor: number;
+  /** Time spent under half the tier's target fps. Independent of `lowFor` (D-034). */
+  emergencyFor: number;
   highFor: number;
   /** The previous change was a climb. A drop within 60 s then sets the ceiling. */
   climbed: boolean;
@@ -38,6 +40,7 @@ export function initialAutoClock(tier: QualityTier, ceiling: QualityTier = 'ULTR
     sinceChange: 30,
     held: 0,
     lowFor: 0,
+    emergencyFor: 0,
     highFor: 0,
     climbed: false,
     changed: false,
@@ -68,23 +71,29 @@ export function stepAutoQuality(clock: AutoClock, fps: number, dt: number): Auto
   const changes = (clock.changes ?? []).filter((at) => elapsed - at < 300);
   const rateLimited = elapsed >= 60 && changes.length >= 2;
   const targetFps = clock.tier === 'LOW' ? 30 : 60;
-  const emergency = fps < targetFps * 0.5 && lowFor >= 3;
+  const emergencyFor = fps < targetFps * 0.5 ? (clock.emergencyFor ?? 0) + step : 0;
+  const emergency = emergencyFor >= 3;
   const remember = clock.held < STABLE_HOLD_S && held >= STABLE_HOLD_S ? clock.tier : null;
-  if (index > 0 && elapsed >= 3 && ((canChange && !rateLimited && lowFor >= 5) || (rateLimited && emergency))) {
+  const normalDrop = canChange && !rateLimited && lowFor >= 5;
+  // Once the 2-per-5-minute budget is spent, only a 3 s stretch under half the target may demote.
+  const emergencyDrop = rateLimited && emergency;
+  if (index > 0 && elapsed >= 3 && (normalDrop || emergencyDrop)) {
+    const viaEmergency = emergencyDrop;
     const failedClimb = clock.climbed && sinceChange < STABLE_HOLD_S;
     const next = ORDER[index - 1] ?? clock.tier;
     return {
       tier: next,
-      ceiling: failedClimb ? next : clock.ceiling,
+      ceiling: viaEmergency || failedClimb ? next : clock.ceiling,
       elapsed,
       sinceChange: 0,
       held: 0,
       lowFor: 0,
+      emergencyFor: 0,
       highFor: 0,
       climbed: false,
       changed: true,
       remember: null,
-      changes: [...changes, elapsed],
+      changes: viaEmergency ? changes : [...changes, elapsed],
     };
   }
   if (!rateLimited && canChange && highFor >= 5 && index < ceiling && index < ORDER.length - 1) {
@@ -95,6 +104,7 @@ export function stepAutoQuality(clock: AutoClock, fps: number, dt: number): Auto
       sinceChange: 0,
       held: 0,
       lowFor: 0,
+      emergencyFor: 0,
       highFor: 0,
       climbed: true,
       changed: true,
@@ -109,6 +119,7 @@ export function stepAutoQuality(clock: AutoClock, fps: number, dt: number): Auto
     sinceChange,
     held,
     lowFor,
+    emergencyFor,
     highFor,
     climbed: clock.climbed,
     changed: false,
