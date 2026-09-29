@@ -237,12 +237,19 @@ export function readWindowsFile(): WindowsFile {
     if (version > windowsPersistVersion) writesHeld = true;
     const state = parsed.state ?? parsed;
     const dropped = malformedPinned(state);
-    if (dropped.length > 0 && !quarantineValues(dropped)) writesHeld = true;
-    return migrateWindowsFile(state, version);
+    const migrated = migrateWindowsFile(state, version);
+    if (dropped.length > 0) {
+      if (!quarantineValues(dropped)) writesHeld = true;
+      else if (!writesHeld) {
+        localStorageAdapter.set(windowsStorageKey, JSON.stringify({ state: migrated, version: windowsPersistVersion }));
+      }
+    }
+    return migrated;
   } catch {
     const stamp = Date.now();
     const corrupt = localStorageAdapter.get(windowsStorageKey);
     if (corrupt && localStorageAdapter.set(`${windowsStorageKey}:corrupt-${stamp}`, corrupt) === false) {
+      writesHeld = true;
       return emptyWindowsFile;
     }
     localStorageAdapter.remove(windowsStorageKey);

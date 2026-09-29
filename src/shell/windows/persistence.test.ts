@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { WindowInstance } from '@/contracts/window';
-import { fileFromWindows, migrateWindowsFile, readWindowsFile, windowsPersistVersion, writeWindowsFile } from '@/shell/windows/persistence';
+import { fileFromWindows, migrateWindowsFile, readWindowsFile, windowsPersistVersion, windowsWritesHeld, writeWindowsFile } from '@/shell/windows/persistence';
 
 describe('window persistence migration', () => {
   it('turns a version-0 window list into pinned records and drops carried poses', () => {
@@ -120,6 +120,9 @@ describe('window persistence migration', () => {
     expect(readWindowsFile()).toEqual({ pinned: [], rects: {} });
     expect(store.get('ghiland:windows')).toBe('{');
     expect([...store.keys()].some((key) => key.includes('corrupt'))).toBe(false);
+    expect(windowsWritesHeld()).toBe(true);
+    writeWindowsFile({ pinned: [], rects: {} });
+    expect(store.get('ghiland:windows')).toBe('{');
   });
 
   it('quarantines a malformed pinned record and keeps the good one', () => {
@@ -158,7 +161,11 @@ describe('window persistence migration', () => {
     );
     const file = readWindowsFile();
     expect(file.pinned.map((item) => item.id)).toEqual(['good']);
-    expect([...store.keys()].some((key) => key.includes('quarantine'))).toBe(true);
+    const quarantineKeys = [...store.keys()].filter((key) => key.includes('quarantine'));
+    expect(quarantineKeys).toHaveLength(1);
+    const again = readWindowsFile();
+    expect(again.pinned.map((item) => item.id)).toEqual(['good']);
+    expect([...store.keys()].filter((key) => key.includes('quarantine'))).toEqual(quarantineKeys);
   });
 
   it('keeps pins from another world when this world is saved', () => {
