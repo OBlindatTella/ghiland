@@ -114,11 +114,12 @@ export default function Notes({ host }: AppProps) {
       clipped = clipped || limited.clipped;
     }
     if (clipped) setStatus("The rest of that paste didn't fit.");
-    setNotes((items) => {
-      const next = items.map((note) => (note.id === current.id ? { ...note, ...nextPatch, updatedAt: Date.now() } : note));
-      rememberNotes(next);
-      return next;
-    });
+    const next = notesRef.current.map((note) =>
+      note.id === current.id ? { ...note, ...nextPatch, updatedAt: Date.now() } : note,
+    );
+    notesRef.current = next;
+    rememberNotes(next);
+    setNotes(next);
   };
 
   const takeOver = () => {
