@@ -11,6 +11,7 @@ import {
   parseLegacyPack,
   parseStoredNote,
   quarantineKey,
+  startNotesSession,
   unpackNotes,
 } from './storage';
 
@@ -44,6 +45,24 @@ describe('notes storage', () => {
     expect(parseIndexValue({ ids: 'nope' })).toEqual({ kind: 'corrupt' });
     expect(quarantineKey('ghiland:app:notes:note:1', 9)).toBe('ghiland:app:notes:quarantine:9:ghiland:app:notes:note:1');
     expect(unpackNotes('not json')).toEqual([]);
+  });
+
+  it('stays the writer when Notes mounts again in the same tab', async () => {
+    let requests = 0;
+    const nav = globalThis.navigator ?? ({} as Navigator);
+    Object.defineProperty(globalThis, 'navigator', { value: nav, configurable: true });
+    Object.defineProperty(nav, 'locks', {
+      configurable: true,
+      value: {
+        request(_name: string, _options: LockOptions, callback: (lock: Lock | null) => unknown) {
+          requests += 1;
+          return callback({ name: 'ghiland-notes-writer' } as Lock);
+        },
+      },
+    });
+    expect(await startNotesSession()).toBe('writer');
+    expect(await startNotesSession()).toBe('writer');
+    expect(requests).toBe(1);
   });
 
   it('renders a little markdown without letting HTML through', () => {

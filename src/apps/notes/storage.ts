@@ -186,6 +186,12 @@ function claimLock(wait: boolean): Promise<Role> {
 
 export async function startNotesSession(): Promise<Role> {
   bindChannel();
+  // Detach and pin move the window between DOM parents, so Notes remounts.
+  // This tab already holds the lock; a second request would look like another tab.
+  if (releaseHold) {
+    setRole('writer');
+    return 'writer';
+  }
   return claimLock(false);
 }
 
