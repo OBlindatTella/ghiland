@@ -46,8 +46,9 @@ describe('quality tier hysteresis', () => {
     expect(clock.tier).toBe('MED');
   });
 
-  it('does not step past the ends of the ladder', () => {
+  it('does not step past the ends of the ladder, and AUTO never climbs above HIGH', () => {
     expect(hold('LOW', 10, 8).tier).toBe('LOW');
+    expect(hold('HIGH', 90, 8).tier).toBe('HIGH');
     expect(hold('ULTRA', 90, 8).tier).toBe('ULTRA');
   });
 

@@ -211,6 +211,50 @@ describe('placement bounds', () => {
     expect(result.position[0]).toBeCloseTo(6.99, 2);
   });
 
+  it('keeps an east-wall pin in front of the back wall', () => {
+    const east: PlacementCollider = {
+      id: 'living-east',
+      box: { min: [7, 0, -3.5], max: [7.15, 3.2, 4.5] },
+      layers: ['movement', 'occluder', 'pinSurface'],
+    };
+    const back: PlacementCollider = {
+      id: 'living-back-east',
+      box: { min: [1.1, 0, -3.65], max: [7.15, 3.2, -3.5] },
+      layers: ['movement', 'occluder', 'pinSurface'],
+    };
+    const result = resolvePlacement({
+      ray: { origin: [5, 1.5, -3.2], direction: [1, 0, 0] },
+      colliders: [east, back],
+      anchors: [],
+      occupied: new Set(),
+      heightPx: 560,
+      widthPx: 440,
+      bounds: boundsFromBox([-7, 0, -9], [7, 3.2, 9], 0, 3.2, 9),
+    });
+    expect(result.valid).toBe(true);
+    expect(result.placement).toBe('surface');
+    const halfW = 440 / PX_PER_METER / 2;
+    expect(result.position[2] - halfW).toBeGreaterThanOrEqual(-3.5 + 0.01 - 1e-3);
+    expect(result.position[0]).toBeCloseTo(6.99, 2);
+  });
+
+  it('uses the corridor ceiling of 2.4 m, not the merged living-room ceiling', () => {
+    const bounds = unionPlacementBounds(seasideHouse.zones, 0, 9);
+    const corridor = bounds.volumes?.find((volume) => volume.min[2] <= -8 && volume.max[0] <= 1.2);
+    expect(corridor?.ceilingY ?? 0).toBeCloseTo(2.4, 5);
+    expect(bounds.volumes?.some((volume) => (volume.ceilingY ?? 0) > 2.4)).toBe(true);
+    const result = resolvePlacement({
+      ray: { origin: [0, 1.2, -6], direction: [0, 1, 0] },
+      colliders: [],
+      anchors: [],
+      occupied: new Set(),
+      heightPx: 560,
+      bounds,
+    });
+    const half = 560 / PX_PER_METER / 2;
+    expect(result.position[1] + half).toBeLessThanOrEqual(2.4 - 0.02 + 1e-3);
+  });
+
   it('sits a wall pin 1 cm off the surface and 2 cm clear of the floor', () => {
     expect(SURFACE_OFFSET).toBeCloseTo(0.01, 5);
     const result = resolvePlacement({

@@ -193,9 +193,26 @@ function moveAxis(
 }
 
 /**
- * Axis-separated AABB slide. Movement-layer colliders only, expanded by the capsule radius.
- * A step that would jump a thin wall stops on the near face instead of tunneling.
+ * Axis slide with no opening-corner release. The junction sweep uses this to
+ * tell a real wall from an S5-01 dead stop: if this would move and slideMove
+ * does not, the step froze. The release itself only shifts by less than one
+ * step along the input, so it is vestigial for the measured sweep (S6-15).
  */
+export function slideAxes(
+  x: number,
+  z: number,
+  dx: number,
+  dz: number,
+  body: Body,
+  colliders: readonly Collider[],
+): { x: number; z: number } {
+  const boxes = movementObstacles(colliders, body);
+  const freed = pushOut(x, z, body.radius, boxes);
+  const nextX = moveAxis(freed.x, freed.z, dx, body.radius, boxes, 'x');
+  const nextZ = moveAxis(nextX, freed.z, dz, body.radius, boxes, 'z');
+  return pushOut(nextX, nextZ, body.radius, boxes);
+}
+
 export function slideMove(
   x: number,
   z: number,

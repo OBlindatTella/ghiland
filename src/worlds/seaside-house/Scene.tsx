@@ -12,14 +12,12 @@ import {
   type Material,
   type InstancedMesh,
 } from 'three';
-import { trackGpuBytes } from '@/engine';
-import { releaseWarmedMaterials, warmSceneShaders } from '@/engine/quality/shaderWarmup';
-import { useFrameBudget } from '@/state/frameBudget';
+import { releaseWarmedMaterials, trackGpuBytes, useResolvedFoliage, warmSceneShaders } from '@/engine';
 import type { WorldSceneProps } from '@/contracts/world';
 import { createCurtainMaterial } from './art/curtains';
 import { environmentFromSky } from './art/environment';
 import { rockLayout } from './art/rocks';
-import { cloudLayers, curtainSegments, leafCount, oceanSegments, rockDetail, textureSizeForTier, waveCount } from './art/scale';
+import { cloudLayers, curtainSegments, leafCount, oceanSegments, rockDetail, textureSizeForTier, vertexWaveCount, waveCount } from './art/scale';
 import { shadowFrustum } from './art/shadowFit';
 import { createOceanMaterial, createSkyMaterial } from './art/shaders';
 import { cachedTextureSizes, cloneRepeat, estimateTextureBytes, retainTextureSize, seasideMaps, type SeasideMaps } from './art/textures';
@@ -187,8 +185,8 @@ function SkyDome({ clouds }: { clouds: number }) {
   );
 }
 
-function Ocean({ waves, segments }: { waves: number; segments: [number, number] }) {
-  const material = useMemo(() => createOceanMaterial(waves), [waves]);
+function Ocean({ waves, vertexWaves, segments }: { waves: number; vertexWaves: number; segments: [number, number] }) {
+  const material = useMemo(() => createOceanMaterial(waves, vertexWaves), [waves, vertexWaves]);
   useEffect(() => () => material.dispose(), [material]);
   useFrame(({ clock }) => {
     material.uniforms.uTime!.value = clock.elapsedTime;
@@ -299,9 +297,7 @@ export function SeasideHouseScene({ onReady, quality }: WorldSceneProps) {
   const ready = useRef(false);
   const size = textureSizeForTier(quality.tier);
   const maps = seasideMaps(size) ?? seasideMaps(1024) ?? seasideMaps(512);
-  const resolvedFoliage = useFrameBudget((state) =>
-    state.presentation && state.presentation.tier === quality.tier ? state.presentation.foliage : quality.foliage,
-  );
+  const resolvedFoliage = useResolvedFoliage(quality.tier, quality.foliage);
   const materials = useMemo(() => (maps ? buildHouseMaterials(maps, resolvedFoliage) : null), [maps, resolvedFoliage]);
   const headland = useMemo(() => new MeshStandardMaterial({ color: '#6d6458', roughness: 0.96 }), []);
   const beacon = useMemo(() => new MeshBasicMaterial({ color: '#FFC98F' }), []);
@@ -379,7 +375,7 @@ export function SeasideHouseScene({ onReady, quality }: WorldSceneProps) {
       <pointLight position={[0.4, 2.35, 1.6]} intensity={7} distance={6.5} decay={2} color="#FFE0C0" />
       <pointLight position={[2.55, 1.45, -1.55]} intensity={3.5} distance={3.2} decay={2} color="#FFD2A8" />
       <SkyDome clouds={clouds} />
-      <Ocean waves={waveCount(quality.tier)} segments={oceanSegments(quality.tier)} />
+      <Ocean waves={waveCount(quality.tier)} vertexWaves={vertexWaveCount(quality.tier)} segments={oceanSegments(quality.tier)} />
       <mesh position={[0, -3.6, 11.4]} rotation={[-0.82, 0, 0]} material={materials.byKind.rock} receiveShadow={shadows}>
         <planeGeometry args={[18, 4.5, 1, 3]} />
       </mesh>

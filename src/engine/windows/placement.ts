@@ -430,8 +430,8 @@ function tableOverhangs(position: Vec3, quaternion: Quat, halfH: number, halfW: 
 }
 
 function rectAabb(position: Vec3, right: Vec3, up: Vec3, halfW: number, halfH: number): { min: Vec3; max: Vec3 } {
-  const min: Vec3 = [Infinity, Infinity, Infinity];
-  const max: Vec3 = [-Infinity, -Infinity, -Infinity];
+  const min: [number, number, number] = [Infinity, Infinity, Infinity];
+  const max: [number, number, number] = [-Infinity, -Infinity, -Infinity];
   for (const sx of [halfW, -halfW]) {
     for (const sy of [halfH, -halfH]) {
       const corner = add(position, add(scale(right, sx), scale(up, sy)));

@@ -16,6 +16,8 @@ export interface WindowQuad {
   quaternion: readonly [number, number, number, number];
   /** Half extents of the quad in metres. */
   half: { w: number; h: number };
+  /** Pin tags face the camera. A wall-facing quad is invisible from behind. */
+  billboard?: boolean;
 }
 
 const raycaster = new Raycaster();
@@ -74,7 +76,8 @@ export function raycastCrosshair(
   let closest: { id: string; distance: number } | null = null;
   for (const quad of quads) {
     mesh.position.set(quad.position[0], quad.position[1], quad.position[2]);
-    mesh.quaternion.set(quad.quaternion[0], quad.quaternion[1], quad.quaternion[2], quad.quaternion[3]);
+    if (quad.billboard) mesh.quaternion.copy(camera.quaternion);
+    else mesh.quaternion.set(quad.quaternion[0], quad.quaternion[1], quad.quaternion[2], quad.quaternion[3]);
     mesh.scale.set(quad.half.w * 2, quad.half.h * 2, 1);
     mesh.updateMatrixWorld(true);
     const hit = raycaster.intersectObject(mesh, false)[0];

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { BasicShadowMap, Mesh, MeshStandardMaterial, PerspectiveCamera, PCFSoftShadowMap, Scene, type Material } from 'three';
+import { BasicShadowMap, Mesh, MeshStandardMaterial, Object3D, PerspectiveCamera, PCFSoftShadowMap, Scene, type Camera, type Material } from 'three';
 import { AUTO_SHADER_TIERS, releaseWarmedMaterials, warmSceneShaders } from '@/engine/quality/shaderWarmup';
 
 describe('shader warm-up', () => {
@@ -14,11 +14,13 @@ describe('shader warm-up', () => {
     const calls: Array<{ enabled: boolean; type: number; foliage: string[] }> = [];
     const gl = {
       shadowMap: { enabled: true, type: PCFSoftShadowMap },
-      compile(root: Scene) {
-        calls.push(snapshot(root, gl.shadowMap.enabled, gl.shadowMap.type));
+      compile(root: Object3D, camera: Camera) {
+        void camera;
+        calls.push(snapshot(root as Scene, gl.shadowMap.enabled, gl.shadowMap.type));
       },
-      async compileAsync(root: Scene) {
-        calls.push(snapshot(root, gl.shadowMap.enabled, gl.shadowMap.type));
+      async compileAsync(root: Object3D, camera: Camera) {
+        void camera;
+        calls.push(snapshot(root as Scene, gl.shadowMap.enabled, gl.shadowMap.type));
       },
     };
     await warmSceneShaders(gl, scene, camera);

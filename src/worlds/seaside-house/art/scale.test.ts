@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { curtainBillow, CURTAIN_BILLOW_MAX } from './curtainMath';
 import { estimateTextureBytes } from './textures';
 import { rockLayout } from './rocks';
-import { cloudLayers, oceanSegments, textureSizeForTier, waveCount } from './scale';
+import { cloudLayers, oceanSegments, textureSizeForTier, vertexWaveCount, waveCount } from './scale';
 import { WAVES } from './waves';
 import { shadowCoversHouse, shadowFrustum } from './shadowFit';
 import { CURTAIN_VERTEX_SNIPPET, createOceanMaterial } from './shaders';
@@ -22,10 +22,15 @@ describe('seaside art scale', () => {
     const plane: [number, number] = [380, 270];
     for (const tier of ['LOW', 'MED', 'HIGH', 'ULTRA'] as const) {
       const [sx, sz] = oceanSegments(tier);
-      const shortest = WAVES[waveCount(tier) - 1]?.length ?? 1;
-      expect(plane[0] / sx).toBeLessThanOrEqual(shortest / 2 + 1e-6);
-      expect(plane[1] / sz).toBeLessThanOrEqual(shortest / 2 + 1e-6);
+      const vertex = vertexWaveCount(tier, plane);
+      expect(vertex).toBeLessThan(waveCount(tier));
+      const lastVertex = WAVES[vertex - 1];
+      if (lastVertex) {
+        expect(lastVertex.length / (plane[0] / sx)).toBeGreaterThanOrEqual(4);
+        expect(lastVertex.length / (plane[1] / sz)).toBeGreaterThanOrEqual(4);
+      }
     }
+    expect(createOceanMaterial(5, vertexWaveCount('HIGH')).fragmentShader).toContain('uVertexCount');
   });
 
   it('caps textures at 512 on LOW and 1k above', () => {

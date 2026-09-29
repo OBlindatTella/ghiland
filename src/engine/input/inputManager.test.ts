@@ -23,7 +23,7 @@ function installDom() {
   };
   let focused = true;
   let exits = 0;
-  const requestPointerLock = vi.fn((_options?: { unadjustedMovement?: boolean }): Promise<void> | undefined => undefined);
+  const requestPointerLock = vi.fn((): Promise<void> | undefined => undefined);
   const canvas = {
     addEventListener: listen(canvasListeners),
     removeEventListener: forget(canvasListeners),

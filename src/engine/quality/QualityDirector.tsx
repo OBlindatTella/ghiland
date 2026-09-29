@@ -1,6 +1,6 @@
 'use client';
 
-import { memo, useEffect, useContext, useMemo, useRef, useState } from 'react';
+import { memo, useEffect, useContext, useMemo, useRef, useState, type ReactElement } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
 import { BasicShadowMap, PCFSoftShadowMap } from 'three';
 import { Bloom, EffectComposer, EffectComposerContext, SMAA, ToneMapping } from '@react-three/postprocessing';
@@ -206,12 +206,14 @@ export function PostStack({ profile, samples = 0 }: { profile: QualityProfile; s
   const msaa = profile.multisampling === 0 ? 0 : samples;
   const smaa = msaa === 0;
   const bloom = profile.postprocessing.bloom;
+  const passes: ReactElement[] = [];
+  if (bloom) passes.push(<Bloom key="bloom" intensity={0.12} luminanceThreshold={0.9} mipmapBlur />);
+  if (smaa) passes.push(<SMAA key="smaa" />);
+  passes.push(<ToneMapping key="tone" mode={COMPOSER_TONE_MODE} />);
+  passes.push(<ComposerLifecycle key="life" />);
   return (
     <EffectComposer multisampling={msaa} enableNormalPass={false} autoClear>
-      {bloom ? <Bloom intensity={0.12} luminanceThreshold={0.9} mipmapBlur /> : null}
-      {smaa ? <SMAA /> : null}
-      <ToneMapping mode={COMPOSER_TONE_MODE} />
-      <ComposerLifecycle />
+      {passes}
     </EffectComposer>
   );
 }

@@ -79,7 +79,7 @@ export function createSkyMaterial(clouds: number): ShaderMaterial {
   });
 }
 
-export function createOceanMaterial(waveCount: number): ShaderMaterial {
+export function createOceanMaterial(waveCount: number, vertexCount = waveCount): ShaderMaterial {
   const waves = WAVES.map((wave) => new Vector4(wave.dirX, wave.dirZ, wave.length, wave.amplitude));
   const extra = WAVES.map((wave) => new Vector4(wave.steepness, wave.speed, 0, 0));
   const foam = FOAM_ROCKS.map((rock) => new Vector4(rock[0], rock[1], rock[2], rock[3]));
@@ -87,6 +87,7 @@ export function createOceanMaterial(waveCount: number): ShaderMaterial {
     uniforms: {
       uTime: { value: 0 },
       uCount: { value: waveCount },
+      uVertexCount: { value: Math.min(vertexCount, waveCount) },
       uSun: { value: new Vector3(-0.367, 0.208, 0.907) },
       uWave: { value: waves },
       uExtra: { value: extra },
@@ -97,7 +98,7 @@ export function createOceanMaterial(waveCount: number): ShaderMaterial {
     },
     vertexShader: /* glsl */ `
       uniform float uTime;
-      uniform float uCount;
+      uniform float uVertexCount;
       uniform vec4 uWave[5];
       uniform vec4 uExtra[5];
       varying vec3 vWorld;
@@ -108,7 +109,7 @@ export function createOceanMaterial(waveCount: number): ShaderMaterial {
         vec3 normal = vec3(0.0, 1.0, 0.0);
         float height = 0.0;
         for (int i = 0; i < 5; i++) {
-          float use = step(float(i) + 0.5, uCount);
+          float use = step(float(i) + 0.5, uVertexCount);
           vec2 dir = uWave[i].xy;
           float len = max(length(dir), 0.0001);
           dir /= len;
@@ -135,6 +136,10 @@ export function createOceanMaterial(waveCount: number): ShaderMaterial {
     `,
     fragmentShader: /* glsl */ `
       uniform float uTime;
+      uniform float uCount;
+      uniform float uVertexCount;
+      uniform vec4 uWave[5];
+      uniform vec4 uExtra[5];
       uniform vec3 uSun;
       uniform vec4 uFoam[4];
       uniform vec3 uDeep;
@@ -146,6 +151,21 @@ export function createOceanMaterial(waveCount: number): ShaderMaterial {
       ${SKY_FN}
       void main() {
         vec3 N = normalize(vNormal);
+        for (int i = 0; i < 5; i++) {
+          float use = step(uVertexCount, float(i) + 0.5) * step(float(i) + 0.5, uCount);
+          vec2 dir = uWave[i].xy;
+          float len = max(length(dir), 0.0001);
+          dir /= len;
+          float L = uWave[i].z;
+          float A = uWave[i].w;
+          float speed = uExtra[i].y;
+          float k = 6.2831853 / L;
+          float phase = k * (dir.x * vWorld.x + dir.y * vWorld.z) + uTime * speed;
+          float c = cos(phase);
+          N.x -= dir.x * k * A * c * use;
+          N.z -= dir.y * k * A * c * use;
+        }
+        N = normalize(N);
         vec3 V = normalize(cameraPosition - vWorld);
         vec3 R = reflect(-V, N);
         float fres = pow(1.0 - max(dot(N, V), 0.0), 4.0);

@@ -68,6 +68,7 @@ function syncQuads(windows: WindowInstance[], billboard: readonly [number, numbe
         position: item.mode.position,
         quaternion,
         half: { w: 0.04, h: 0.04 },
+        billboard: true,
       });
       continue;
     }

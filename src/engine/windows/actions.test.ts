@@ -77,4 +77,43 @@ describe('auto-pin on lock loss', () => {
     expect(exits.count).toBeGreaterThan(0);
     manager.setBeforeShellChange(null);
   });
+
+  it('pins a window carried in RELEASED when the tab blurs', () => {
+    const camera = new PerspectiveCamera(62, 1, 0.1, 50);
+    camera.position.set(1, 1.62, 0);
+    camera.lookAt(1, 1.62, 4);
+    camera.updateMatrixWorld();
+    bindCrosshairCamera(camera);
+    useSession.setState({ worldId: 'seaside-house', worldPhase: 'active', phase: 'inWorld' });
+    useWindows.setState({ windows: { 'notes-1': detached }, focusedId: 'notes-1' });
+    seedCarry('notes-1', [1, 1.5, 1.1], [0, 0, 0, 1]);
+    vi.stubGlobal('localStorage', { getItem: () => null, setItem: () => undefined, removeItem: () => undefined });
+    const listeners = new Map<string, () => void>();
+    vi.stubGlobal('document', {
+      pointerLockElement: null,
+      hidden: false,
+      hasFocus: () => false,
+      exitPointerLock: () => undefined,
+      addEventListener: () => undefined,
+      removeEventListener: () => undefined,
+    });
+    vi.stubGlobal('window', {
+      addEventListener: (type: string, fn: () => void) => listeners.set(type, fn),
+      removeEventListener: () => undefined,
+      setTimeout: (fn: () => void) => {
+        fn();
+        return 1;
+      },
+      clearTimeout: () => undefined,
+    });
+    const manager = new InputManager();
+    useInputStore.setState({ shellState: 'RELEASED', owner: 'world', showClickToWalk: true, pointerLocked: false });
+    const canvas = { addEventListener() {}, removeEventListener() {} } as unknown as HTMLCanvasElement;
+    manager.attach(canvas);
+    manager.setOnFocusLoss(() => autoPinCarried());
+    listeners.get('blur')?.();
+    const mode = useWindows.getState().windows['notes-1']?.mode;
+    expect(mode?.kind).toBe('worldPinned');
+    manager.detach();
+  });
 });
