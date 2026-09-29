@@ -90,7 +90,9 @@ function holdOpeningEdge(
     const entered = held > minX && held < maxX;
     const clearOfFace = z <= minZ || z >= maxZ;
     const toward = (dz > 0 && z <= minZ) || (dz < 0 && z >= maxZ);
-    if (outside && entered && clearOfFace && toward) {
+    // Only the face being stepped toward. A panel metres ahead must not freeze a strafe across the room.
+    const faceGap = dz > 0 ? minZ - z : z - maxZ;
+    if (outside && entered && clearOfFace && toward && faceGap <= 1.25) {
       held = x <= minX ? minX - SKIN : maxX + SKIN;
     }
   }

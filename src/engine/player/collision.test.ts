@@ -109,6 +109,18 @@ describe('seaside greybox collision', () => {
     expect(Math.abs(x)).toBeLessThan(0.05);
   });
 
+  it('can cross in front of a closed panel that is still metres ahead', () => {
+    let x = 0;
+    let z = 1;
+    for (let i = 0; i < 40; i += 1) {
+      const next = slideMove(x, z, 0.15, 0.02, body, seasideColliders);
+      x = next.x;
+      z = next.z;
+    }
+    expect(x).toBeGreaterThan(4.5);
+    expect(z).toBeLessThan(3);
+  });
+
   it('slides along a closed panel edge without snagging', () => {
     let x = 1.65;
     let z = 3.4;
