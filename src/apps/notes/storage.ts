@@ -130,6 +130,8 @@ let channel: BroadcastChannel | null = null;
 const roleListeners = new Set<RoleListener>();
 const heldIds = new Set<string>();
 let memoryCache: Note[] | null = null;
+let knownIds: string[] = [];
+let keptDb: IDBDatabase | null = null;
 
 export function notesRole(): Role {
   return role;
@@ -186,6 +188,7 @@ function claimLock(wait: boolean): Promise<Role> {
 
 export async function startNotesSession(): Promise<Role> {
   bindChannel();
+  keepDb();
   // Detach and pin move the window between DOM parents, so Notes remounts.
   // This tab already holds the lock; a second request would look like another tab.
   if (releaseHold) {
@@ -206,6 +209,58 @@ export async function claimNotesHere(): Promise<Role> {
 
 export function rememberNotes(notes: readonly Note[]): void {
   memoryCache = notes.map((note) => ({ ...note }));
+}
+
+/** Open once and leave the connection up so a pagehide flush can start a transaction immediately. */
+function keepDb(): void {
+  if (keptDb || typeof indexedDB === 'undefined') return;
+  let request: IDBOpenDBRequest;
+  try {
+    request = indexedDB.open('ghiland', 1);
+  } catch {
+    return;
+  }
+  request.onupgradeneeded = () => {
+    if (!request.result.objectStoreNames.contains('kv')) request.result.createObjectStore('kv');
+  };
+  request.onsuccess = () => {
+    keptDb = request.result;
+    keptDb.onversionchange = () => {
+      keptDb?.close();
+      keptDb = null;
+    };
+  };
+}
+
+/**
+ * Start the write in this turn. A reload aborts a transaction that is still waiting on `indexedDB.open`.
+ * Returns null when the connection is not open yet, so the caller can fall back to the async writer.
+ */
+function flushOpenConnection(notes: readonly Note[]): Promise<SaveNotesResult> | null {
+  if (!keptDb) return null;
+  const limited = notes.map(limitNote);
+  const nextIds = limited.map((note) => note.id);
+  const stale = knownIds.filter((id) => !nextIds.includes(id) && !heldIds.has(id));
+  try {
+    const tx = keptDb.transaction('kv', 'readwrite');
+    const store = tx.objectStore('kv');
+    for (const id of stale) store.delete(recordKey(id));
+    for (const note of limited) {
+      if (heldIds.has(note.id)) continue;
+      store.put(toStored(note), recordKey(note.id));
+    }
+    store.put({ version: NOTES_RECORD_VERSION, ids: nextIds }, NOTES_INDEX_KEY);
+    knownIds = nextIds;
+    memoryCache = limited.map((note) => ({ ...note }));
+    return new Promise((resolve) => {
+      tx.oncomplete = () => resolve('ok');
+      tx.onerror = () => resolve('unavailable');
+      tx.onabort = () => resolve('unavailable');
+    });
+  } catch (error) {
+    if (isSiteDataBlocked(error)) return Promise.resolve('blocked');
+    return Promise.resolve('unavailable');
+  }
 }
 
 function limitNote(note: Note): Note {
@@ -393,6 +448,7 @@ export async function loadNotes(): Promise<LoadNotesResult> {
         if (parsed.version > NOTES_RECORD_VERSION) heldIds.add(parsed.note.id);
         notes.push(parsed.note);
       }
+      knownIds = notes.map((note) => note.id);
       return { status: 'ok', notes };
     });
   } catch (error) {
@@ -405,6 +461,8 @@ export type SaveNotesResult = 'ok' | 'blocked' | 'quota' | 'readonly' | 'unavail
 
 export async function saveNotes(notes: readonly Note[]): Promise<SaveNotesResult> {
   if (notesRole() !== 'writer') return 'readonly';
+  const kept = flushOpenConnection(notes);
+  if (kept) return kept;
   const limited = notes.map(limitNote);
   memoryCache = limited.map((note) => ({ ...note }));
   try {
@@ -414,6 +472,7 @@ export async function saveNotes(notes: readonly Note[]): Promise<SaveNotesResult
       const previous = index.kind === 'ids' ? index.ids : [];
       await writeRecords(db, limited, previous);
     });
+    knownIds = limited.map((note) => note.id);
     return 'ok';
   } catch (error) {
     if (isSiteDataBlocked(error)) return 'blocked';
@@ -422,7 +481,9 @@ export async function saveNotes(notes: readonly Note[]): Promise<SaveNotesResult
   }
 }
 
-export async function flushNotes(): Promise<SaveNotesResult> {
-  if (!memoryCache || notesRole() !== 'writer') return 'ok';
+export function flushNotes(): Promise<SaveNotesResult> {
+  if (!memoryCache || notesRole() !== 'writer') return Promise.resolve('ok');
+  const kept = flushOpenConnection(memoryCache);
+  if (kept) return kept;
   return saveNotes(memoryCache);
 }
